@@ -2,6 +2,8 @@
 
 Herramienta de escritorio para Windows que ayuda a **mantener y "curar" una colección de [ES-DE](https://es-de.org/)** (EmulationStation Desktop Edition): explorar tus ROMs por género, ver sus imágenes y vídeos, completar su información con [ScreenScraper](https://www.screenscraper.fr/), quitar de la colección lo que no te interesa y clonar el resultado a otra carpeta o dispositivo.
 
+> **Requisito imprescindible:** la herramienta trabaja sobre una colección que **ya tenga la estructura de carpetas de ES-DE con sus `gamelist.xml`** (ver [Estructura de colección esperada](#estructura-de-colección-esperada)). Si la colección no tiene esa estructura, no se puede analizar. En futuras versiones se podrá crear la estructura cuando falte.
+
 > **Aviso:** el borrado de ROMs y de sus archivos asociados es **permanente** (no pasa por la Papelera). Antes de usarlo en serio, prueba con una copia de tu colección.
 
 La interfaz, los mensajes y los comentarios del código están en **español**.
@@ -16,7 +18,7 @@ La interfaz, los mensajes y los comentarios del código están en **español**.
   - **Descarga masiva** para uno o varios sistemas: carpetas de medios a elegir, vídeo normalizado u original, qué hacer si ya existe el archivo, metadatos y idiomas, varias peticiones en paralelo según tu membresía, reanudable, con porcentaje total y tiempo restante, y resumen final del espacio ahorrado o añadido.
 - **Curado del romset** (menú *Curado*): marca géneros y *supracategorías* editables (juegos de mesa japoneses, deportes minoritarios o mayoritarios, novelas visuales, estrategia, quiz, educativos…) y la herramienta te muestra qué ROMs saldrían como candidatas a descartar, con el motivo, el espacio que liberarías y el desglose por sistema. Puedes excluir ROMs a mano, guardar tus selecciones como **perfiles**, filtrar por **idioma** (los idiomas de cada ROM se traen de ScreenScraper) y, si te convence, eliminar las candidatas.
 - **Borrado seguro**: plan previo con todo lo que se va a tocar (ROMs, archivos accesorios, media, gamelists), comprobación de que nada ha cambiado antes de ejecutar, copia de seguridad opcional de los gamelists y actualización solo de los sistemas afectados.
-- **Clonar** la colección a otra carpeta con `robocopy /MIR`, validando que origen y destino no se solapan.
+- **Clonar la estructura de ES-DE a otra carpeta o a una tarjeta SD** (botón *Clonar*): pensado para llevar la colección ya depurada a Android, donde ES-DE suele usarse con tarjeta SD. Ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd).
 - **Trazabilidad**: cada acción relevante queda anotada en un registro que se puede consultar desde la propia aplicación.
 
 ## Capturas
@@ -45,13 +47,13 @@ La interfaz, los mensajes y los comentarios del código están en **español**.
 
 En la sección [**Releases**](../../releases) tienes `ESDERomCleaner-<versión>-win-x64.exe`: un único ejecutable que **no necesita instalar .NET** (lleva el motor de vídeo incluido). Descárgalo y ábrelo; la primera vez tarda unos segundos más porque se extrae a una carpeta temporal.
 
-Como el ejecutable no está firmado, Windows SmartScreen puede avisar la primera vez: pulsa *Más información › Ejecutar de todos modos*.
+Como el ejecutable **no está firmado digitalmente**, Windows SmartScreen avisa de «editor desconocido» la primera vez: pulsa *Más información › Ejecutar de todas formas*. Es normal en programas sin certificado de firma; puedes comprobar que el archivo es el publicado con el SHA-256 que figura en las notas de cada release.
 
 ## Requisitos para compilar
 
 - Windows 10/11 de 64 bits.
 - [.NET 10 SDK](https://dotnet.microsoft.com/download) para compilar.
-- Una colección con la estructura de ES-DE (ver abajo).
+- **Una colección con la estructura de carpetas de ES-DE y sus `gamelist.xml`** (ver abajo). Es imprescindible: sin ella la aplicación no puede analizar nada.
 - Para scrapear: una cuenta de [ScreenScraper](https://www.screenscraper.fr/) y las **credenciales de desarrollador** (ID y contraseña) que la API exige. Las credenciales se piden desde la propia aplicación, no se incluyen en el repositorio.
 
 ## Compilar y ejecutar
@@ -73,7 +75,19 @@ ES-DE/gamelists/<sistema>/gamelist.xml          listas de juegos
 ES-DE/downloaded_media/<sistema>/<tipo>/...     imágenes, vídeos, manuales…
 ```
 
-La aplicación recuerda la última carpeta raíz que analizó con éxito y comprueba que sea válida antes de empezar.
+> **Importante:** la carpeta raíz debe contener `Roms` y `ES-DE\gamelists` (con un `gamelist.xml` por sistema). La aplicación lo comprueba antes de empezar y, si falta algo, te lo indica y no analiza. De momento no crea la estructura por ti; está previsto para una versión futura.
+
+La aplicación recuerda la última carpeta raíz que analizó con éxito.
+
+## Clonar a otra carpeta o a una tarjeta SD
+
+ES-DE es también un frontend para **Android**, donde las colecciones suelen vivir en una **tarjeta SD**. Por eso la aplicación incluye el botón **Clonar** (junto a la ruta raíz), que copia **toda la estructura de ES-DE** (`Roms`, `ES-DE\gamelists` y `ES-DE\downloaded_media`) a otra carpeta o a una unidad, por ejemplo la SD.
+
+- El flujo pensado: depuras la colección (curado, medios con vídeo normalizado, que ocupan menos) y luego la clonas a la SD ya con el tamaño final.
+- Usa `robocopy /MIR` (con tolerancia de marcas de tiempo para tarjetas FAT32/exFAT), así que las siguientes veces solo copia lo que ha cambiado.
+- **El destino queda como un espejo exacto del origen: lo que haya en el destino y no esté en el origen se elimina.** Elige una carpeta de destino vacía o dedicada a la colección. La aplicación te pide confirmación antes de empezar.
+- Comprueba que origen y destino no se solapan, y muestra un resumen de lo copiado.
+
 
 ## Cómo se usa
 
@@ -81,6 +95,7 @@ La aplicación recuerda la última carpeta raíz que analizó con éxito y compr
 2. **Scrapeo › Credenciales de ScreenScraper…** (o **Alta en ScreenScraper…** si todavía no tienes cuenta).
 3. Para una ROM concreta: clic derecho › *Scrapear con ScreenScraper…*. Para sistemas enteros: **Scrapeo › Descarga masiva de medios…**
 4. Para depurar la colección: **Curado › Reglas de curado (análisis)…**, marca lo que quieras descartar y revisa las candidatas antes de eliminar nada.
+5. Para llevar la colección a otra carpeta o a la tarjeta SD de tu dispositivo Android: botón **Clonar** (ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd)).
 
 ## Datos que guarda la aplicación
 
