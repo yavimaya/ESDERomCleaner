@@ -1,0 +1,166 @@
+using System.Net;
+using LibVLCSharp.Shared;
+using LibVLCSharp.WinForms;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
+
+namespace ESDERomCleaner;
+
+public sealed partial class RomCleanerForm : Form
+{
+    private static readonly string[] VideoExtensions = [".mp4", ".m4v", ".wmv", ".avi", ".mov", ".mpg", ".mpeg", ".webm", ".mkv", ".ogv"];
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<string[]>> VideoFileIndex = new(StringComparer.OrdinalIgnoreCase);
+
+    private void ScheduleVideoPreview(RomRow row, int version)
+    {
+        if (!showVideos.Checked) return;
+        pendingVideoRow = row;
+        pendingVideoVersion = version;
+        videoPreviewTimer.Stop();
+        videoPreviewTimer.Interval = 3000;
+        videoPreviewTimer.Start();
+    }
+
+    private async Task StartFocusedVideoAsync()
+    {
+        videoPreviewTimer.Stop();
+        RomRow? row = pendingVideoRow;
+        int version = pendingVideoVersion;
+        if (!showVideos.Checked || row is null || version != previewVersion) return;
+
+        try
+        {
+            string? path = await Task.Run(() => FindVideo(root.Text, row));
+            if (version != previewVersion || !showVideos.Checked || !File.Exists(path)) return;
+            EnsureVideoPlayer();
+            currentVideoMedia?.Dispose();
+            currentVideoMedia = new Media(libVlc!, new Uri(Path.GetFullPath(path!)));
+            mediaPlayer!.Volume = videoSound.Checked ? 100 : 0;
+            videoView.Visible = true;
+            videoView.BringToFront();
+            preview.Visible = false;
+            miximageGroup.Text = $"Vídeo de {row.GameName}";
+            if (!mediaPlayer.Play(currentVideoMedia)) throw new InvalidOperationException("LibVLC no pudo iniciar la reproducción de este vídeo.");
+            trace.Add("video_started", $"system={row.System}; rom={row.RomName}; path={path}");
+            videoMonitorTimer.Start();
+        }
+        catch (Exception ex)
+        {
+            StopVideoPlayback();
+            miximageGroup.Text = $"Vídeo no disponible — {row.GameName}";
+            trace.Add("video_start_error", $"rom={row.RomName}; error={ex}");
+            status.Text = "No se pudo reproducir el vídeo de la ROM enfocada.";
+        }
+    }
+
+    private void EnsureVideoPlayer()
+    {
+        if (mediaPlayer is not null) return;
+        Core.Initialize();
+        libVlc = new LibVLC("--no-video-title-show", "--no-osd");
+        mediaPlayer = new MediaPlayer(libVlc);
+        mediaPlayer.Scale = 0;
+        mediaPlayer.AspectRatio = null;
+        videoView.MediaPlayer = mediaPlayer;
+        mediaPlayer.EndReached += (_, _) =>
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            try { BeginInvoke(new Action(() => HandleVideoEnded())); } catch (InvalidOperationException) { }
+        };
+    }
+
+    private void HandleVideoEnded()
+    {
+        if (IsDisposed || !videoView.Visible) return;
+        videoMonitorTimer.Stop();
+        currentVideoMedia?.Dispose();
+        currentVideoMedia = null;
+        videoView.Visible = false;
+        preview.Visible = true;
+        preview.BringToFront();
+        if (showVideos.Checked && pendingVideoRow is not null)
+            ScheduleVideoPreview(pendingVideoRow, pendingVideoVersion);
+        else miximageGroup.Text = "Miximage de la ROM enfocada";
+    }
+
+    private void CheckVideoPlayback()
+    {
+        if (mediaPlayer is null || mediaPlayer.IsPlaying) return;
+        videoMonitorTimer.Stop();
+        if (mediaPlayer.State is VLCState.Ended or VLCState.Error) HandleVideoEnded();
+    }
+
+    private void DisposeVideoPlayer()
+    {
+        StopVideoPlayback();
+        videoPreviewTimer.Dispose();
+        videoMonitorTimer.Dispose();
+        currentVideoMedia?.Dispose();
+        currentVideoMedia = null;
+        mediaPlayer?.Dispose();
+        mediaPlayer = null;
+        libVlc?.Dispose();
+        libVlc = null;
+    }
+
+    private void StopVideoPlayback()
+    {
+        videoPreviewTimer.Stop();
+        videoMonitorTimer.Stop();
+        try { if (mediaPlayer?.IsPlaying == true) mediaPlayer.Stop(); } catch { }
+        currentVideoMedia?.Dispose();
+        currentVideoMedia = null;
+        videoView.Visible = false;
+        preview.Visible = true;
+        preview.BringToFront();
+    }
+
+    private static string? FindVideo(string rootPath, RomRow row)
+    {
+        string directory = Path.Combine(rootPath, "ES-DE", "downloaded_media", row.System, "videos");
+        if (!Directory.Exists(directory)) return null;
+        var stems = new List<string>();
+        if (!string.IsNullOrWhiteSpace(row.Path))
+        {
+            try { stems.Add(Directory.Exists(row.Path) ? new DirectoryInfo(row.Path).Name : Path.GetFileNameWithoutExtension(row.Path)); } catch { }
+        }
+        if (!string.IsNullOrWhiteSpace(row.GamelistPath)) stems.Add(Path.GetFileNameWithoutExtension(row.GamelistPath.Replace('/', Path.DirectorySeparatorChar)));
+        if (!string.IsNullOrWhiteSpace(row.RomName)) stems.Add(Path.GetFileNameWithoutExtension(row.RomName));
+        if (!string.IsNullOrWhiteSpace(row.GameName)) stems.Add(row.GameName);
+        foreach (string stem in stems.Distinct(StringComparer.OrdinalIgnoreCase))
+            foreach (string extension in VideoExtensions)
+            {
+                string direct = Path.Combine(directory, stem + extension);
+                if (File.Exists(direct)) return direct;
+            }
+
+        string[] files;
+        try
+        {
+            files = VideoFileIndex.GetOrAdd(directory, key => new Lazy<string[]>(() =>
+                Directory.EnumerateFiles(key, "*", SearchOption.AllDirectories)
+                    .Where(file => VideoExtensions.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase)
+)
+                    .ToArray())).Value;
+        }
+        catch { return null; }
+
+        foreach (string stem in stems)
+        {
+            string normalized = NormalizeMediaStem(stem);
+            var matches = files.Where(file => NormalizeMediaStem(Path.GetFileNameWithoutExtension(file)) == normalized).ToArray();
+            var rootMatches = matches.Where(file => Path.GetDirectoryName(file)?.Equals(directory, StringComparison.OrdinalIgnoreCase) == true).ToArray();
+            if (rootMatches.Length > 0) matches = rootMatches;
+            foreach (string extension in VideoExtensions)
+            {
+                var preferred = matches.Where(file => Path.GetExtension(file).Equals(extension, StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (preferred.Length > 0) { matches = preferred; break; }
+            }
+            if (matches.Length == 1) return matches[0];
+        }
+        return null;
+    }
+}
