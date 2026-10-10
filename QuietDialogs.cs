@@ -121,4 +121,37 @@ internal static class QuietMessage
         dialog.ClientSize = new Size(520, Math.Clamp(size.Height + 12 + 40 + 16, 100, 520));
         dialog.ShowDialog(owner);
     }
+
+    // Pide un texto corto (p. ej. un nombre). Devuelve null si se cancela o queda vacío.
+    public static string? Prompt(IWin32Window? owner, string title, string label, string initial = "", string okText = "Aceptar")
+    {
+        using var dialog = new Form
+        {
+            Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
+            ShowInTaskbar = false, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(460, 124),
+            Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont
+        };
+        var prompt = new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.BottomLeft };
+        var box = new TextBox { Text = initial, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 0, 4) };
+        var ok = new Button { Text = okText, DialogResult = DialogResult.OK, AutoSize = true, MinimumSize = new Size(100, 28) };
+        var cancel = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
+        buttons.Controls.Add(cancel);
+        buttons.Controls.Add(ok);
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(14, 8, 14, 6) };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.Controls.Add(prompt, 0, 0);
+        layout.Controls.Add(box, 0, 1);
+        layout.Controls.Add(buttons, 0, 2);
+        dialog.Controls.Add(layout);
+        dialog.AcceptButton = ok;
+        dialog.CancelButton = cancel;
+        dialog.Shown += (_, _) => { box.Focus(); box.SelectAll(); };
+        if (dialog.ShowDialog(owner) != DialogResult.OK) return null;
+        string text = box.Text.Trim();
+        return text.Length == 0 ? null : text;
+    }
 }

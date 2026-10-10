@@ -1,7 +1,7 @@
 namespace ESDERomCleaner;
 
-// Editor de supracategorías: nombre, descripción, géneros que incluye y palabras del nombre. Trabaja sobre una copia; el llamador
-// decide si guardar el resultado.
+// Editor de supracategorías: nombre, descripción, géneros que incluye y palabras del nombre. Trabaja sobre una copia; «Guardar cambios»
+// se la entrega al llamador sin cerrar la ventana.
 internal sealed class SupraEditorDialog : Form
 {
     private sealed record GenreItem(string Name, int Count)
@@ -13,7 +13,9 @@ internal sealed class SupraEditorDialog : Form
     private readonly List<GenreItem> genres;
     private readonly Func<List<SupraDefinition>> defaults;
     private readonly List<SupraDefinition> defs;
+    private readonly Action<List<SupraDefinition>> save;
     private bool loading;
+    private bool dirty;
 
     private readonly ListBox list = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly Button addButton = new() { Text = "Añadir", AutoSize = true, MinimumSize = new Size(90, 28) };
@@ -25,24 +27,22 @@ internal sealed class SupraEditorDialog : Form
     private readonly TextBox keywordsBox = new() { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true, Font = new Font("Consolas", 9F) };
     private readonly Label matchLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font(SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont, FontStyle.Bold), AutoEllipsis = true };
     private readonly Button resetButton = new() { Text = "Restaurar las de partida", AutoSize = true, MinimumSize = new Size(170, 30) };
-    private readonly Button okButton = new() { Text = "Aceptar", AutoSize = true, MinimumSize = new Size(100, 30), DialogResult = DialogResult.OK };
-    private readonly Button cancelButton = new() { Text = "Cancelar", AutoSize = true, MinimumSize = new Size(100, 30), DialogResult = DialogResult.Cancel };
+    private readonly Button saveButton = new() { Text = "Guardar cambios", AutoSize = true, MinimumSize = new Size(140, 30), Enabled = false };
+    private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(100, 30) };
+    private readonly GroupBox genresGroup = new() { Text = "Géneros que incluye", Dock = DockStyle.Fill };
     private readonly Panel rightPanel = new() { Dock = DockStyle.Fill };
 
-    public List<SupraDefinition> Result => defs;
-
-    public SupraEditorDialog(IReadOnlyList<RomRow> roms, IEnumerable<SupraDefinition> current, IReadOnlyDictionary<string, int> genreCounts, Func<List<SupraDefinition>> defaults)
+    public SupraEditorDialog(IReadOnlyList<RomRow> roms, IEnumerable<SupraDefinition> current, IReadOnlyDictionary<string, int> genreCounts, Func<List<SupraDefinition>> defaults, Action<List<SupraDefinition>> save)
     {
         this.roms = roms;
         this.defaults = defaults;
+        this.save = save;
         defs = current.Select(d => d.Clone()).ToList();
         genres = genreCounts.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase).Select(p => new GenreItem(p.Key, p.Value)).ToList();
 
-        Text = "Editar supracategorías";
+        Text = "Editar supracategorías de curado";
         Width = 1000; Height = 660; MinimumSize = new Size(860, 560);
         StartPosition = FormStartPosition.CenterParent;
-        CancelButton = cancelButton;
-        AcceptButton = null;
         BuildLayout();
 
         foreach (var def in defs) list.Items.Add(def.Title);
@@ -54,15 +54,17 @@ internal sealed class SupraEditorDialog : Form
         {
             if (loading || Current is not { } def) return;
             def.Title = titleBox.Text;
+            MarkDirty();
             loading = true;
             try { list.Items[list.SelectedIndex] = def.Title.Length > 0 ? def.Title : "(sin nombre)"; }
             finally { loading = false; }
         };
-        descriptionBox.TextChanged += (_, _) => { if (!loading && Current is { } def) def.Description = descriptionBox.Text; };
+        descriptionBox.TextChanged += (_, _) => { if (!loading && Current is { } def) { def.Description = descriptionBox.Text; MarkDirty(); } };
         keywordsBox.TextChanged += (_, _) =>
         {
             if (loading || Current is not { } def) return;
             def.Keywords = keywordsBox.Lines.Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+            MarkDirty();
             UpdateMatch();
         };
         genreFilter.TextChanged += (_, _) => RefillGenres();
@@ -72,16 +74,17 @@ internal sealed class SupraEditorDialog : Form
             string name = ((GenreItem)genresList.Items[e.Index]).Name;
             if (e.NewValue == CheckState.Checked) { if (!def.Genres.Contains(name, StringComparer.OrdinalIgnoreCase)) def.Genres.Add(name); }
             else def.Genres.RemoveAll(g => g.Equals(name, StringComparison.OrdinalIgnoreCase));
+            MarkDirty();
             // El recuento se actualiza cuando WinForms ya ha aplicado el cambio.
             BeginInvoke(UpdateMatch);
         };
-        okButton.Click += (_, e) =>
+        saveButton.Click += (_, _) => SaveChanges();
+        closeButton.Click += (_, _) => Close();
+        // Si quedan cambios sin guardar, se pide confirmación antes de cerrar.
+        FormClosing += (_, e) =>
         {
-            if (defs.Any(d => string.IsNullOrWhiteSpace(d.Title)))
-            {
-                QuietMessage.Show(this, "Editar supracategorías", "Todas las supracategorías necesitan un nombre.");
-                DialogResult = DialogResult.None;
-            }
+            if (dirty && !QuietMessage.Confirm(this, "Editar supracategorías de curado", "Hay cambios sin guardar. ¿Cerrar y descartarlos?", "Descartar"))
+                e.Cancel = true;
         };
         if (list.Items.Count > 0) list.SelectedIndex = 0; else LoadSelected();
     }
@@ -118,7 +121,6 @@ internal sealed class SupraEditorDialog : Form
         genresLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         genresLayout.Controls.Add(genreFilter, 0, 0);
         genresLayout.Controls.Add(genresList, 0, 1);
-        var genresGroup = new GroupBox { Text = "Géneros que incluye", Dock = DockStyle.Fill };
         genresGroup.Controls.Add(genresLayout);
 
         var hint = new Label
@@ -159,8 +161,8 @@ internal sealed class SupraEditorDialog : Form
         split.Controls.Add(rightPanel, 1, 0);
 
         var buttons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, Margin = Padding.Empty };
-        buttons.Controls.Add(okButton);
-        buttons.Controls.Add(cancelButton);
+        buttons.Controls.Add(saveButton);
+        buttons.Controls.Add(closeButton);
         buttons.Controls.Add(resetButton);
         var buttonBar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 1, Margin = Padding.Empty };
         buttonBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -212,6 +214,10 @@ internal sealed class SupraEditorDialog : Form
     // ROMs que cumpliría la supracategoría con lo que hay escrito ahora, y aviso si alguna línea no es una expresión válida.
     private void UpdateMatch()
     {
+        // El título del grupo indica cuántas categorías (géneros) tiene marcadas la supracategoría seleccionada.
+        genresGroup.Text = Current is { } selected
+            ? $"Géneros que incluye ({selected.Genres.Count} {(selected.Genres.Count == 1 ? "seleccionado" : "seleccionados")})"
+            : "Géneros que incluye";
         if (Current is not { } def) { matchLabel.Text = ""; return; }
         var rule = CurationRule.FromSupra(def);
         int count = roms.Count(r => rule.Matches(r, out _));
@@ -220,10 +226,30 @@ internal sealed class SupraEditorDialog : Form
                           (invalid.Count > 0 ? $"   ·   {invalid.Count} línea(s) no son expresiones válidas y se toman como texto" : "");
     }
 
+    private void MarkDirty()
+    {
+        dirty = true;
+        saveButton.Enabled = true;
+    }
+
+    // Entrega los cambios al llamador y deja la ventana abierta; «Guardar cambios» vuelve a desactivarse hasta la próxima edición.
+    private void SaveChanges()
+    {
+        if (defs.Any(d => string.IsNullOrWhiteSpace(d.Title)))
+        {
+            QuietMessage.Show(this, "Editar supracategorías de curado", "Todas las supracategorías necesitan un nombre.");
+            return;
+        }
+        save(defs.Select(d => d.Clone()).ToList());
+        dirty = false;
+        saveButton.Enabled = false;
+    }
+
     private void AddNew()
     {
         var def = new SupraDefinition { Id = "custom-" + Guid.NewGuid().ToString("N")[..8], Title = "Nueva supracategoría" };
         defs.Add(def);
+        MarkDirty();
         list.Items.Add(def.Title);
         list.SelectedIndex = list.Items.Count - 1;
         titleBox.Focus();
@@ -236,6 +262,7 @@ internal sealed class SupraEditorDialog : Form
         if (index < 0) return;
         if (!QuietMessage.Confirm(this, "Eliminar supracategoría", $"¿Eliminar «{defs[index].Title}»?", "Eliminar")) return;
         defs.RemoveAt(index);
+        MarkDirty();
         loading = true;
         try { list.Items.RemoveAt(index); }
         finally { loading = false; }
@@ -247,6 +274,7 @@ internal sealed class SupraEditorDialog : Form
         if (!QuietMessage.Confirm(this, "Restaurar supracategorías", "Se perderán tus cambios y se volverá a las supracategorías de partida. ¿Continuar?", "Restaurar")) return;
         defs.Clear();
         defs.AddRange(defaults());
+        MarkDirty();
         loading = true;
         try
         {

@@ -23,7 +23,14 @@ internal sealed class CurationDialog : Form
     // ROMs que el usuario ha excluido a mano de la selección (doble clic); se recuerdan entre sesiones.
     private readonly HashSet<string> excluded = new(StringComparer.OrdinalIgnoreCase);
     private Font? strikeFont;
-    private string? activeRuleId;
+    // Columnas de la lista de candidatas que el usuario ha ocultado (por defecto, el nombre del archivo).
+    private readonly HashSet<string> hiddenColumns = new();
+    private readonly ContextMenuStrip columnsMenu = new();
+    private readonly Button columnsButton = new() { Text = "Columnas ▾", AutoSize = true, Margin = new Padding(16, 1, 3, 0) };
+    private static readonly (string Name, string Title)[] ColumnChoices =
+        [("state", "Estado"), ("system", "Sistema"), ("rom", "Nombre del archivo"), ("game", "Nombre"), ("genre", "Género"), ("rules", "Regla(s)"), ("reason", "Motivo"), ("size", "Tamaño")];
+    private List<CurationProfile> profiles = new();
+    private string baseTitle = "";
     private bool updating;
 
     private readonly DataGridView supraGrid = new();
@@ -31,11 +38,13 @@ internal sealed class CurationDialog : Form
     private readonly TextBox genreFilter = new() { Dock = DockStyle.Fill, PlaceholderText = "Filtrar categorías…" };
     private readonly DataGridView candidatesGrid = new();
     private readonly DataGridView systemsGrid = new();
-    private readonly RadioButton showSelected = new() { Text = "Candidatas de la fila seleccionada", AutoSize = true, Checked = true, Margin = new Padding(3, 3, 14, 3) };
-    private readonly RadioButton showChecked = new() { Text = "De todo lo marcado (sin repetir)", AutoSize = true };
     private readonly Label summary = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font(SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont, FontStyle.Bold), AutoEllipsis = true };
     private readonly Label note = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
     private readonly Button editSupraButton = new() { Text = "Editar supracategorías…", AutoSize = true, MinimumSize = new Size(170, 28) };
+    private readonly ComboBox profileBox = new() { DropDownStyle = ComboBoxStyle.DropDown, Width = 300, AutoCompleteMode = AutoCompleteMode.SuggestAppend, AutoCompleteSource = AutoCompleteSource.ListItems, MaxDropDownItems = 14 };
+    private readonly Button loadProfileButton = new() { Text = "Cargar", AutoSize = true, MinimumSize = new Size(80, 28), Enabled = false };
+    private readonly Button saveProfileButton = new() { Text = "Guardar perfil…", AutoSize = true, MinimumSize = new Size(120, 28) };
+    private readonly Button deleteProfileButton = new() { Text = "Eliminar", AutoSize = true, MinimumSize = new Size(80, 28), Enabled = false };
     private readonly Button exportButton = new() { Text = "Exportar candidatas…", AutoSize = true, MinimumSize = new Size(150, 30) };
     private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(100, 30), DialogResult = DialogResult.Cancel };
 
@@ -45,7 +54,7 @@ internal sealed class CurationDialog : Form
     {
         roms = allRoms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0).ToList();
         this.trace = trace;
-        Text = "Reglas de curado — análisis";
+        Text = baseTitle = "Reglas de curado — análisis";
         Width = 1280; Height = 780; MinimumSize = new Size(1040, 620);
         StartPosition = FormStartPosition.CenterParent;
         CancelButton = closeButton;
@@ -64,6 +73,9 @@ internal sealed class CurationDialog : Form
             foreach (string key in state.Excluded) excluded.Add(key);
         }
 
+        if (state?.HiddenColumns is { } hiddenSaved) foreach (string column in hiddenSaved) hiddenColumns.Add(column);
+        else hiddenColumns.Add("rom");
+
         BuildLayout();
         FillSupra();
         FillGenres();
@@ -73,12 +85,19 @@ internal sealed class CurationDialog : Form
             var current = grid;
             current.CurrentCellDirtyStateChanged += (_, _) => { if (current.IsCurrentCellDirty) current.CommitEdit(DataGridViewDataErrorContexts.Commit); };
             current.CellValueChanged += (_, e) => OnCheckChanged(current, e.RowIndex, e.ColumnIndex);
-            current.SelectionChanged += (_, _) => OnRuleSelected(current);
+            // Doble clic en cualquier parte de la fila (menos en su casilla, que ya responde a cada clic) marca o desmarca la regla.
+            current.CellDoubleClick += (_, e) => ToggleRow(current, e.RowIndex, e.ColumnIndex);
         }
         genreFilter.TextChanged += (_, _) => FillGenres();
-        showSelected.CheckedChanged += (_, _) => { if (!updating) RefreshCandidates(); };
         exportButton.Click += (_, _) => Export();
         editSupraButton.Click += (_, _) => EditSupra();
+        saveProfileButton.Click += (_, _) => SaveProfile();
+        loadProfileButton.Click += (_, _) => LoadProfile();
+        deleteProfileButton.Click += (_, _) => DeleteProfile();
+        profileBox.TextChanged += (_, _) => UpdateProfileButtons();
+        profileBox.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter && loadProfileButton.Enabled) { e.SuppressKeyPress = true; LoadProfile(); } };
+        profiles = CurationProfileStore.Load();
+        RefillProfiles();
         candidatesGrid.CellDoubleClick += (_, e) => ToggleExcluded(e.RowIndex);
         FormClosed += (_, _) => strikeFont?.Dispose();
         Shown += (_, _) => RefreshAll();
@@ -122,14 +141,17 @@ internal sealed class CurationDialog : Form
         left.Controls.Add(genresGroup, 0, 1);
 
         Configure(candidatesGrid);
-        foreach (var (name, header, width) in new[] { ("state", "Estado", 66), ("system", "Sistema", 90), ("rom", "ROM", 220), ("game", "Nombre", 190), ("genre", "Género", 140), ("size", "Tamaño", 70), ("rules", "Regla(s)", 150), ("reason", "Motivo", 0) })
+        foreach (var (name, header, width) in new[] { ("state", "Estado", 66), ("system", "Sistema", 90), ("rom", "Nombre del archivo", 220), ("game", "Nombre", 190), ("genre", "Género", 140), ("rules", "Regla(s)", 150), ("reason", "Motivo", 0), ("size", "Tamaño", 80) })
             candidatesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = header, Width = width > 0 ? width : 100, ReadOnly = true });
         candidatesGrid.Columns["reason"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
         candidatesGrid.Columns["size"]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+        BuildColumnsMenu();
         var modeRow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
-        modeRow.Controls.Add(showSelected);
-        modeRow.Controls.Add(showChecked);
+        modeRow.Controls.Add(new Label { Text = "Candidatas de todo lo marcado (sin repetir).", AutoSize = true, Font = new Font(SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont, FontStyle.Bold), Margin = new Padding(3, 6, 3, 0) });
         modeRow.Controls.Add(new Label { Text = "Doble clic en una ROM para excluirla de la selección (o volver a incluirla).", AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(16, 6, 3, 0) });
+        modeRow.Controls.Add(columnsButton);
+        columnsButton.Click += (_, _) => columnsMenu.Show(columnsButton, new Point(0, columnsButton.Height));
+        candidatesGrid.ColumnHeaderMouseClick += (_, e) => { if (e.Button == MouseButtons.Right) columnsMenu.Show(Cursor.Position); };
         var candidatesLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
         candidatesLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         candidatesLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
@@ -161,14 +183,22 @@ internal sealed class CurationDialog : Form
         buttonBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         buttonBar.Controls.Add(buttons, 0, 0);
 
-        var intro = new Label
+        // Barra de perfiles: instantáneas con nombre de lo marcado, las exclusiones y las supracategorías, que se pueden buscar y recuperar.
+        var intro = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
+        intro.Controls.Add(new Label { Text = "Perfil:", AutoSize = true, Margin = new Padding(3, 8, 3, 0) });
+        profileBox.Margin = new Padding(3, 5, 6, 0);
+        intro.Controls.Add(profileBox);
+        intro.Controls.Add(loadProfileButton);
+        intro.Controls.Add(saveProfileButton);
+        intro.Controls.Add(deleteProfileButton);
+        intro.Controls.Add(new Label
         {
-            Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = SystemColors.GrayText,
-            Text = "Análisis de solo lectura sobre todos los sistemas: no se oculta, copia ni borra nada. Marca categorías y supracategorías para ver cuántas ROMs señalarían."
-        };
+            Text = "Análisis de solo lectura sobre todos los sistemas: no se oculta, copia ni borra nada.",
+            AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(18, 8, 3, 0)
+        });
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, Padding = new Padding(8, 4, 8, 4) };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
@@ -207,18 +237,102 @@ internal sealed class CurationDialog : Form
         foreach (var group in hits.GroupBy(h => h.Rule.Id)) counts[group.Key] = group.Count();
     }
 
+    // ---- Perfiles
+
+    private CurationProfile? FindProfile(string name) =>
+        profiles.FirstOrDefault(p => p.Name.Equals(name.Trim(), StringComparison.CurrentCultureIgnoreCase));
+
+    private void RefillProfiles()
+    {
+        string text = profileBox.Text;
+        profileBox.Items.Clear();
+        foreach (var profile in profiles.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)) profileBox.Items.Add(profile.Name);
+        profileBox.Text = text;
+        UpdateProfileButtons();
+    }
+
+    private void UpdateProfileButtons()
+    {
+        bool exists = FindProfile(profileBox.Text) is not null;
+        loadProfileButton.Enabled = exists;
+        deleteProfileButton.Enabled = exists;
+    }
+
+    private void SaveProfile()
+    {
+        string? name = QuietMessage.Prompt(this, "Guardar perfil de curado", "Nombre del perfil (si ya existe, se sustituye):", profileBox.Text.Trim(), "Guardar");
+        if (name is null) return;
+        var existing = FindProfile(name);
+        if (existing is not null && !QuietMessage.Confirm(this, "Guardar perfil de curado", $"Ya existe un perfil llamado «{existing.Name}». ¿Quieres sustituirlo?", "Sustituir")) return;
+
+        var profile = new CurationProfile
+        {
+            Name = existing?.Name ?? name, SavedAt = DateTime.Now,
+            Checked = checkedIds.OrderBy(i => i, StringComparer.Ordinal).ToList(),
+            Excluded = excluded.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList(),
+            Supra = supraDefs.Select(d => d.Clone()).ToList()
+        };
+        if (existing is not null) profiles.Remove(existing);
+        profiles.Add(profile);
+        if (!CurationProfileStore.Save(profiles)) { QuietMessage.Show(this, "Guardar perfil de curado", "No se pudo guardar el perfil en disco."); return; }
+        trace.Add("curation_profile_saved", $"name={profile.Name}; rules={profile.Checked.Count}; excluded={profile.Excluded.Count}");
+        profileBox.Text = profile.Name;
+        RefillProfiles();
+        Text = $"{baseTitle} — perfil: {profile.Name}";
+    }
+
+    private void LoadProfile()
+    {
+        var profile = FindProfile(profileBox.Text);
+        if (profile is null) { QuietMessage.Show(this, "Cargar perfil de curado", "No hay ningún perfil con ese nombre."); return; }
+        if (!QuietMessage.Confirm(this, "Cargar perfil de curado",
+                $"Se sustituirán las selecciones, las exclusiones y las supracategorías actuales por las del perfil «{profile.Name}» (guardado el {profile.SavedAt:dd/MM/yyyy HH:mm}).\r\n\r\n¿Continuar?", "Cargar")) return;
+
+        if (profile.Supra.Count > 0)
+        {
+            supraDefs = profile.Supra.Select(d => d.Clone()).ToList();
+            SupraStore.Save(supraDefs);
+        }
+        BuildRules();
+        checkedIds.Clear();
+        foreach (string id in profile.Checked.Where(ruleById.ContainsKey)) checkedIds.Add(id);
+        excluded.Clear();
+        foreach (string key in profile.Excluded) excluded.Add(key);
+        SaveState();
+        trace.Add("curation_profile_loaded", $"name={profile.Name}; rules={checkedIds.Count}; excluded={excluded.Count}");
+        FillSupra();
+        FillGenres();
+        RefreshAll();
+        Text = $"{baseTitle} — perfil: {profile.Name}";
+    }
+
+    private void DeleteProfile()
+    {
+        var profile = FindProfile(profileBox.Text);
+        if (profile is null) return;
+        if (!QuietMessage.Confirm(this, "Eliminar perfil de curado", $"¿Eliminar el perfil «{profile.Name}»?", "Eliminar")) return;
+        profiles.Remove(profile);
+        CurationProfileStore.Save(profiles);
+        trace.Add("curation_profile_deleted", $"name={profile.Name}");
+        profileBox.Text = "";
+        RefillProfiles();
+    }
+
     private void EditSupra()
     {
         var genreCounts = genreRules.ToDictionary(r => r.Title, r => counts.GetValueOrDefault(r.Id), StringComparer.OrdinalIgnoreCase);
-        using var editor = new SupraEditorDialog(roms, supraDefs, genreCounts, () => CurationRuleSet.Defaults(genreRules.Select(r => r.Title)));
-        if (editor.ShowDialog(this) != DialogResult.OK) return;
+        using var editor = new SupraEditorDialog(roms, supraDefs, genreCounts, () => CurationRuleSet.Defaults(genreRules.Select(r => r.Title)), OnSupraSaved);
+        editor.ShowDialog(this);
+    }
 
-        supraDefs = editor.Result;
+    // «Guardar cambios» del editor: se guardan, se recalculan las reglas y el análisis se actualiza detrás, con el editor aún abierto.
+    private void OnSupraSaved(List<SupraDefinition> definitions)
+    {
+        supraDefs = definitions;
         SupraStore.Save(supraDefs);
         BuildRules();
         // Lo marcado se conserva para las supracategorías que siguen existiendo; las nuevas empiezan sin marcar.
         checkedIds.RemoveWhere(id => !ruleById.ContainsKey(id));
-        if (activeRuleId is not null && !ruleById.ContainsKey(activeRuleId)) activeRuleId = null;
         SaveState();
         trace.Add("curation_supracategories_edited", $"count={supraDefs.Count}");
         FillSupra();
@@ -267,11 +381,38 @@ internal sealed class CurationDialog : Form
         RefreshAll();
     }
 
-    private void OnRuleSelected(DataGridView grid)
+    // Menú para elegir qué columnas de las candidatas se ven; se queda abierto mientras se marcan varias.
+    private void BuildColumnsMenu()
     {
-        if (updating || grid.CurrentRow?.Tag is not string id) return;
-        activeRuleId = id;
-        if (showSelected.Checked) RefreshCandidates();
+        foreach (var (name, title) in ColumnChoices)
+        {
+            var item = new ToolStripMenuItem(title) { CheckOnClick = true, Checked = !hiddenColumns.Contains(name), Tag = name };
+            item.CheckedChanged += (_, _) => OnColumnToggled(item);
+            columnsMenu.Items.Add(item);
+        }
+        columnsMenu.Closing += (_, e) => { if (e.CloseReason == ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true; };
+        ApplyColumnVisibility();
+    }
+
+    private void OnColumnToggled(ToolStripMenuItem item)
+    {
+        string name = (string)item.Tag!;
+        if (item.Checked) hiddenColumns.Remove(name); else hiddenColumns.Add(name);
+        // Siempre queda al menos una columna visible.
+        if (hiddenColumns.Count == ColumnChoices.Length) { item.Checked = true; return; }
+        ApplyColumnVisibility();
+        SaveState();
+    }
+
+    private void ApplyColumnVisibility()
+    {
+        foreach (var (name, _) in ColumnChoices) candidatesGrid.Columns[name]!.Visible = !hiddenColumns.Contains(name);
+    }
+
+    private void ToggleRow(DataGridView grid, int rowIndex, int columnIndex)
+    {
+        if (rowIndex < 0 || columnIndex == 0) return;
+        grid.Rows[rowIndex].Cells["use"].Value = grid.Rows[rowIndex].Cells["use"].Value is not true;
     }
 
     // Candidatas de todo lo marcado, una sola vez por ROM aunque cumpla más de una regla.
@@ -311,12 +452,7 @@ internal sealed class CurationDialog : Form
 
     private void RefreshCandidates()
     {
-        List<(RomRow Row, List<Hit> Hits)> rows;
-        if (showSelected.Checked)
-            rows = activeRuleId is null ? new() : hits.Where(h => h.Rule.Id == activeRuleId)
-                .Select(h => (h.Row, new List<Hit> { h }))
-                .OrderBy(p => p.Row.System, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Row.RomName, StringComparer.OrdinalIgnoreCase).ToList();
-        else rows = Union(includeExcluded: true);
+        var rows = Union(includeExcluded: true);
 
         // Al refrescar (p. ej. tras excluir una ROM) se conserva la posición de la lista.
         int first = candidatesGrid.FirstDisplayedScrollingRowIndex;
@@ -329,15 +465,17 @@ internal sealed class CurationDialog : Form
         {
             string key = KeyOf(row);
             bool isExcluded = excluded.Contains(key);
-            int index = candidatesGrid.Rows.Add(isExcluded ? "Excluida" : "", row.System, row.RomName, row.GameName, CurationRule.EffectiveGenre(row), ScreenScraperDialog.FormatBytes(row.Size),
-                string.Join(", ", rowHits.Select(h => h.Rule.Title)), string.Join(" · ", rowHits.Select(h => h.Reason).Distinct()));
+            int index = candidatesGrid.Rows.Add(isExcluded ? "Excluida" : "", row.System, row.RomName, row.GameName, CurationRule.EffectiveGenre(row),
+                string.Join(", ", rowHits.Select(h => h.Rule.Title)), string.Join(" · ", rowHits.Select(h => h.Reason).Distinct()), ScreenScraperDialog.FormatBytes(row.Size));
             var gridRow = candidatesGrid.Rows[index];
             gridRow.Tag = key;
             if (isExcluded) { gridRow.DefaultCellStyle.ForeColor = SystemColors.GrayText; gridRow.DefaultCellStyle.Font = strikeFont; }
             if (key == currentKey) currentIndex = index;
         }
         candidatesGrid.ResumeLayout();
-        if (currentIndex >= 0) candidatesGrid.CurrentCell = candidatesGrid.Rows[currentIndex].Cells["rom"];
+        // La celda actual debe estar en una columna visible (la del nombre del archivo puede estar oculta).
+        var firstVisible = candidatesGrid.Columns.GetFirstColumn(DataGridViewElementStates.Visible);
+        if (currentIndex >= 0 && firstVisible is not null) candidatesGrid.CurrentCell = candidatesGrid.Rows[currentIndex].Cells[firstVisible.Index];
         if (first >= 0 && first < candidatesGrid.Rows.Count) candidatesGrid.FirstDisplayedScrollingRowIndex = first;
     }
 
@@ -352,7 +490,7 @@ internal sealed class CurationDialog : Form
 
     // ---- Lo marcado se recuerda entre sesiones
 
-    private sealed record CurationState(List<string> Checked, List<string> Excluded);
+    private sealed record CurationState(List<string> Checked, List<string> Excluded, List<string>? HiddenColumns = null);
 
     // Admite también el formato anterior (solo la lista de reglas marcadas).
     private static CurationState? LoadState()
@@ -365,7 +503,7 @@ internal sealed class CurationDialog : Form
             if (document.RootElement.ValueKind == JsonValueKind.Array)
                 return new CurationState(JsonSerializer.Deserialize<List<string>>(json) ?? new(), new());
             var state = JsonSerializer.Deserialize<CurationState>(json);
-            return state is null ? null : new CurationState(state.Checked ?? new(), state.Excluded ?? new());
+            return state is null ? null : new CurationState(state.Checked ?? new(), state.Excluded ?? new(), state.HiddenColumns);
         }
         catch { return null; }
     }
@@ -377,7 +515,7 @@ internal sealed class CurationDialog : Form
         {
             Directory.CreateDirectory(Path.GetDirectoryName(StorePath)!);
             temp = StorePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            var state = new CurationState(checkedIds.OrderBy(i => i, StringComparer.Ordinal).ToList(), excluded.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList());
+            var state = new CurationState(checkedIds.OrderBy(i => i, StringComparer.Ordinal).ToList(), excluded.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList(), hiddenColumns.OrderBy(c => c, StringComparer.Ordinal).ToList());
             File.WriteAllText(temp, JsonSerializer.Serialize(state), new UTF8Encoding(false));
             File.Move(temp, StorePath, overwrite: true);
         }

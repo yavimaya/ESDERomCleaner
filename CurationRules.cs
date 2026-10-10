@@ -166,3 +166,40 @@ internal static class SupraStore
         finally { if (temp is not null && File.Exists(temp)) try { File.Delete(temp); } catch { } }
     }
 }
+
+// Perfil de curado: una instantánea con nombre de lo marcado, las ROMs excluidas a mano y las supracategorías vigentes.
+internal sealed class CurationProfile
+{
+    public string Name { get; set; } = "";
+    public DateTime SavedAt { get; set; }
+    public List<string> Checked { get; set; } = new();
+    public List<string> Excluded { get; set; } = new();
+    public List<SupraDefinition> Supra { get; set; } = new();
+}
+
+internal static class CurationProfileStore
+{
+    private static string StorePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "curation_profiles.json");
+
+    public static List<CurationProfile> Load()
+    {
+        try { return File.Exists(StorePath) ? JsonSerializer.Deserialize<List<CurationProfile>>(File.ReadAllText(StorePath)) ?? new() : new(); }
+        catch { return new(); }
+    }
+
+    // Devuelve false si no se pudo escribir, para que el llamador lo avise.
+    public static bool Save(IEnumerable<CurationProfile> profiles)
+    {
+        string? temp = null;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(StorePath)!);
+            temp = StorePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(profiles, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+            File.Move(temp, StorePath, overwrite: true);
+            return true;
+        }
+        catch { return false; }
+        finally { if (temp is not null && File.Exists(temp)) try { File.Delete(temp); } catch { } }
+    }
+}
