@@ -28,6 +28,7 @@ public sealed partial class RomCleanerForm : Form
     private readonly ToolStripMenuItem showAccessory = new("Mostrar sistemas accesorios") { CheckOnClick = true, Checked = false, ToolTipText = "Muestra también las carpetas que no son sistemas de juegos, como androidapps, emulators o desktop." };
     private readonly ToolStripMenuItem screenScraperCredentials = new("Credenciales de ScreenScraper…");
     private readonly ToolStripMenuItem screenScraperSignUp = new("Alta en ScreenScraper…");
+    private readonly ToolStripMenuItem curationRules = new("Reglas de curado (análisis)…");
     private readonly ToolStripMenuItem bulkMedia = new("Descarga masiva de medios…");
     private readonly System.Windows.Forms.Timer videoPreviewTimer = new() { Interval = 3000 };
     private readonly System.Windows.Forms.Timer videoMonitorTimer = new() { Interval = 250 };
@@ -246,6 +247,7 @@ public sealed partial class RomCleanerForm : Form
             else if (pendingVideoRow is not null) ScheduleVideoPreview(pendingVideoRow, pendingVideoVersion);
         };
         bulkMedia.Click += (_, _) => OpenBulkMediaDialog();
+        curationRules.Click += (_, _) => OpenCurationDialog();
         screenScraperCredentials.Click += (_, _) =>
         {
             if (ScreenScraperAccount.Edit(this, trace, ScreenScraperCredentialStore.Load()) is not null) status.Text = "Credenciales de ScreenScraper guardadas.";
