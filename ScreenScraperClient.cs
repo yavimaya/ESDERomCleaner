@@ -7,6 +7,9 @@ internal sealed class ScreenScraperClient
 {
     private const string BaseUrl = "https://api.screenscraper.fr/api2/";
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(90) };
+    // Los vídeos y manuales tardan minutos con la velocidad limitada de ScreenScraper: sin límite total, solo por inactividad.
+    private static readonly HttpClient MediaHttp = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(60);
     private readonly ScreenScraperCredentials credentials;
 
     public ScreenScraperClient(ScreenScraperCredentials credentials) { this.credentials = credentials; }
@@ -117,6 +120,76 @@ internal sealed class ScreenScraperClient
         return new SsLookupResult(games, MaskSecrets(pretty), quota);
     }
 
+    // Descarga un medio completo a 'target' (temporal + Move) y verifica el MD5 que publica ScreenScraper.
+    // Las cuentas gratuitas solo admiten un hilo: el llamador debe descargar de uno en uno.
+    public async Task DownloadMediaAsync(SsMedia media, string target, IProgress<long>? progress, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(media.Url)) throw new ScreenScraperException(0, "ScreenScraper no indica la dirección de descarga de este medio.");
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        string temp = target + "." + Guid.NewGuid().ToString("N") + ".part";
+        for (int attempt = 1; ; attempt++)
+        {
+            // Se cancela si pasan StallTimeout sin recibir datos; cada bloque recibido reinicia el plazo.
+            using var stall = CancellationTokenSource.CreateLinkedTokenSource(token);
+            stall.CancelAfter(StallTimeout);
+            try
+            {
+                using var response = await MediaHttp.GetAsync(media.Url, HttpCompletionOption.ResponseHeadersRead, stall.Token);
+                if ((int)response.StatusCode == 429 && attempt < 4)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5 * attempt), token);
+                    continue;
+                }
+                if (!response.IsSuccessStatusCode) throw new ScreenScraperException((int)response.StatusCode, ExplainStatus(response.StatusCode, ""));
+                string contentType = response.Content.Headers.ContentType?.MediaType ?? "";
+                if (contentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase) || contentType.Contains("json", StringComparison.OrdinalIgnoreCase))
+                {
+                    string body = (await response.Content.ReadAsStringAsync(stall.Token)).Trim();
+                    throw new ScreenScraperException(200, "ScreenScraper no devolvió el archivo: " + MaskSecrets(body.Length > 200 ? body[..200] : body));
+                }
+
+                string md5;
+                await using (var input = await response.Content.ReadAsStreamAsync(stall.Token))
+                await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.Asynchronous))
+                {
+                    using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.MD5);
+                    var buffer = new byte[1 << 16];
+                    long total = 0;
+                    int read;
+                    while ((read = await input.ReadAsync(buffer, stall.Token)) > 0)
+                    {
+                        stall.CancelAfter(StallTimeout);
+                        await output.WriteAsync(buffer.AsMemory(0, read), token);
+                        hash.AppendData(buffer, 0, read);
+                        total += read;
+                        progress?.Report(total);
+                    }
+                    md5 = Convert.ToHexString(hash.GetHashAndReset());
+                }
+                if (media.Md5.Length > 0 && !md5.Equals(media.Md5, StringComparison.OrdinalIgnoreCase))
+                    throw new ScreenScraperException(200, "El archivo recibido no coincide con el MD5 que indica ScreenScraper (descarga incompleta o dañada).");
+                File.Move(temp, target, overwrite: true);
+                return;
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                throw new ScreenScraperException(0, $"La descarga se quedó parada más de {StallTimeout.TotalSeconds:0} s.");
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new ScreenScraperException(0, "No se pudo descargar de ScreenScraper: " + MaskSecrets(ex.Message.Split('?')[0]));
+            }
+            catch (IOException ex) when (ex is not FileNotFoundException)
+            {
+                throw new ScreenScraperException(0, "Error de red o de disco durante la descarga: " + MaskSecrets(ex.Message.Split('?')[0]));
+            }
+            finally
+            {
+                try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+            }
+        }
+    }
+
     private string MaskSecrets(string text)
     {
         foreach (string secret in new[] { credentials.DevPassword, credentials.UserPassword })
@@ -154,7 +227,7 @@ internal sealed class ScreenScraperClient
             foreach (var m in medias.EnumerateArray())
             {
                 long.TryParse(Str(m, "size"), out long size);
-                game.Medias.Add(new SsMedia(Str(m, "type"), Str(m, "parent"), Str(m, "region"), Str(m, "format"), size, Str(m, "url")));
+                game.Medias.Add(new SsMedia(Str(m, "type"), Str(m, "parent"), Str(m, "region"), Str(m, "format"), size, Str(m, "md5"), Str(m, "url")));
             }
         }
         if (jeu.TryGetProperty("rom", out var rom) && rom.ValueKind == JsonValueKind.Object)

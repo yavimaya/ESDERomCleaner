@@ -13,7 +13,12 @@ internal sealed record SsSystem(int Id, string Name, string Retropie, string Rec
 
 internal sealed record SsText(string Key, string Text);
 
-internal sealed record SsMedia(string Type, string Parent, string Region, string Format, long Size, string Url);
+// Url contiene las credenciales en claro: nunca se muestra ni se escribe en trazas.
+internal sealed record SsMedia(string Type, string Parent, string Region, string Format, long Size, string Md5, string Url)
+{
+    public bool IsGameMedia => Parent.Length == 0 || Parent.Equals("jeu", StringComparison.OrdinalIgnoreCase);
+    public string Label => Region.Length > 0 ? $"{Type} ({Region})" : Type;
+}
 
 internal sealed class SsGame
 {
@@ -130,4 +135,32 @@ internal static class SsMediaInfo
     };
 
     public static bool IsImage(string format) => Kind(format) == "image";
+}
+
+// Copias completas de los medios de ScreenScraper para compararlos antes de elegir; se reutilizan entre consultas.
+internal static class SsMediaCache
+{
+    public static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "media_cache");
+
+    public static string PathFor(string gameId, SsMedia media)
+    {
+        string game = gameId.Length > 0 && gameId.All(char.IsAsciiDigit) ? gameId : "sin_id";
+        string region = media.Region.Length > 0 ? media.Region : "todas";
+        string hash = media.Md5.Length >= 12 ? media.Md5[..12].ToLowerInvariant() : "sinmd5";
+        string format = media.Format.Length > 0 ? media.Format : "bin";
+        return Path.Combine(Root, game, Safe($"{media.Type}_{region}_{hash}.{format}"));
+    }
+
+    // La descarga es atómica y verifica el MD5, así que basta con comprobar que existe con el tamaño esperado.
+    public static bool IsCached(string gameId, SsMedia media)
+    {
+        var info = new FileInfo(PathFor(gameId, media));
+        return info.Exists && (media.Size <= 0 || info.Length == media.Size);
+    }
+
+    private static string Safe(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+    }
 }

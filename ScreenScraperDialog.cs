@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using System.Text;
+using LibVLCSharp.Shared;
+using LibVLCSharp.WinForms;
 
 namespace ESDERomCleaner;
 
@@ -23,20 +26,44 @@ internal sealed class ScreenScraperDialog : Form
     private readonly Label mediaSummary = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
     private readonly TextBox rawJson = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false, Font = new Font("Consolas", 9F) };
 
+    // Vista previa de los medios descargados a la caché local.
+    private SsGame? currentGame;
+    private readonly Button downloadAllButton = new() { Text = "Descargar todos para comparar", AutoSize = true, Enabled = false };
+    private readonly PictureBox mediaPicture = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(32, 32, 32) };
+    private readonly VideoView mediaVideo = new() { Dock = DockStyle.Fill, BackColor = Color.Black, Visible = false };
+    private readonly Label mediaPlaceholder = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Gainsboro, BackColor = Color.FromArgb(32, 32, 32), Visible = false };
+    private readonly TextBox mediaInfo = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = SystemColors.Control, ScrollBars = ScrollBars.Vertical };
+    private readonly Button openMediaButton = new() { Text = "Abrir con la aplicación predeterminada", AutoSize = true, Enabled = false };
+    private readonly CheckBox videoSoundCheck = new() { Text = "Sonido del vídeo", AutoSize = true, Margin = new Padding(12, 6, 3, 0) };
+    private LibVLC? libVlc;
+    private MediaPlayer? mediaPlayer;
+    private Media? currentVideo;
+
     public ScreenScraperDialog(RomRow row, TraceLog trace)
     {
         this.row = row;
         this.trace = trace;
         credentials = ScreenScraperCredentialStore.Load();
         Text = $"ScreenScraper — {row.RomName}";
-        Width = 1100; Height = 720; MinimumSize = new Size(800, 520);
+        Width = 1280; Height = 780; MinimumSize = new Size(900, 560);
         StartPosition = FormStartPosition.CenterParent;
         BuildLayout();
         credentialsButton.Click += (_, _) => EditCredentials();
         searchButton.Click += async (_, _) => await SearchAsync();
         cancelButton.Click += (_, _) => cts?.Cancel();
+        downloadAllButton.Click += async (_, _) => await DownloadMediaAsync(AllMediaRows().Where(r => !IsCached(r)).ToList());
+        mediaGrid.SelectionChanged += (_, _) => ShowSelectedMedia();
+        mediaGrid.CellDoubleClick += async (_, e) =>
+        {
+            if (e.RowIndex < 0 || cancelButton.Enabled) return;
+            var gridRow = mediaGrid.Rows[e.RowIndex];
+            if (!IsCached(gridRow)) await DownloadMediaAsync([gridRow]);
+        };
+        openMediaButton.Click += (_, _) => OpenSelectedMedia();
+        videoSoundCheck.CheckedChanged += (_, _) => { if (mediaPlayer is not null) mediaPlayer.Volume = videoSoundCheck.Checked ? 100 : 0; };
         Load += async (_, _) => await LoadSystemsAsync(false);
         FormClosing += (_, _) => cts?.Cancel();
+        FormClosed += (_, _) => DisposeVideo();
     }
 
     private void BuildLayout()
@@ -61,16 +88,51 @@ internal sealed class ScreenScraperDialog : Form
 
         ConfigureGrid(mediaGrid);
         mediaGrid.AutoGenerateColumns = false;
-        foreach (var (header, width) in new[] { ("Tipo", 130), ("Descripción", 200), ("Región", 70), ("Formato", 70), ("Tamaño", 90), ("Carpeta equivalente en ES-DE", 190), ("Variante / padre", 120) })
-            mediaGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = header, Width = width, SortMode = DataGridViewColumnSortMode.Automatic });
+        foreach (var (name, header, width) in new[] { ("type", "Tipo", 120), ("desc", "Descripción", 170), ("region", "Región", 55), ("format", "Formato", 55), ("size", "Tamaño", 75), ("resolution", "Resolución", 80), ("state", "Estado", 110), ("folder", "Carpeta ES-DE", 100), ("parent", "Variante / padre", 90) })
+            mediaGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = header, Width = width, SortMode = DataGridViewColumnSortMode.Automatic });
         mediaGrid.Columns[^1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        mediaGrid.MultiSelect = false;
+
+        var mediaToolbar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        mediaToolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        mediaToolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        mediaToolbar.Controls.Add(mediaSummary, 0, 0);
+        mediaToolbar.Controls.Add(downloadAllButton, 1, 0);
+
+        var viewer = new Panel { Dock = DockStyle.Fill };
+        viewer.Controls.Add(mediaVideo);
+        viewer.Controls.Add(mediaPlaceholder);
+        viewer.Controls.Add(mediaPicture);
+        var viewerButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
+        viewerButtons.Controls.Add(openMediaButton);
+        viewerButtons.Controls.Add(videoSoundCheck);
+        var previewPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+        previewPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        previewPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        previewPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
+        previewPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        previewPanel.Controls.Add(viewer, 0, 0);
+        previewPanel.Controls.Add(mediaInfo, 0, 1);
+        previewPanel.Controls.Add(viewerButtons, 0, 2);
+
+        var mediaSplit = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, FixedPanel = FixedPanel.Panel2 };
+        mediaSplit.Panel1.Controls.Add(mediaGrid);
+        mediaSplit.Panel2.Controls.Add(previewPanel);
+        // La anchura del panel de vista previa se fija la primera vez que el control tiene tamaño real.
+        bool splitSized = false;
+        mediaSplit.SizeChanged += (_, _) =>
+        {
+            if (splitSized || mediaSplit.Width < 760) return;
+            splitSized = true;
+            mediaSplit.SplitterDistance = mediaSplit.Width - 440;
+        };
 
         var mediaPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
         mediaPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        mediaPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        mediaPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         mediaPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        mediaPanel.Controls.Add(mediaSummary, 0, 0);
-        mediaPanel.Controls.Add(mediaGrid, 0, 1);
+        mediaPanel.Controls.Add(mediaToolbar, 0, 0);
+        mediaPanel.Controls.Add(mediaSplit, 0, 1);
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
         var metaTab = new TabPage("Metadatos"); metaTab.Controls.Add(metadataGrid);
@@ -111,6 +173,7 @@ internal sealed class ScreenScraperDialog : Form
         credentialsButton.Enabled = !busy;
         systemCombo.Enabled = !busy;
         cancelButton.Enabled = busy;
+        downloadAllButton.Enabled = !busy && currentGame is not null && AllMediaRows().Any(r => !IsCached(r));
         if (!busy) progressBar.Value = 0;
     }
 
@@ -225,7 +288,9 @@ internal sealed class ScreenScraperDialog : Form
     {
         rawJson.Text = result.RawJson.Replace("\r\n", "\n").Replace("\n", "\r\n");
         metadataGrid.Rows.Clear();
+        currentGame = null;
         mediaGrid.Rows.Clear();
+        ClearPreview("");
         if (result.Games.Count == 0)
         {
             statusLabel.Text = "ScreenScraper respondió sin ningún juego asociado a esta ROM.";
@@ -254,11 +319,19 @@ internal sealed class ScreenScraperDialog : Form
         foreach (var s in game.Synopsis) Add($"Sinopsis ({s.Key})", s.Text);
         foreach (var p in game.RomProperties) Add("ROM · " + p.Key, p.Text);
 
-        foreach (var m in game.Medias.OrderBy(m => m.Type, StringComparer.OrdinalIgnoreCase).ThenBy(m => m.Region, StringComparer.OrdinalIgnoreCase))
-            mediaGrid.Rows.Add(m.Type, SsMediaInfo.Describe(m.Type), m.Region, m.Format, m.Size > 0 ? FormatBytes(m.Size) : "", SsMediaInfo.EsDeFolder(m.Type), m.Parent);
+        currentGame = game;
+        // Primero los medios del juego y al final los pictogramas de género, editor, etc.
+        foreach (var m in game.Medias.OrderBy(m => m.IsGameMedia ? 0 : 1).ThenBy(m => m.Type, StringComparer.OrdinalIgnoreCase).ThenBy(m => m.Region, StringComparer.OrdinalIgnoreCase))
+        {
+            int index = mediaGrid.Rows.Add(m.Type, SsMediaInfo.Describe(m.Type), m.Region, m.Format, m.Size > 0 ? FormatBytes(m.Size) : "", "", "", SsMediaInfo.EsDeFolder(m.Type), m.Parent);
+            var gridRow = mediaGrid.Rows[index];
+            gridRow.Tag = m;
+            if (IsCached(gridRow)) MarkDownloaded(gridRow, "En caché");
+            else gridRow.Cells["state"].Value = "Pendiente";
+        }
 
         // Los medios con parent distinto de "jeu" son pictogramas de género/editor/etc., no medios del juego.
-        var gameMedias = game.Medias.Where(m => m.Parent.Equals("jeu", StringComparison.OrdinalIgnoreCase) || m.Parent.Length == 0).ToList();
+        var gameMedias = game.Medias.Where(m => m.IsGameMedia).ToList();
         int images = gameMedias.Count(m => SsMediaInfo.Kind(m.Format) == "image");
         int videos = gameMedias.Count(m => SsMediaInfo.Kind(m.Format) == "video");
         int pdfs = gameMedias.Count(m => SsMediaInfo.Kind(m.Format) == "pdf");
@@ -266,6 +339,211 @@ internal sealed class ScreenScraperDialog : Form
         int extra = game.Medias.Count - gameMedias.Count;
         mediaSummary.Text = $"  {gameMedias.Count} medios del juego de {types} tipos: {images} imágenes, {videos} vídeos, {pdfs} manuales/PDF, {gameMedias.Count - images - videos - pdfs} otros." + (extra > 0 ? $" (+{extra} pictogramas de género, editor, etc.)" : "");
         statusLabel.Text = $"Encontrado: {game.BestName}  ·  hash de {hashes.Basis}  ·  {result.Quota}";
+        ShowSelectedMedia();
+    }
+
+    private IEnumerable<DataGridViewRow> AllMediaRows() => mediaGrid.Rows.Cast<DataGridViewRow>().Where(r => r.Tag is SsMedia);
+
+    private string CachePath(DataGridViewRow gridRow) => SsMediaCache.PathFor(currentGame?.Id ?? "", (SsMedia)gridRow.Tag!);
+
+    private bool IsCached(DataGridViewRow gridRow) => currentGame is not null && gridRow.Tag is SsMedia media && SsMediaCache.IsCached(currentGame.Id, media);
+
+    private void MarkDownloaded(DataGridViewRow gridRow, string state)
+    {
+        gridRow.Cells["state"].Value = state;
+        gridRow.Cells["state"].Style.ForeColor = Color.DarkGreen;
+        gridRow.Cells["resolution"].Value = ImageResolution(CachePath(gridRow), (SsMedia)gridRow.Tag!);
+    }
+
+    private static string ImageResolution(string path, SsMedia media)
+    {
+        if (!SsMediaInfo.IsImage(media.Format)) return "";
+        try
+        {
+            using var stream = File.OpenRead(path);
+            using var image = Image.FromStream(stream, false, false);
+            return $"{image.Width}×{image.Height}";
+        }
+        catch { return "?"; }
+    }
+
+    private async Task DownloadMediaAsync(IReadOnlyList<DataGridViewRow> rows)
+    {
+        if (currentGame is null || rows.Count == 0) return;
+        var game = currentGame;
+        long totalBytes = rows.Sum(r => ((SsMedia)r.Tag!).Size);
+        if (rows.Count > 1 && MessageBox.Show(this,
+                $"Se descargarán {rows.Count} medios ({FormatBytes(totalBytes)}) de uno en uno, que es lo que permite tu cuenta de ScreenScraper.\r\n\r\n" +
+                $"Se guardan en una caché local para compararlos; todavía no se copia nada a la colección.\r\n\r\n{SsMediaCache.Root}\r\n\r\n¿Continuar?",
+                "Descargar medios", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+
+        cts?.Dispose();
+        cts = new CancellationTokenSource();
+        var token = cts.Token;
+        SetBusy(true);
+        var client = new ScreenScraperClient(credentials);
+        int ok = 0, failed = 0;
+        long doneBytes = 0;
+        var clock = Stopwatch.StartNew();
+        string stopReason = "";
+        try
+        {
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var gridRow = rows[i];
+                var media = (SsMedia)gridRow.Tag!;
+                if (IsCached(gridRow)) { MarkDownloaded(gridRow, "En caché"); ok++; continue; }
+                gridRow.Cells["state"].Value = "Descargando…";
+                gridRow.Cells["state"].Style.ForeColor = SystemColors.ControlText;
+                long before = doneBytes;
+                int position = i + 1;
+                var progress = new Progress<long>(received =>
+                {
+                    double speed = (before + received) / Math.Max(clock.Elapsed.TotalSeconds, 0.5);
+                    statusLabel.Text = $"Descargando {position}/{rows.Count}: {media.Label} · {FormatBytes(received)}" +
+                        (media.Size > 0 ? $" de {FormatBytes(media.Size)}" : "") + $" · {FormatBytes((long)speed)}/s";
+                    progressBar.Value = totalBytes > 0 ? Math.Clamp((int)((before + received) * 100 / totalBytes), 0, 100) : 0;
+                });
+                try
+                {
+                    await client.DownloadMediaAsync(media, CachePath(gridRow), progress, token);
+                    MarkDownloaded(gridRow, "Descargado");
+                    ok++;
+                    if (gridRow.Selected) ShowSelectedMedia();
+                }
+                catch (ScreenScraperException ex)
+                {
+                    failed++;
+                    gridRow.Cells["state"].Value = "Error";
+                    gridRow.Cells["state"].Style.ForeColor = Color.Firebrick;
+                    gridRow.Cells["state"].ToolTipText = ex.Message;
+                    // Cuota, bloqueo o credenciales: no tiene sentido seguir pidiendo medios.
+                    if (ex.StatusCode is 401 or 403 or 423 or 426 or 429 or 430 or 431) { stopReason = ex.Message; break; }
+                }
+                doneBytes += media.Size;
+            }
+            statusLabel.Text = stopReason.Length > 0
+                ? $"Descarga detenida: {stopReason}"
+                : $"Descarga terminada: {ok} correctos, {failed} con error" + (failed > 0 ? " (pasa el ratón sobre «Error» para ver el motivo)." : ".");
+        }
+        catch (OperationCanceledException)
+        {
+            foreach (var gridRow in rows.Where(r => !IsCached(r))) gridRow.Cells["state"].Value = "Pendiente";
+            statusLabel.Text = $"Descarga cancelada: {ok} medios descargados.";
+        }
+        finally
+        {
+            trace.Add("screenscraper_media_preview", $"rom={row.RomName}; ss_game={game.Id}; requested={rows.Count}; ok={ok}; failed={failed}; seconds={clock.Elapsed.TotalSeconds:0}" + (stopReason.Length > 0 ? $"; stopped={stopReason}" : ""));
+            SetBusy(false);
+            ShowSelectedMedia();
+        }
+    }
+
+    private void ShowSelectedMedia()
+    {
+        var gridRow = mediaGrid.SelectedRows.Count == 1 ? mediaGrid.SelectedRows[0] : null;
+        if (gridRow?.Tag is not SsMedia media || currentGame is null) { ClearPreview(""); return; }
+
+        string path = CachePath(gridRow);
+        bool cached = IsCached(gridRow);
+        string kind = SsMediaInfo.Kind(media.Format);
+        string description = SsMediaInfo.Describe(media.Type);
+        string folder = SsMediaInfo.EsDeFolder(media.Type);
+        mediaInfo.Text =
+            $"Tipo: {media.Type}{(description.Length > 0 ? " — " + description : "")}\r\n" +
+            $"Región: {(media.Region.Length > 0 ? media.Region : "(todas)")}   ·   Formato: {media.Format}   ·   Tamaño: {(media.Size > 0 ? FormatBytes(media.Size) : "?")}\r\n" +
+            (cached && kind == "image" ? $"Resolución: {ImageResolution(path, media)}\r\n" : "") +
+            $"Carpeta en ES-DE: {(folder.Length > 0 ? folder : "(sin equivalencia)")}\r\n" +
+            $"Variante / padre: {media.Parent}\r\n" +
+            (media.Md5.Length > 0 ? $"MD5: {media.Md5.ToLowerInvariant()}{(cached ? " (verificado)" : "")}\r\n" : "") +
+            (cached ? $"Archivo en caché: {path}" : "");
+        openMediaButton.Enabled = cached;
+
+        if (!cached)
+        {
+            ClearPreview(cancelButton.Enabled ? "Aún no descargado." : "Aún no descargado.\r\nDoble clic en la fila para descargar solo este medio,\r\no «Descargar todos para comparar».", keepInfo: true);
+            return;
+        }
+        if (kind == "image")
+        {
+            StopVideo();
+            try
+            {
+                using var stream = File.OpenRead(path);
+                using var image = Image.FromStream(stream);
+                var old = mediaPicture.Image;
+                mediaPicture.Image = new Bitmap(image);
+                old?.Dispose();
+                mediaPicture.Visible = true;
+                mediaPlaceholder.Visible = false;
+            }
+            catch { ClearPreview("No se puede previsualizar esta imagen.\r\nPrueba con «Abrir con la aplicación predeterminada».", keepInfo: true); }
+        }
+        else if (kind == "video") PlayVideo(path);
+        else ClearPreview(kind == "pdf" ? "Manual en PDF.\r\nPulsa «Abrir con la aplicación predeterminada»." : "Sin vista previa para este formato.", keepInfo: true);
+    }
+
+    private void ClearPreview(string message, bool keepInfo = false)
+    {
+        StopVideo();
+        var old = mediaPicture.Image;
+        mediaPicture.Image = null;
+        old?.Dispose();
+        mediaPicture.Visible = message.Length == 0;
+        mediaPlaceholder.Text = message;
+        mediaPlaceholder.Visible = message.Length > 0;
+        if (!keepInfo) { mediaInfo.Text = ""; openMediaButton.Enabled = false; }
+    }
+
+    private void PlayVideo(string path)
+    {
+        StopVideo();
+        try
+        {
+            if (mediaPlayer is null)
+            {
+                Core.Initialize();
+                libVlc = new LibVLC("--no-video-title-show", "--no-osd");
+                mediaPlayer = new MediaPlayer(libVlc);
+                mediaVideo.MediaPlayer = mediaPlayer;
+            }
+            currentVideo = new Media(libVlc!, new Uri(Path.GetFullPath(path)));
+            currentVideo.AddOption(":input-repeat=65535");
+            mediaPlayer.Volume = videoSoundCheck.Checked ? 100 : 0;
+            mediaPicture.Visible = false;
+            mediaPlaceholder.Visible = false;
+            mediaVideo.Visible = true;
+            mediaVideo.BringToFront();
+            if (!mediaPlayer.Play(currentVideo)) throw new InvalidOperationException();
+        }
+        catch { ClearPreview("No se pudo reproducir el vídeo.\r\nPrueba con «Abrir con la aplicación predeterminada».", keepInfo: true); }
+    }
+
+    private void StopVideo()
+    {
+        try { if (mediaPlayer?.IsPlaying == true) mediaPlayer.Stop(); } catch { }
+        currentVideo?.Dispose();
+        currentVideo = null;
+        mediaVideo.Visible = false;
+    }
+
+    private void DisposeVideo()
+    {
+        StopVideo();
+        mediaPlayer?.Dispose();
+        mediaPlayer = null;
+        libVlc?.Dispose();
+        libVlc = null;
+        mediaPicture.Image?.Dispose();
+    }
+
+    private void OpenSelectedMedia()
+    {
+        if (mediaGrid.SelectedRows.Count != 1 || !IsCached(mediaGrid.SelectedRows[0])) return;
+        string path = CachePath(mediaGrid.SelectedRows[0]);
+        StopVideo();
+        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "No se pudo abrir el medio", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
     }
 
     private static string FormatBytes(long n)
