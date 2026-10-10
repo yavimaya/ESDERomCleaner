@@ -43,6 +43,9 @@ internal sealed class ScreenScraperCredentialsDialog : Form
         var ok = new Button { Text = "Guardar", DialogResult = DialogResult.OK, Location = new Point(300, 232), Size = new Size(80, 28) };
         var cancel = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, Location = new Point(386, 232), Size = new Size(80, 28) };
         ok.Click += (_, _) => Result = new ScreenScraperCredentials(devId.Text.Trim(), devPassword.Text, softName.Text.Trim(), userId.Text.Trim(), userPassword.Text);
+        var signUp = new Button { Text = "Alta en ScreenScraper", Location = new Point(12, 232), Size = new Size(160, 28) };
+        signUp.Click += (_, _) => ScreenScraperAccount.OpenSignUp(this);
+        Controls.Add(signUp);
         Controls.Add(ok); Controls.Add(cancel); Controls.Add(note); Controls.Add(grid);
         AcceptButton = ok; CancelButton = cancel;
     }

@@ -19,7 +19,6 @@ internal sealed class ScreenScraperDialog : Form
     private readonly ComboBox systemCombo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280, Visible = false };
     private readonly Label systemPrompt = new() { Text = "Sistema en ScreenScraper:", AutoSize = true, Margin = new Padding(3, 7, 3, 0), Visible = false };
     private readonly Label systemInfo = new() { Text = "Sistema: detectando…", AutoSize = true, Margin = new Padding(3, 7, 12, 0) };
-    private readonly Button credentialsButton = new() { Text = "Credenciales…", AutoSize = true };
     private readonly Button searchButton = new() { Text = "Refrescar consulta", AutoSize = true };
     private readonly Button cancelButton = new() { Text = "Cancelar", AutoSize = true, Enabled = false };
     private readonly Label statusLabel = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
@@ -55,7 +54,6 @@ internal sealed class ScreenScraperDialog : Form
         Width = 1280; Height = 780; MinimumSize = new Size(900, 560);
         StartPosition = FormStartPosition.CenterParent;
         BuildLayout();
-        credentialsButton.Click += (_, _) => EditCredentials();
         searchButton.Click += async (_, _) => await SearchAsync();
         cancelButton.Click += (_, _) => { cts?.Cancel(); selectionPanel?.CancelSave(); };
         downloadAllButton.Click += async (_, _) => await DownloadMediaAsync(AllMediaRows().Where(r => !IsCached(r)).ToList());
@@ -68,8 +66,10 @@ internal sealed class ScreenScraperDialog : Form
         };
         openMediaButton.Click += (_, _) => OpenSelectedMedia();
         videoSoundCheck.CheckedChanged += (_, _) => mediaPreview.Sound = videoSoundCheck.Checked;
-        Load += async (_, _) =>
+        Shown += async (_, _) =>
         {
+            // Sin credenciales se ofrece registrarlas (o darse de alta) antes de seguir.
+            credentials = ScreenScraperAccount.Ensure(this, trace, credentials);
             await LoadSystemsAsync(false);
             // La consulta se lanza sola al abrir; el botón «Refrescar consulta» la repite.
             if (!IsDisposed && credentials.HasDeveloper && systemCombo.SelectedItem is SsSystem) await SearchAsync(automatic: true);
@@ -97,7 +97,6 @@ internal sealed class ScreenScraperDialog : Form
         top.Controls.Add(systemCombo);
         top.Controls.Add(searchButton);
         top.Controls.Add(cancelButton);
-        top.Controls.Add(credentialsButton);
 
         var info = new Label
         {
@@ -193,42 +192,17 @@ internal sealed class ScreenScraperDialog : Form
     private void SetBusy(bool busy)
     {
         searchButton.Enabled = !busy;
-        credentialsButton.Enabled = !busy;
         systemCombo.Enabled = !busy;
         cancelButton.Enabled = busy;
         downloadAllButton.Enabled = !busy && currentGame is not null && AllMediaRows().Any(r => !IsCached(r));
         if (!busy) progressBar.Value = 0;
     }
 
-    private void EditCredentials()
-    {
-        using var dialog = new ScreenScraperCredentialsDialog(credentials);
-        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Result is null) return;
-        credentials = dialog.Result;
-        try
-        {
-            ScreenScraperCredentialStore.Save(credentials);
-            trace.Add("screenscraper_credentials_saved", $"user={(credentials.UserId.Length > 0 ? credentials.UserId : "(anónimo)")}");
-            statusLabel.Text = "Credenciales guardadas.";
-        }
-        catch (Exception ex)
-        {
-            statusLabel.Text = "No se pudieron guardar las credenciales: " + ex.Message;
-        }
-        _ = ReloadAfterCredentialsAsync();
-    }
-
-    private async Task ReloadAfterCredentialsAsync()
-    {
-        await LoadSystemsAsync(true);
-        if (!IsDisposed && currentGame is null && credentials.HasDeveloper && systemCombo.SelectedItem is SsSystem) await SearchAsync(automatic: true);
-    }
-
     private async Task LoadSystemsAsync(bool refresh)
     {
         if (!credentials.HasDeveloper)
         {
-            statusLabel.Text = "Configura tus credenciales de desarrollador (botón «Credenciales…») para empezar.";
+            statusLabel.Text = "Faltan las credenciales de ScreenScraper: se configuran en Opciones › Credenciales de ScreenScraper.";
             return;
         }
         try
@@ -266,8 +240,7 @@ internal sealed class ScreenScraperDialog : Form
 
     private async Task SearchAsync(bool automatic = false)
     {
-        // Sin credenciales se abre su ventana; al guardarlas, ReloadAfterCredentialsAsync lanza la consulta.
-        if (!credentials.HasDeveloper) { EditCredentials(); return; }
+        if (!credentials.HasDeveloper) { statusLabel.Text = "Faltan las credenciales de ScreenScraper: se configuran en Opciones › Credenciales de ScreenScraper."; return; }
         if (systemCombo.SelectedItem is not SsSystem system)
         {
             MessageBox.Show(this, "Elige primero el sistema de ScreenScraper.", "ScreenScraper", MessageBoxButtons.OK, MessageBoxIcon.Information);

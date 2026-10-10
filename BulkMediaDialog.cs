@@ -23,17 +23,16 @@ internal sealed class BulkMediaDialog : Form
     private readonly Button selectAllButton = new() { Text = "Seleccionar todos", AutoSize = true };
     private readonly Button selectNoneButton = new() { Text = "Deseleccionar todos", AutoSize = true };
     private readonly Dictionary<string, CheckBox> folderChecks = new();
-    private readonly CheckBox allMediaCheck = new() { Text = "Seleccionar / deseleccionar todos", AutoSize = true, Margin = new Padding(6, 3, 3, 8) };
+    private readonly CheckBox allMediaCheck = new() { Text = "Todos", AutoSize = true, Margin = new Padding(6, 3, 3, 3) };
     private readonly RadioButton normalizedRadio = new() { Text = "Vídeo normalizado (más ligero, mejor para Android)", AutoSize = true, Margin = new Padding(26, 0, 3, 0) };
     private readonly RadioButton originalRadio = new() { Text = "Vídeo original (el de mayor calidad y tamaño)", AutoSize = true, Margin = new Padding(26, 0, 3, 0) };
     private readonly CheckBox overwriteCheck = new() { Text = "Sobrescribir si en destino ya existe un archivo de esa ROM en la carpeta", AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 3, 3, 3) };
     private readonly CheckBox backupCheck = new() { Text = "Guardar copia de seguridad de lo sustituido", AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(26, 3, 3, 3) };
-    private readonly CheckBox searchNameCheck = new() { Text = "Si ScreenScraper no reconoce la ROM por su hash, buscarla por el nombre del juego dentro de su sistema (solo coincidencia exacta)", AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 3, 3, 3) };
+    private readonly CheckBox searchNameCheck = new() { Text = "Si no se reconoce por hash, buscar por el nombre exacto del juego en su sistema", AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 3, 3, 3) };
     private readonly RadioButton overwriteAlwaysRadio = new() { Text = "Siempre", AutoSize = true, Margin = new Padding(26, 0, 3, 0) };
     private readonly RadioButton overwriteSizeRadio = new() { Text = "Solo si el tamaño es distinto del actual", AutoSize = true, Margin = new Padding(26, 0, 3, 0) };
     // Los hilos los fija la membresía de ScreenScraper (se leen del servidor), no el usuario.
     private readonly Label threadsInfo = new() { AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 6, 3, 3) };
-    private readonly Button credentialsButton = new() { Text = "Credenciales…", AutoSize = true };
     private readonly Button startButton = new() { Text = "Iniciar descarga", AutoSize = true, MinimumSize = new Size(130, 30) };
     private readonly Button cancelButton = new() { Text = "Cancelar", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
     private readonly Button viewSummaryButton = new() { Text = "Ver resumen", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
@@ -56,7 +55,7 @@ internal sealed class BulkMediaDialog : Form
         this.defaultNormalizedVideo = defaultNormalizedVideo;
         credentials = ScreenScraperCredentialStore.Load();
         Text = "Descarga masiva de medios — ScreenScraper";
-        Width = 1220; Height = 860; MinimumSize = new Size(1000, 700);
+        Width = 1220; Height = 720; MinimumSize = new Size(1000, 640);
         StartPosition = FormStartPosition.CenterParent;
         CancelButton = closeButton;
         BuildLayout();
@@ -69,15 +68,27 @@ internal sealed class BulkMediaDialog : Form
         systemsGrid.CellValueChanged += (_, e) => { if (!updating && e.RowIndex >= 0 && e.ColumnIndex == 0) UpdateSystemsCount(); };
         folderChecks["videos"].CheckedChanged += (_, _) => UpdateDependentControls();
         overwriteCheck.CheckedChanged += (_, _) => UpdateDependentControls();
-        allMediaCheck.Click += (_, _) => { foreach (var check in folderChecks.Values) check.Checked = allMediaCheck.Checked; };
+        allMediaCheck.Click += (_, _) =>
+        {
+            // Sin esta protección cada casilla marcada volvía a recalcular la general y el resto se hacía una a una.
+            bool value = allMediaCheck.Checked;
+            bulkChanging = true;
+            try { foreach (var check in folderChecks.Values) check.Checked = value; }
+            finally { bulkChanging = false; }
+            SyncAllMediaCheck();
+        };
         foreach (var check in folderChecks.Values) check.CheckedChanged += (_, _) => SyncAllMediaCheck();
         SyncAllMediaCheck();
-        credentialsButton.Click += (_, _) => EditCredentials();
         startButton.Click += async (_, _) => await StartAsync();
         cancelButton.Click += (_, _) => { cts?.Cancel(); statusLabel.Text = "Cancelando…"; };
         exportButton.Click += (_, _) => ExportIssues();
         viewSummaryButton.Click += (_, _) => ShowResult();
-        Shown += async (_, _) => await LoadSsSystemsAsync();
+        Shown += async (_, _) =>
+        {
+            // Sin credenciales se ofrece registrarlas (o darse de alta) antes de seguir.
+            credentials = ScreenScraperAccount.Ensure(this, trace, credentials);
+            await LoadSsSystemsAsync();
+        };
         FormClosing += (_, e) =>
         {
             if (!running) return;
@@ -117,38 +128,62 @@ internal sealed class BulkMediaDialog : Form
         systemsGroup.Controls.Add(systemsLayout);
 
         // ---- Medios (las carpetas de ES-DE)
-        var mediaFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
-        mediaFlow.Controls.Add(allMediaCheck);
+        // Dos columnas de casillas: la casilla general y los metadatos ocupan toda la fila; el vídeo normalizado/original, una fila propia.
+        var mediaFlow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, AutoScroll = false };
+        mediaFlow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        mediaFlow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        int mediaRow = 0;
+        void AddWide(Control control)
+        {
+            mediaFlow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            mediaFlow.Controls.Add(control, 0, mediaRow++);
+            mediaFlow.SetColumnSpan(control, 2);
+        }
+        allMediaCheck.Anchor = AnchorStyles.None;
+        AddWide(allMediaCheck);
         // Los metadatos son un elemento más de la lista: si está marcado se escriben siempre, sin comparar tamaños.
         var metadataCheck = new CheckBox
         {
-            Text = "Metadatos (gamelist.xml): nombre, descripción, valoración, fecha, desarrollador, editor, género y jugadores",
-            AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 3, 3, 8)
+            Text = "Metadatos",
+            AutoSize = true, MaximumSize = new Size(560, 0), Margin = new Padding(6, 3, 3, 6)
         };
         folderChecks["metadata"] = metadataCheck;
-        mediaFlow.Controls.Add(metadataCheck);
+        AddWide(metadataCheck);
+        int slot = 0;
         foreach (var folder in EsDeMediaInstaller.Folders)
         {
             string text = folder.Folder == "miximages"
-                ? $"{folder.Description} ({folder.Folder}) — siempre Recalbox v2"
-                : $"{folder.Description} ({folder.Folder})";
+                ? $"{folder.Description} ({folder.Folder}) — Recalbox v2"
+                : folder.Folder == "videos" ? "Vídeo" : $"{folder.Description} ({folder.Folder})";
             var check = new CheckBox { Text = text, AutoSize = true, Margin = new Padding(6, 3, 3, 3) };
             folderChecks[folder.Folder] = check;
-            mediaFlow.Controls.Add(check);
-            if (folder.Folder == "videos")
-            {
-                mediaFlow.Controls.Add(normalizedRadio);
-                mediaFlow.Controls.Add(originalRadio);
-            }
+            if (folder.Folder == "videos") continue;   // el vídeo va en su propia fila, junto a sus dos opciones
+            if (slot == 0) mediaFlow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            mediaFlow.Controls.Add(check, slot, slot == 0 ? mediaRow : mediaRow - 1);
+            if (slot == 0) mediaRow++;
+            slot = 1 - slot;
         }
+        normalizedRadio.Text = "Normalizado (menor tamaño)";
+        originalRadio.Text = "Original";
+        normalizedRadio.Margin = new Padding(14, 0, 3, 0);
+        originalRadio.Margin = new Padding(10, 0, 3, 0);
+        var videoRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 4, 0, 0) };
+        videoRow.Controls.Add(folderChecks["videos"]);
+        videoRow.Controls.Add(normalizedRadio);
+        videoRow.Controls.Add(originalRadio);
+        AddWide(videoRow);
         var mediaGroup = new GroupBox { Text = "Medios a descargar (carpetas de ES-DE)", Dock = DockStyle.Fill };
         mediaGroup.Controls.Add(mediaFlow);
 
         // ---- Opciones
-        var optionsFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
+        var optionsFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = false };
         optionsFlow.Controls.Add(overwriteCheck);
-        optionsFlow.Controls.Add(overwriteAlwaysRadio);
-        optionsFlow.Controls.Add(overwriteSizeRadio);
+        var overwriteRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+        overwriteAlwaysRadio.Margin = new Padding(26, 0, 12, 0);
+        overwriteSizeRadio.Margin = new Padding(0);
+        overwriteRow.Controls.Add(overwriteAlwaysRadio);
+        overwriteRow.Controls.Add(overwriteSizeRadio);
+        optionsFlow.Controls.Add(overwriteRow);
         optionsFlow.Controls.Add(backupCheck);
         optionsFlow.Controls.Add(searchNameCheck);
         optionsFlow.Controls.Add(threadsInfo);
@@ -157,8 +192,8 @@ internal sealed class BulkMediaDialog : Form
 
         var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
         right.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        right.RowStyles.Add(new RowStyle(SizeType.Percent, 62));
-        right.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 250));
+        right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         right.Controls.Add(mediaGroup, 0, 0);
         right.Controls.Add(optionsGroup, 0, 1);
 
@@ -193,7 +228,6 @@ internal sealed class BulkMediaDialog : Form
         var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
         buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        buttons.Controls.Add(credentialsButton, 0, 0);
         buttons.Controls.Add(rightButtons, 1, 0);
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, Padding = new Padding(8, 6, 8, 4) };
@@ -202,7 +236,7 @@ internal sealed class BulkMediaDialog : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 170));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         layout.Controls.Add(content, 0, 0);
         layout.Controls.Add(summaryLabel, 0, 1);
@@ -237,7 +271,9 @@ internal sealed class BulkMediaDialog : Form
         !overwriteCheck.Checked ? BulkOverwrite.No : overwriteAlwaysRadio.Checked ? BulkOverwrite.Always : BulkOverwrite.IfSizeDiffers;
 
     // La casilla general refleja si todos los elementos (medios y metadatos) están marcados.
-    private void SyncAllMediaCheck() => allMediaCheck.Checked = folderChecks.Values.All(c => c.Checked);
+    private bool bulkChanging;
+
+    private void SyncAllMediaCheck() { if (!bulkChanging) allMediaCheck.Checked = folderChecks.Values.All(c => c.Checked); }
 
     private void UpdateDependentControls()
     {
@@ -268,7 +304,7 @@ internal sealed class BulkMediaDialog : Form
     {
         if (!credentials.HasDeveloper)
         {
-            statusLabel.Text = "Configura tus credenciales de ScreenScraper (botón «Credenciales…») para poder descargar.";
+            statusLabel.Text = "Faltan las credenciales de ScreenScraper: se configuran en Opciones › Credenciales de ScreenScraper.";
             return;
         }
         try
@@ -339,20 +375,6 @@ internal sealed class BulkMediaDialog : Form
         systemsCount.Text = rows.Count == 0 ? "Ninguno marcado" : $"{rows.Count} marcados · {romCount:N0} ROMs";
     }
 
-    private void EditCredentials()
-    {
-        using var dialog = new ScreenScraperCredentialsDialog(credentials);
-        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Result is null) return;
-        credentials = dialog.Result;
-        try
-        {
-            ScreenScraperCredentialStore.Save(credentials);
-            trace.Add("screenscraper_credentials_saved", $"user={(credentials.UserId.Length > 0 ? credentials.UserId : "(anónimo)")}");
-        }
-        catch (Exception ex) { statusLabel.Text = "No se pudieron guardar las credenciales: " + ex.Message; return; }
-        _ = LoadSsSystemsAsync();
-    }
-
     // ---- Ejecución
 
     private BulkMediaOptions BuildOptions(List<string> systems)
@@ -363,7 +385,7 @@ internal sealed class BulkMediaDialog : Form
 
     private async Task StartAsync()
     {
-        if (!credentials.HasDeveloper) { EditCredentials(); return; }
+        if (!credentials.HasDeveloper) { QuietMessage.Show(this, "Descarga masiva", "Faltan las credenciales de ScreenScraper: se configuran en Opciones › Credenciales de ScreenScraper de la ventana principal."); return; }
         if (ssSystems.Count == 0) { QuietMessage.Show(this, "Descarga masiva", "Todavía no se ha cargado la lista de sistemas de ScreenScraper. Espera un momento o revisa las credenciales."); return; }
         var systems = SelectedSystems();
         if (systems.Count == 0) { QuietMessage.Show(this, "Descarga masiva", "Marca al menos un sistema."); return; }
@@ -499,7 +521,7 @@ internal sealed class BulkMediaDialog : Form
         foreach (var check in folderChecks.Values) check.Enabled = !locked;
         allMediaCheck.Enabled = !locked;
         overwriteCheck.Enabled = searchNameCheck.Enabled = !locked;
-        startButton.Enabled = credentialsButton.Enabled = closeButton.Enabled = exportButton.Enabled = !locked;
+        startButton.Enabled = closeButton.Enabled = exportButton.Enabled = !locked;
         viewSummaryButton.Enabled = !locked && lastResult is not null;
         cancelButton.Enabled = running;
         if (!value) UpdateDependentControls();

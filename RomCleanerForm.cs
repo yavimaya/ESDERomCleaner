@@ -26,6 +26,8 @@ public sealed partial class RomCleanerForm : Form
     private readonly ToolStripMenuItem showVideos = new("Mostrar vídeos") { CheckOnClick = true, Checked = true };
     private readonly ToolStripMenuItem videoSound = new("Sonido en vídeos") { CheckOnClick = true, Checked = true };
     private readonly ToolStripMenuItem showAccessory = new("Mostrar sistemas accesorios") { CheckOnClick = true, Checked = false, ToolTipText = "Muestra también las carpetas que no son sistemas de juegos, como androidapps, emulators o desktop." };
+    private readonly ToolStripMenuItem screenScraperCredentials = new("Credenciales de ScreenScraper…");
+    private readonly ToolStripMenuItem screenScraperSignUp = new("Alta en ScreenScraper…");
     private readonly ToolStripMenuItem bulkMedia = new("Descarga masiva de medios (ScreenScraper)…");
     private readonly ToolStripMenuItem normalizedVideo = new("Vídeo normalizado") { CheckOnClick = true, Checked = true, ToolTipText = "Al elegir medios de ScreenScraper, proponer por defecto el vídeo normalizado (más ligero y con volumen igualado) en lugar del original." };
     private readonly System.Windows.Forms.Timer videoPreviewTimer = new() { Interval = 3000 };
@@ -248,6 +250,11 @@ public sealed partial class RomCleanerForm : Form
         };
         normalizedVideo.CheckedChanged += (_, _) => SaveOptions();
         bulkMedia.Click += (_, _) => OpenBulkMediaDialog();
+        screenScraperCredentials.Click += (_, _) =>
+        {
+            if (ScreenScraperAccount.Edit(this, trace, ScreenScraperCredentialStore.Load()) is not null) status.Text = "Credenciales de ScreenScraper guardadas.";
+        };
+        screenScraperSignUp.Click += (_, _) => ScreenScraperAccount.OpenSignUp(this);
         showAccessory.CheckedChanged += (_, _) =>
         {
             SaveOptions();
