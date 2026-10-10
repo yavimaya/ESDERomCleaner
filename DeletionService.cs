@@ -436,7 +436,7 @@ internal sealed class DeletionService
         return declaration + string.Concat(document.Root.Nodes().Select(node => node.ToString(SaveOptions.DisableFormatting)));
     }
 
-    private static bool HasReparsePointInPath(string path, string boundary)
+    internal static bool HasReparsePointInPath(string path, string boundary)
     {
         string current = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
         string root = Path.GetFullPath(boundary).TrimEnd(Path.DirectorySeparatorChar);

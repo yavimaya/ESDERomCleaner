@@ -25,6 +25,7 @@ public sealed partial class RomCleanerForm : Form
     private readonly VideoView videoView = new() { Dock = DockStyle.Fill, BackColor = SystemColors.Control, Visible = false };
     private readonly ToolStripMenuItem showVideos = new("Mostrar vídeos") { CheckOnClick = true, Checked = true };
     private readonly ToolStripMenuItem videoSound = new("Sonido en vídeos") { CheckOnClick = true, Checked = true };
+    private readonly ToolStripMenuItem normalizedVideo = new("Vídeo normalizado") { CheckOnClick = true, Checked = true, ToolTipText = "Al elegir medios de ScreenScraper, proponer por defecto el vídeo normalizado (más ligero y con volumen igualado) en lugar del original." };
     private readonly System.Windows.Forms.Timer videoPreviewTimer = new() { Interval = 3000 };
     private readonly System.Windows.Forms.Timer videoMonitorTimer = new() { Interval = 250 };
     private LibVLC? libVlc;
@@ -56,7 +57,7 @@ public sealed partial class RomCleanerForm : Form
     private readonly ToolStripMenuItem backupOption = new("Crear copias de seguridad de gamelist.xml") { CheckOnClick = true };
     private bool createGamelistBackups = false;
 
-    private sealed record AppOptions(bool CreateGamelistBackups, bool ShowVideos, bool VideoSound);
+    private sealed record AppOptions(bool CreateGamelistBackups, bool ShowVideos, bool VideoSound, bool NormalizedVideo);
     private static string OptionsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "settings.json");
 
     private static bool ReadBool(JsonElement element, string name, bool fallback) =>
@@ -66,7 +67,7 @@ public sealed partial class RomCleanerForm : Form
 
     private static AppOptions LoadOptions()
     {
-        var defaults = new AppOptions(false, true, true);
+        var defaults = new AppOptions(false, true, true, true);
         try
         {
             if (!File.Exists(OptionsPath)) return defaults;
@@ -75,7 +76,8 @@ public sealed partial class RomCleanerForm : Form
             return new AppOptions(
                 ReadBool(element, nameof(AppOptions.CreateGamelistBackups), defaults.CreateGamelistBackups),
                 ReadBool(element, nameof(AppOptions.ShowVideos), defaults.ShowVideos),
-                ReadBool(element, nameof(AppOptions.VideoSound), defaults.VideoSound));
+                ReadBool(element, nameof(AppOptions.VideoSound), defaults.VideoSound),
+                ReadBool(element, nameof(AppOptions.NormalizedVideo), defaults.NormalizedVideo));
         }
         catch { return defaults; }
     }
@@ -102,7 +104,7 @@ public sealed partial class RomCleanerForm : Form
     {
         try
         {
-            WriteOptions(new AppOptions(enabled, showVideos.Checked, videoSound.Checked));
+            WriteOptions(new AppOptions(enabled, showVideos.Checked, videoSound.Checked, normalizedVideo.Checked));
             createGamelistBackups = enabled;
             trace.Add("option_gamelist_backups_changed", enabled ? "enabled" : "disabled");
             status.Text = enabled ? "Copias de seguridad de gamelist.xml activadas." : "Copias de seguridad de gamelist.xml desactivadas.";
@@ -120,8 +122,8 @@ public sealed partial class RomCleanerForm : Form
     {
         try
         {
-            WriteOptions(new AppOptions(createGamelistBackups, showVideos.Checked, videoSound.Checked));
-            trace.Add("option_video_changed", $"show={showVideos.Checked}; sound={videoSound.Checked}");
+            WriteOptions(new AppOptions(createGamelistBackups, showVideos.Checked, videoSound.Checked, normalizedVideo.Checked));
+            trace.Add("option_video_changed", $"show={showVideos.Checked}; sound={videoSound.Checked}; normalized={normalizedVideo.Checked}");
         }
         catch (Exception ex)
         {
@@ -138,6 +140,7 @@ public sealed partial class RomCleanerForm : Form
         backupOption.Checked = createGamelistBackups;
         showVideos.Checked = options.ShowVideos;
         videoSound.Checked = options.VideoSound;
+        normalizedVideo.Checked = options.NormalizedVideo;
         KeyPreview = true;
         KeyDown += HandlePanelNavigation;
         FormClosing += (_, _) => StopVideoPlayback();
@@ -234,6 +237,7 @@ public sealed partial class RomCleanerForm : Form
             }
             else if (pendingVideoRow is not null) ScheduleVideoPreview(pendingVideoRow, pendingVideoVersion);
         };
+        normalizedVideo.CheckedChanged += (_, _) => SaveVideoOptions();
         videoSound.CheckedChanged += (_, _) => { if (mediaPlayer is not null) mediaPlayer.Volume = videoSound.Checked ? 100 : 0; SaveVideoOptions(); };
     }
 

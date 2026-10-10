@@ -54,6 +54,7 @@ internal sealed class ScreenScraperClient
         try
         {
             using var response = await Http.GetAsync(url, token);
+            ScreenScraperQuota.RecordCall(response.IsSuccessStatusCode);
             string body = await response.Content.ReadAsStringAsync(token);
             if (!response.IsSuccessStatusCode) throw new ScreenScraperException((int)response.StatusCode, ExplainStatus(response.StatusCode, body));
             return body;
@@ -112,12 +113,11 @@ internal sealed class ScreenScraperClient
         string pretty = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
         pretty = pretty.Replace(Uri.EscapeDataString(credentials.DevPassword), "***");
         if (!doc.RootElement.TryGetProperty("response", out var response)) throw new ScreenScraperException(200, "La respuesta no contiene 'response'.");
-        string quota = "";
         if (response.TryGetProperty("ssuser", out var user) && user.ValueKind == JsonValueKind.Object)
-            quota = $"Peticiones hoy: {Str(user, "requeststoday")}/{Str(user, "maxrequestsperday")} · Fallidas: {Str(user, "requestskotoday")}/{Str(user, "maxrequestskoperday")} · Hilos: {Str(user, "maxthreads")}";
+            ScreenScraperQuota.Sync(user);
         var games = new List<SsGame>();
         if (response.TryGetProperty("jeu", out var jeu) && jeu.ValueKind == JsonValueKind.Object) games.Add(ParseGame(jeu));
-        return new SsLookupResult(games, MaskSecrets(pretty), quota);
+        return new SsLookupResult(games, MaskSecrets(pretty));
     }
 
     // Descarga un medio completo a 'target' (temporal + Move) y verifica el MD5 que publica ScreenScraper.
@@ -135,6 +135,7 @@ internal sealed class ScreenScraperClient
             try
             {
                 using var response = await MediaHttp.GetAsync(media.Url, HttpCompletionOption.ResponseHeadersRead, stall.Token);
+                ScreenScraperQuota.RecordCall(response.IsSuccessStatusCode);
                 if ((int)response.StatusCode == 429 && attempt < 4)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5 * attempt), token);
@@ -166,7 +167,8 @@ internal sealed class ScreenScraperClient
                     }
                     md5 = Convert.ToHexString(hash.GetHashAndReset());
                 }
-                if (media.Md5.Length > 0 && !md5.Equals(media.Md5, StringComparison.OrdinalIgnoreCase))
+                // Los pictogramas y fondos de género/editor publican un MD5 que no corresponde al archivo servido; solo se exige en los del juego.
+                if (media.IsGameMedia && media.Md5.Length > 0 && !md5.Equals(media.Md5, StringComparison.OrdinalIgnoreCase))
                     throw new ScreenScraperException(200, "El archivo recibido no coincide con el MD5 que indica ScreenScraper (descarga incompleta o dañada).");
                 File.Move(temp, target, overwrite: true);
                 return;
@@ -234,6 +236,14 @@ internal sealed class ScreenScraperClient
             foreach (var p in rom.EnumerateObject())
                 if (p.Value.ValueKind is JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False)
                     game.RomProperties.Add(new SsText(p.Name, Str(rom, p.Name)));
+        if (jeu.TryGetProperty("rom", out var romRegions) && romRegions.ValueKind == JsonValueKind.Object)
+        {
+            if (romRegions.TryGetProperty("regions", out var regionGroup) && regionGroup.ValueKind == JsonValueKind.Object &&
+                regionGroup.TryGetProperty("regions_shortname", out var shortNames) && shortNames.ValueKind == JsonValueKind.Array)
+                game.RomRegions.AddRange(shortNames.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString() ?? "").Where(n => n.Length > 0));
+            if (game.RomRegions.Count == 0)
+                game.RomRegions.AddRange(Str(romRegions, "romregions").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+        }
         // La ROM trae regiones e idiomas como objetos anidados con listas (regions_en, langues_en...); se aplanan a texto.
         if (jeu.TryGetProperty("rom", out var romInfo) && romInfo.ValueKind == JsonValueKind.Object)
             foreach (var (group, key) in new[] { ("regions", "regions_en"), ("langues", "langues_en") })

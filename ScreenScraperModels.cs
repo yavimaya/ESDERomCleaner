@@ -37,6 +37,8 @@ internal sealed class SsGame
     public Dictionary<string, List<List<SsText>>> Groups { get; } = new();
     public List<SsMedia> Medias { get; } = new();
     public List<SsText> RomProperties { get; } = new();
+    // Regiones de la ROM identificada por hash (códigos cortos de ScreenScraper: us, eu, jp, wor...).
+    public List<string> RomRegions { get; } = new();
 
     public string BestName
     {
@@ -48,7 +50,28 @@ internal sealed class SsGame
     }
 }
 
-internal sealed record SsLookupResult(List<SsGame> Games, string RawJson, string Quota);
+internal static class SsRegions
+{
+    private static readonly Dictionary<string, string> FileNameTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["usa"] = "us", ["us"] = "us", ["europe"] = "eu", ["eu"] = "eu", ["japan"] = "jp", ["jp"] = "jp", ["world"] = "wor",
+        ["spain"] = "sp", ["france"] = "fr", ["germany"] = "de", ["uk"] = "uk", ["united kingdom"] = "uk", ["italy"] = "it",
+        ["brazil"] = "br", ["korea"] = "kr", ["australia"] = "au", ["netherlands"] = "nl", ["sweden"] = "se", ["china"] = "cn",
+        ["taiwan"] = "tw", ["asia"] = "asi", ["canada"] = "ca"
+    };
+
+    // Regiones deducidas de las etiquetas No-Intro del nombre, p. ej. "Juego (USA, Europe).zip" -> us, eu.
+    public static List<string> FromFileName(string fileName)
+    {
+        var result = new List<string>();
+        foreach (System.Text.RegularExpressions.Match tag in System.Text.RegularExpressions.Regex.Matches(fileName, @"\(([^)]*)\)"))
+            foreach (string part in tag.Groups[1].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+                if (FileNameTags.TryGetValue(part, out var code) && !result.Contains(code)) result.Add(code);
+        return result;
+    }
+}
+
+internal sealed record SsLookupResult(List<SsGame> Games, string RawJson);
 
 internal sealed class ScreenScraperException : Exception
 {
@@ -81,7 +104,7 @@ internal static class SsMediaInfo
         "ss" => "screenshots",
         "sstitle" => "titlescreens",
         "fanart" => "fanart",
-        "marquee" or "wheel" or "wheel-hd" or "screenmarquee" => "marquees",
+        "marquee" or "wheel" or "wheel-hd" or "wheel-carbon" or "wheel-steel" or "screenmarquee" or "screenmarqueesmall" => "marquees",
         "mixrbv1" or "mixrbv2" => "miximages",
         "support-2d" => "physicalmedia",
         "video" or "video-normalized" => "videos",
@@ -155,7 +178,7 @@ internal static class SsMediaCache
     public static bool IsCached(string gameId, SsMedia media)
     {
         var info = new FileInfo(PathFor(gameId, media));
-        return info.Exists && (media.Size <= 0 || info.Length == media.Size);
+        return info.Exists && (media.Size <= 0 || !media.IsGameMedia || info.Length == media.Size);
     }
 
     private static string Safe(string name)

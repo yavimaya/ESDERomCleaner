@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.Text;
-using LibVLCSharp.Shared;
-using LibVLCSharp.WinForms;
 
 namespace ESDERomCleaner;
 
@@ -10,14 +8,19 @@ internal sealed class ScreenScraperDialog : Form
     private static readonly string[] PreferredLanguages = ["es", "en", "fr", "de", "it", "pt"];
 
     private readonly RomRow row;
+    private readonly string root;
+    private readonly bool preferNormalizedVideo;
     private readonly TraceLog trace;
     private ScreenScraperCredentials credentials;
     private List<SsSystem> allSystems = new();
     private CancellationTokenSource? cts;
 
-    private readonly ComboBox systemCombo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
+    // El sistema se deduce de la carpeta; el desplegable solo aparece si no se puede deducir o si ScreenScraper no reconoce la ROM.
+    private readonly ComboBox systemCombo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280, Visible = false };
+    private readonly Label systemPrompt = new() { Text = "Sistema en ScreenScraper:", AutoSize = true, Margin = new Padding(3, 7, 3, 0), Visible = false };
+    private readonly Label systemInfo = new() { Text = "Sistema: detectando…", AutoSize = true, Margin = new Padding(3, 7, 12, 0) };
     private readonly Button credentialsButton = new() { Text = "Credenciales…", AutoSize = true };
-    private readonly Button searchButton = new() { Text = "Consultar ScreenScraper", AutoSize = true };
+    private readonly Button searchButton = new() { Text = "Refrescar consulta", AutoSize = true };
     private readonly Button cancelButton = new() { Text = "Cancelar", AutoSize = true, Enabled = false };
     private readonly Label statusLabel = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ProgressBar progressBar = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 100 };
@@ -29,19 +32,23 @@ internal sealed class ScreenScraperDialog : Form
     // Vista previa de los medios descargados a la caché local.
     private SsGame? currentGame;
     private readonly Button downloadAllButton = new() { Text = "Descargar todos para comparar", AutoSize = true, Enabled = false };
-    private readonly PictureBox mediaPicture = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(32, 32, 32) };
-    private readonly VideoView mediaVideo = new() { Dock = DockStyle.Fill, BackColor = Color.Black, Visible = false };
-    private readonly Label mediaPlaceholder = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Gainsboro, BackColor = Color.FromArgb(32, 32, 32), Visible = false };
+    private readonly TabControl tabs = new() { Dock = DockStyle.Fill };
+    private readonly TabPage mediaTab = new("Medios disponibles");
+    private readonly TabPage selectionTab = new("Elegir y guardar en la colección");
+    private readonly Label selectionPlaceholder = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, Text = "Consulta un juego en ScreenScraper para poder elegir qué medios guardar en la colección." };
+    private ScreenScraperMediaSelectionPanel? selectionPanel;
+    private readonly MediaPreviewPane mediaPreview = new() { Dock = DockStyle.Fill };
     private readonly TextBox mediaInfo = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = SystemColors.Control, ScrollBars = ScrollBars.Vertical };
     private readonly Button openMediaButton = new() { Text = "Abrir con la aplicación predeterminada", AutoSize = true, Enabled = false };
     private readonly CheckBox videoSoundCheck = new() { Text = "Sonido del vídeo", AutoSize = true, Margin = new Padding(12, 6, 3, 0) };
-    private LibVLC? libVlc;
-    private MediaPlayer? mediaPlayer;
-    private Media? currentVideo;
 
-    public ScreenScraperDialog(RomRow row, TraceLog trace)
+    public bool CollectionMediaChanged { get; private set; }
+
+    public ScreenScraperDialog(RomRow row, string root, TraceLog trace, bool preferNormalizedVideo)
     {
         this.row = row;
+        this.root = root;
+        this.preferNormalizedVideo = preferNormalizedVideo;
         this.trace = trace;
         credentials = ScreenScraperCredentialStore.Load();
         Text = $"ScreenScraper — {row.RomName}";
@@ -50,7 +57,7 @@ internal sealed class ScreenScraperDialog : Form
         BuildLayout();
         credentialsButton.Click += (_, _) => EditCredentials();
         searchButton.Click += async (_, _) => await SearchAsync();
-        cancelButton.Click += (_, _) => cts?.Cancel();
+        cancelButton.Click += (_, _) => { cts?.Cancel(); selectionPanel?.CancelSave(); };
         downloadAllButton.Click += async (_, _) => await DownloadMediaAsync(AllMediaRows().Where(r => !IsCached(r)).ToList());
         mediaGrid.SelectionChanged += (_, _) => ShowSelectedMedia();
         mediaGrid.CellDoubleClick += async (_, e) =>
@@ -60,16 +67,33 @@ internal sealed class ScreenScraperDialog : Form
             if (!IsCached(gridRow)) await DownloadMediaAsync([gridRow]);
         };
         openMediaButton.Click += (_, _) => OpenSelectedMedia();
-        videoSoundCheck.CheckedChanged += (_, _) => { if (mediaPlayer is not null) mediaPlayer.Volume = videoSoundCheck.Checked ? 100 : 0; };
-        Load += async (_, _) => await LoadSystemsAsync(false);
-        FormClosing += (_, _) => cts?.Cancel();
-        FormClosed += (_, _) => DisposeVideo();
+        videoSoundCheck.CheckedChanged += (_, _) => mediaPreview.Sound = videoSoundCheck.Checked;
+        Load += async (_, _) =>
+        {
+            await LoadSystemsAsync(false);
+            // La consulta se lanza sola al abrir; el botón «Refrescar consulta» la repite.
+            if (!IsDisposed && credentials.HasDeveloper && systemCombo.SelectedItem is SsSystem) await SearchAsync(automatic: true);
+        };
+        tabs.SelectedIndexChanged += (_, _) => OnTabChanged();
+        FormClosing += (_, e) =>
+        {
+            cts?.Cancel();
+            // Mientras se copian medios a la colección no se cierra: se cancela y se espera a que termine el elemento en curso.
+            if (selectionPanel?.IsSaving == true)
+            {
+                selectionPanel.CancelSave();
+                statusLabel.Text = "Terminando el guardado en curso; cierra de nuevo cuando acabe.";
+                e.Cancel = true;
+            }
+        };
+        FormClosed += (_, _) => mediaPreview.StopVideo();
     }
 
     private void BuildLayout()
     {
         var top = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Padding = new Padding(6, 6, 6, 2) };
-        top.Controls.Add(new Label { Text = "Sistema en ScreenScraper:", AutoSize = true, Margin = new Padding(3, 7, 3, 0) });
+        top.Controls.Add(systemInfo);
+        top.Controls.Add(systemPrompt);
         top.Controls.Add(systemCombo);
         top.Controls.Add(searchButton);
         top.Controls.Add(cancelButton);
@@ -100,9 +124,7 @@ internal sealed class ScreenScraperDialog : Form
         mediaToolbar.Controls.Add(downloadAllButton, 1, 0);
 
         var viewer = new Panel { Dock = DockStyle.Fill };
-        viewer.Controls.Add(mediaVideo);
-        viewer.Controls.Add(mediaPlaceholder);
-        viewer.Controls.Add(mediaPicture);
+        viewer.Controls.Add(mediaPreview);
         var viewerButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
         viewerButtons.Controls.Add(openMediaButton);
         viewerButtons.Controls.Add(videoSoundCheck);
@@ -134,11 +156,11 @@ internal sealed class ScreenScraperDialog : Form
         mediaPanel.Controls.Add(mediaToolbar, 0, 0);
         mediaPanel.Controls.Add(mediaSplit, 0, 1);
 
-        var tabs = new TabControl { Dock = DockStyle.Fill };
         var metaTab = new TabPage("Metadatos"); metaTab.Controls.Add(metadataGrid);
-        var mediaTab = new TabPage("Medios disponibles"); mediaTab.Controls.Add(mediaPanel);
+        mediaTab.Controls.Add(mediaPanel);
+        selectionTab.Controls.Add(selectionPlaceholder);
         var rawTab = new TabPage("Respuesta JSON"); rawTab.Controls.Add(rawJson);
-        tabs.TabPages.Add(metaTab); tabs.TabPages.Add(mediaTab); tabs.TabPages.Add(rawTab);
+        tabs.TabPages.Add(metaTab); tabs.TabPages.Add(mediaTab); tabs.TabPages.Add(selectionTab); tabs.TabPages.Add(rawTab);
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -153,6 +175,7 @@ internal sealed class ScreenScraperDialog : Form
         layout.Controls.Add(progressBar, 0, 3);
         layout.Controls.Add(statusLabel, 0, 4);
         Controls.Add(layout);
+        Controls.Add(new ScreenScraperQuotaStrip());
     }
 
     private static void ConfigureGrid(DataGridView grid)
@@ -192,7 +215,13 @@ internal sealed class ScreenScraperDialog : Form
         {
             statusLabel.Text = "No se pudieron guardar las credenciales: " + ex.Message;
         }
-        _ = LoadSystemsAsync(true);
+        _ = ReloadAfterCredentialsAsync();
+    }
+
+    private async Task ReloadAfterCredentialsAsync()
+    {
+        await LoadSystemsAsync(true);
+        if (!IsDisposed && currentGame is null && credentials.HasDeveloper && systemCombo.SelectedItem is SsSystem) await SearchAsync(automatic: true);
     }
 
     private async Task LoadSystemsAsync(bool refresh)
@@ -212,16 +241,27 @@ internal sealed class ScreenScraperDialog : Form
             foreach (var system in allSystems) systemCombo.Items.Add(system);
             systemCombo.EndUpdate();
             var match = FindSystem(row.System);
-            if (match is not null) systemCombo.SelectedItem = match;
-            statusLabel.Text = match is not null
-                ? $"Sistema detectado: {match.Name}. Pulsa «Consultar ScreenScraper»."
-                : $"No pude deducir el sistema a partir de «{row.System}»; elígelo en la lista.";
+            if (match is not null)
+            {
+                systemCombo.SelectedItem = match;
+                systemInfo.Text = $"Sistema: {match.Name} (#{match.Id}), deducido de la carpeta «{row.System}»";
+                statusLabel.Text = "Consultando ScreenScraper…";
+            }
+            else ShowSystemChooser($"No pude deducir el sistema de ScreenScraper a partir de la carpeta «{row.System}»; elígelo en la lista y pulsa «Refrescar consulta».");
         }
         catch (Exception ex)
         {
             statusLabel.Text = "No se pudo cargar la lista de sistemas: " + ex.Message;
         }
         finally { SetBusy(false); }
+    }
+
+    private void ShowSystemChooser(string message)
+    {
+        systemInfo.Visible = false;
+        systemPrompt.Visible = true;
+        systemCombo.Visible = true;
+        statusLabel.Text = message;
     }
 
     private SsSystem? FindSystem(string folder)
@@ -232,9 +272,10 @@ internal sealed class ScreenScraperDialog : Form
             ?? allSystems.FirstOrDefault(s => s.CommonNames.Any(n => n.Equals(key, StringComparison.OrdinalIgnoreCase)));
     }
 
-    private async Task SearchAsync()
+    private async Task SearchAsync(bool automatic = false)
     {
-        if (!credentials.HasDeveloper) { EditCredentials(); if (!credentials.HasDeveloper) return; }
+        // Sin credenciales se abre su ventana; al guardarlas, ReloadAfterCredentialsAsync lanza la consulta.
+        if (!credentials.HasDeveloper) { EditCredentials(); return; }
         if (systemCombo.SelectedItem is not SsSystem system)
         {
             MessageBox.Show(this, "Elige primero el sistema de ScreenScraper.", "ScreenScraper", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -242,7 +283,10 @@ internal sealed class ScreenScraperDialog : Form
         }
         if (!File.Exists(row.Path))
         {
-            MessageBox.Show(this, "Esta primera versión solo admite ROMs que sean un único archivo (no carpetas).", "ScreenScraper", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            const string folderMessage = "Esta primera versión solo admite ROMs que sean un único archivo (no carpetas).";
+            // Al abrir no se interrumpe con un cuadro de diálogo: basta con avisar en la barra de estado.
+            if (automatic) statusLabel.Text = folderMessage;
+            else MessageBox.Show(this, folderMessage, "ScreenScraper", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
@@ -275,6 +319,10 @@ internal sealed class ScreenScraperDialog : Form
         {
             trace.Add("screenscraper_error", $"rom={row.RomName}; status={ex.StatusCode}; {ex.Message}");
             statusLabel.Text = ex.Message;
+            // Sin coincidencia por hash, ScreenScraper busca por nombre dentro del sistema indicado: ahí sí importa elegir bien.
+            if (ex.StatusCode == 404)
+                ShowSystemChooser("ScreenScraper no reconoce esta ROM por su hash (hack, traducción, volcado raro…). Si la carpeta mezcla sistemas " +
+                    "(p. ej. MSX/MSX2, PC Engine/PC Engine CD), elige el sistema correcto y vuelve a consultar: buscará por nombre en él.");
         }
         catch (Exception ex)
         {
@@ -291,6 +339,7 @@ internal sealed class ScreenScraperDialog : Form
         currentGame = null;
         mediaGrid.Rows.Clear();
         ClearPreview("");
+        ResetSelectionTab();
         if (result.Games.Count == 0)
         {
             statusLabel.Text = "ScreenScraper respondió sin ningún juego asociado a esta ROM.";
@@ -320,6 +369,7 @@ internal sealed class ScreenScraperDialog : Form
         foreach (var p in game.RomProperties) Add("ROM · " + p.Key, p.Text);
 
         currentGame = game;
+        BuildSelectionTab(game);
         // Primero los medios del juego y al final los pictogramas de género, editor, etc.
         foreach (var m in game.Medias.OrderBy(m => m.IsGameMedia ? 0 : 1).ThenBy(m => m.Type, StringComparer.OrdinalIgnoreCase).ThenBy(m => m.Region, StringComparer.OrdinalIgnoreCase))
         {
@@ -338,7 +388,7 @@ internal sealed class ScreenScraperDialog : Form
         int types = gameMedias.Select(m => m.Type).Distinct(StringComparer.OrdinalIgnoreCase).Count();
         int extra = game.Medias.Count - gameMedias.Count;
         mediaSummary.Text = $"  {gameMedias.Count} medios del juego de {types} tipos: {images} imágenes, {videos} vídeos, {pdfs} manuales/PDF, {gameMedias.Count - images - videos - pdfs} otros." + (extra > 0 ? $" (+{extra} pictogramas de género, editor, etc.)" : "");
-        statusLabel.Text = $"Encontrado: {game.BestName}  ·  hash de {hashes.Basis}  ·  {result.Quota}";
+        statusLabel.Text = $"Encontrado: {game.BestName}  ·  hash de {hashes.Basis}";
         ShowSelectedMedia();
     }
 
@@ -352,7 +402,15 @@ internal sealed class ScreenScraperDialog : Form
     {
         gridRow.Cells["state"].Value = state;
         gridRow.Cells["state"].Style.ForeColor = Color.DarkGreen;
-        gridRow.Cells["resolution"].Value = ImageResolution(CachePath(gridRow), (SsMedia)gridRow.Tag!);
+        var media = (SsMedia)gridRow.Tag!;
+        gridRow.Cells["resolution"].Value = ImageResolution(CachePath(gridRow), media);
+        if (SsMediaInfo.Kind(media.Format) == "video") _ = FillVideoInfoAsync(gridRow, CachePath(gridRow));
+    }
+
+    private static async Task FillVideoInfoAsync(DataGridViewRow gridRow, string path)
+    {
+        string info = await VideoProbe.DescribeAsync(path);
+        if (gridRow.DataGridView is not null) gridRow.Cells["resolution"].Value = info;
     }
 
     private static string ImageResolution(string path, SsMedia media)
@@ -453,6 +511,7 @@ internal sealed class ScreenScraperDialog : Form
             $"Tipo: {media.Type}{(description.Length > 0 ? " — " + description : "")}\r\n" +
             $"Región: {(media.Region.Length > 0 ? media.Region : "(todas)")}   ·   Formato: {media.Format}   ·   Tamaño: {(media.Size > 0 ? FormatBytes(media.Size) : "?")}\r\n" +
             (cached && kind == "image" ? $"Resolución: {ImageResolution(path, media)}\r\n" : "") +
+            (cached && kind == "video" ? VideoInfoPending + "\r\n" : "") +
             $"Carpeta en ES-DE: {(folder.Length > 0 ? folder : "(sin equivalencia)")}\r\n" +
             $"Variante / padre: {media.Parent}\r\n" +
             (media.Md5.Length > 0 ? $"MD5: {media.Md5.ToLowerInvariant()}{(cached ? " (verificado)" : "")}\r\n" : "") +
@@ -464,89 +523,87 @@ internal sealed class ScreenScraperDialog : Form
             ClearPreview(cancelButton.Enabled ? "Aún no descargado." : "Aún no descargado.\r\nDoble clic en la fila para descargar solo este medio,\r\no «Descargar todos para comparar».", keepInfo: true);
             return;
         }
-        if (kind == "image")
-        {
-            StopVideo();
-            try
-            {
-                using var stream = File.OpenRead(path);
-                using var image = Image.FromStream(stream);
-                var old = mediaPicture.Image;
-                mediaPicture.Image = new Bitmap(image);
-                old?.Dispose();
-                mediaPicture.Visible = true;
-                mediaPlaceholder.Visible = false;
-            }
-            catch { ClearPreview("No se puede previsualizar esta imagen.\r\nPrueba con «Abrir con la aplicación predeterminada».", keepInfo: true); }
-        }
-        else if (kind == "video") PlayVideo(path);
-        else ClearPreview(kind == "pdf" ? "Manual en PDF.\r\nPulsa «Abrir con la aplicación predeterminada»." : "Sin vista previa para este formato.", keepInfo: true);
+        mediaPreview.ShowFile(path);
+        if (kind == "video") _ = ShowVideoInfoAsync(gridRow, path);
+    }
+
+    private const string VideoInfoPending = "Vídeo: leyendo resolución y duración…";
+
+    private async Task ShowVideoInfoAsync(DataGridViewRow gridRow, string path)
+    {
+        string info = await VideoProbe.DescribeAsync(path);
+        // Solo si el usuario sigue en la misma fila.
+        if (mediaGrid.SelectedRows.Count != 1 || mediaGrid.SelectedRows[0] != gridRow) return;
+        mediaInfo.Text = mediaInfo.Text.Replace(VideoInfoPending, "Vídeo: " + (info.Length > 0 ? info : "no se pudo leer"));
     }
 
     private void ClearPreview(string message, bool keepInfo = false)
     {
-        StopVideo();
-        var old = mediaPicture.Image;
-        mediaPicture.Image = null;
-        old?.Dispose();
-        mediaPicture.Visible = message.Length == 0;
-        mediaPlaceholder.Text = message;
-        mediaPlaceholder.Visible = message.Length > 0;
+        mediaPreview.ShowMessage(message);
         if (!keepInfo) { mediaInfo.Text = ""; openMediaButton.Enabled = false; }
     }
 
-    private void PlayVideo(string path)
+    private void ResetSelectionTab()
     {
-        StopVideo();
+        if (selectionPanel is not null)
+        {
+            selectionTab.Controls.Remove(selectionPanel);
+            selectionPanel.Dispose();
+            selectionPanel = null;
+        }
+        selectionTab.Controls.Add(selectionPlaceholder);
+    }
+
+    private void BuildSelectionTab(SsGame game)
+    {
+        selectionTab.Controls.Remove(selectionPlaceholder);
         try
         {
-            if (mediaPlayer is null)
+            var panel = new ScreenScraperMediaSelectionPanel(game, row, root, () => credentials, trace, preferNormalizedVideo);
+            panel.StatusChanged += text => statusLabel.Text = text;
+            panel.ProgressChanged += percent => progressBar.Value = Math.Clamp(percent, 0, 100);
+            panel.BusyChanged += SetBusy;
+            panel.SaveFinished += () =>
             {
-                Core.Initialize();
-                libVlc = new LibVLC("--no-video-title-show", "--no-osd");
-                mediaPlayer = new MediaPlayer(libVlc);
-                mediaVideo.MediaPlayer = mediaPlayer;
-            }
-            currentVideo = new Media(libVlc!, new Uri(Path.GetFullPath(path)));
-            currentVideo.AddOption(":input-repeat=65535");
-            mediaPlayer.Volume = videoSoundCheck.Checked ? 100 : 0;
-            mediaPicture.Visible = false;
-            mediaPlaceholder.Visible = false;
-            mediaVideo.Visible = true;
-            mediaVideo.BringToFront();
-            if (!mediaPlayer.Play(currentVideo)) throw new InvalidOperationException();
+                CollectionMediaChanged |= panel.CollectionChanged;
+                // El guardado puede haber descargado a la caché medios que aquí figuraban como pendientes.
+                RefreshCacheStates();
+            };
+            selectionPanel = panel;
+            selectionTab.Controls.Add(panel);
         }
-        catch { ClearPreview("No se pudo reproducir el vídeo.\r\nPrueba con «Abrir con la aplicación predeterminada».", keepInfo: true); }
+        catch (Exception ex)
+        {
+            selectionPlaceholder.Text = "No se pudo preparar la selección de medios: " + ex.Message;
+            selectionTab.Controls.Add(selectionPlaceholder);
+        }
     }
 
-    private void StopVideo()
+    private void RefreshCacheStates()
     {
-        try { if (mediaPlayer?.IsPlaying == true) mediaPlayer.Stop(); } catch { }
-        currentVideo?.Dispose();
-        currentVideo = null;
-        mediaVideo.Visible = false;
+        foreach (var gridRow in AllMediaRows().Where(IsCached).Where(r => r.Cells["state"].Value as string == "Pendiente"))
+            MarkDownloaded(gridRow, "Descargado");
     }
 
-    private void DisposeVideo()
+    // Al cambiar de pestaña se paran los vídeos de la que se abandona y se retoma la vista previa de la que se muestra.
+    private void OnTabChanged()
     {
-        StopVideo();
-        mediaPlayer?.Dispose();
-        mediaPlayer = null;
-        libVlc?.Dispose();
-        libVlc = null;
-        mediaPicture.Image?.Dispose();
+        if (tabs.SelectedTab != mediaTab) mediaPreview.StopVideo();
+        if (tabs.SelectedTab != selectionTab) selectionPanel?.Deactivate();
+        if (tabs.SelectedTab == mediaTab) { RefreshCacheStates(); ShowSelectedMedia(); }
+        if (tabs.SelectedTab == selectionTab) selectionPanel?.Activate();
     }
 
     private void OpenSelectedMedia()
     {
         if (mediaGrid.SelectedRows.Count != 1 || !IsCached(mediaGrid.SelectedRows[0])) return;
         string path = CachePath(mediaGrid.SelectedRows[0]);
-        StopVideo();
+        mediaPreview.StopVideo();
         try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "No se pudo abrir el medio", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
     }
 
-    private static string FormatBytes(long n)
+    internal static string FormatBytes(long n)
     {
         string[] units = ["B", "KB", "MB", "GB"];
         double x = n; int i = 0;
