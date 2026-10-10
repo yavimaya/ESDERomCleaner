@@ -83,6 +83,8 @@ La aplicación recuerda la última carpeta raíz que analizó con éxito.
 
 ES-DE es también un frontend para **Android**, donde las colecciones suelen vivir en una **tarjeta SD**. Por eso la aplicación incluye el botón **Clonar** (junto a la ruta raíz), que copia **toda la estructura de ES-DE** (`Roms`, `ES-DE\gamelists` y `ES-DE\downloaded_media`) a otra carpeta o a una unidad, por ejemplo la SD.
 
+![Clonar a una unidad externa](docs/img/clonar-a-sd.png)
+
 - El flujo pensado: depuras la colección (curado, medios con vídeo normalizado, que ocupan menos) y luego la clonas a la SD ya con el tamaño final.
 - Usa `robocopy /MIR` (con tolerancia de marcas de tiempo para tarjetas FAT32/exFAT), así que las siguientes veces solo copia lo que ha cambiado.
 - **El destino queda como un espejo exacto del origen: lo que haya en el destino y no esté en el origen se elimina.** Elige una carpeta de destino vacía o dedicada a la colección. La aplicación te pide confirmación antes de empezar.

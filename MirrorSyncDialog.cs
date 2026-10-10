@@ -280,6 +280,15 @@ internal sealed class MirrorSyncDialog : Form
             RedirectStandardError = true,
             CreateNoWindow = true
         };
+        // Robocopy escribe en la página de códigos OEM de la consola (850 en español), no en UTF-8: sin esto «sábado» sale como «s bado».
+        try
+        {
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            var oem = System.Text.Encoding.GetEncoding(System.Globalization.CultureInfo.CurrentCulture.TextInfo.OEMCodePage);
+            start.StandardOutputEncoding = oem;
+            start.StandardErrorEncoding = oem;
+        }
+        catch (ArgumentException) { /* se usa la codificación predeterminada */ }
         start.ArgumentList.Add(sourcePath);
         start.ArgumentList.Add(destination);
         foreach (string argument in new[] { "/MIR", "/R:1", "/W:1", "/XJ", "/FFT", "/COPY:DAT", "/DCOPY:DAT", "/NFL", "/NDL", "/NJH", "/BYTES" })
