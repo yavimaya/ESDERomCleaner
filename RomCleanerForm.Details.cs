@@ -104,8 +104,7 @@ public sealed partial class RomCleanerForm : Form
         }
 
         RomRow row = item.Row;
-        description.Text = $"{row.RomName}{Environment.NewLine}{Environment.NewLine}" +
-            (string.IsNullOrWhiteSpace(row.Description) ? "Esta ROM no tiene una descripción en su gamelist.xml." : row.Description);
+        description.Text = string.IsNullOrWhiteSpace(row.Description) ? "Esta ROM no tiene una descripción en su gamelist.xml." : row.Description;
         details.Text = $"ROM: {row.RomName}\r\nSistema: {row.System}\r\nEstado: {row.Status}\r\nCategoría: {Genre(row)}\r\nTamaño: {FormatSize(row.Size)}\r\nRuta: {row.Path}\r\nGamelist: {row.Gamelist}\r\nPath XML: {row.GamelistPath}\r\n\r\nNombre: {row.GameName}\r\nGénero: {row.Genre}";
         UpdateDataPanel();
 
@@ -171,6 +170,8 @@ public sealed partial class RomCleanerForm : Form
         string genre = (categories.SelectedItem as CategoryItem)?.Genre ?? "—";
         var rows = current.Where(r => Genre(r).Equals(genre, StringComparison.OrdinalIgnoreCase)).ToArray();
         int selectedCount = rows.Count(r => r.Path.Length > 0 && selected.Contains(r.Path));
-        details.Text = $"CATEGORÍA: {genre}\r\nROMs: {rows.Length:N0}\r\nESPACIO: {FormatSize(rows.Sum(r => r.Size))}\r\n\r\nSeleccionadas en esta categoría: {selectedCount:N0}\r\n\r\nEl foco de la categoría determina las ROMs mostradas a la derecha.";
+        // Con una ROM enfocada, el nombre de su archivo va en la primera línea.
+        string file = roms.SelectedItem is RomItem focused ? $"ARCHIVO: {focused.Row.RomName}\r\n" : "";
+        details.Text = file + $"CATEGORÍA: {genre}\r\nROMs: {rows.Length:N0}\r\nESPACIO: {FormatSize(rows.Sum(r => r.Size))}\r\n\r\nSeleccionadas en esta categoría: {selectedCount:N0}\r\n\r\nEl foco de la categoría determina las ROMs mostradas a la derecha.";
     }
 }

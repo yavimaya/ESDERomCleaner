@@ -159,7 +159,7 @@ public sealed partial class RomCleanerForm : Form
         act.Controls.Add(selectAll);
         act.Controls.Add(deselectAll);
         rp.Controls.Add(act, 0, 1);
-        w.Controls.Add(Group("ROMs encontradas — doble clic selecciona", rp), 1, 0);        var right = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1, Padding = Padding.Empty, Margin = Padding.Empty };
+        w.Controls.Add(Group("ROMs encontradas", rp), 1, 0);        var right = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1, Padding = Padding.Empty, Margin = Padding.Empty };
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 52));
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 24));
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 24));
@@ -207,7 +207,7 @@ public sealed partial class RomCleanerForm : Form
         operationBar.Controls.Add(progress, 0, 0);
         operationBar.Controls.Add(deleteSelected, 1, 0);
         right.Controls.Add(miximageGroup, 0, 0);
-        right.Controls.Add(Group("Descripción (gamelist.xml)", description), 0, 1);
+        right.Controls.Add(Group("Descripción", description), 0, 1);
         right.Controls.Add(Group("Datos", details), 0, 2);
         right.Controls.Add(operationBar, 0, 3);
         w.Controls.Add(right, 2, 0);
