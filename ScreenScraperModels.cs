@@ -111,6 +111,13 @@ internal static class SsMediaInfo
         "figurine" => "Figurita",
         "mixrbv1" => "Miximage (Recalbox v1)",
         "mixrbv2" => "Miximage (Recalbox v2)",
+        "wheel-carbon" => "Logo (wheel, carbono)",
+        "wheel-steel" => "Logo (wheel, acero)",
+        "screenmarqueesmall" => "Screen marquee (pequeño)",
+        "box-scan" => "Caja: escaneo",
+        "support-scan" => "Soporte: escaneo",
+        "background" => "Fondo",
+        "pictoliste" or "pictomonochrome" or "pictocouleur" => "Pictograma",
         _ => type.StartsWith("bezel", StringComparison.OrdinalIgnoreCase) ? "Bezel" : ""
     };
 

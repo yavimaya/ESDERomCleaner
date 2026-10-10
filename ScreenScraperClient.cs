@@ -161,6 +161,15 @@ internal sealed class ScreenScraperClient
             foreach (var p in rom.EnumerateObject())
                 if (p.Value.ValueKind is JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False)
                     game.RomProperties.Add(new SsText(p.Name, Str(rom, p.Name)));
+        // La ROM trae regiones e idiomas como objetos anidados con listas (regions_en, langues_en...); se aplanan a texto.
+        if (jeu.TryGetProperty("rom", out var romInfo) && romInfo.ValueKind == JsonValueKind.Object)
+            foreach (var (group, key) in new[] { ("regions", "regions_en"), ("langues", "langues_en") })
+                if (romInfo.TryGetProperty(group, out var nested) && nested.ValueKind == JsonValueKind.Object &&
+                    nested.TryGetProperty(key, out var names) && names.ValueKind == JsonValueKind.Array)
+                {
+                    string joined = string.Join(", ", names.EnumerateArray().Select(n => n.ValueKind == JsonValueKind.String ? n.GetString() ?? "" : "").Where(n => n.Length > 0));
+                    if (joined.Length > 0) game.RomProperties.Add(new SsText(group, joined));
+                }
         return game;
     }
 

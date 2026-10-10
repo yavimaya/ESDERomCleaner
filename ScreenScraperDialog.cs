@@ -257,11 +257,14 @@ internal sealed class ScreenScraperDialog : Form
         foreach (var m in game.Medias.OrderBy(m => m.Type, StringComparer.OrdinalIgnoreCase).ThenBy(m => m.Region, StringComparer.OrdinalIgnoreCase))
             mediaGrid.Rows.Add(m.Type, SsMediaInfo.Describe(m.Type), m.Region, m.Format, m.Size > 0 ? FormatBytes(m.Size) : "", SsMediaInfo.EsDeFolder(m.Type), m.Parent);
 
-        int images = game.Medias.Count(m => SsMediaInfo.Kind(m.Format) == "image");
-        int videos = game.Medias.Count(m => SsMediaInfo.Kind(m.Format) == "video");
-        int pdfs = game.Medias.Count(m => SsMediaInfo.Kind(m.Format) == "pdf");
-        int types = game.Medias.Select(m => m.Type).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-        mediaSummary.Text = $"  {game.Medias.Count} medios de {types} tipos: {images} imágenes, {videos} vídeos, {pdfs} manuales/PDF, {game.Medias.Count - images - videos - pdfs} otros.";
+        // Los medios con parent distinto de "jeu" son pictogramas de género/editor/etc., no medios del juego.
+        var gameMedias = game.Medias.Where(m => m.Parent.Equals("jeu", StringComparison.OrdinalIgnoreCase) || m.Parent.Length == 0).ToList();
+        int images = gameMedias.Count(m => SsMediaInfo.Kind(m.Format) == "image");
+        int videos = gameMedias.Count(m => SsMediaInfo.Kind(m.Format) == "video");
+        int pdfs = gameMedias.Count(m => SsMediaInfo.Kind(m.Format) == "pdf");
+        int types = gameMedias.Select(m => m.Type).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        int extra = game.Medias.Count - gameMedias.Count;
+        mediaSummary.Text = $"  {gameMedias.Count} medios del juego de {types} tipos: {images} imágenes, {videos} vídeos, {pdfs} manuales/PDF, {gameMedias.Count - images - videos - pdfs} otros." + (extra > 0 ? $" (+{extra} pictogramas de género, editor, etc.)" : "");
         statusLabel.Text = $"Encontrado: {game.BestName}  ·  hash de {hashes.Basis}  ·  {result.Quota}";
     }
 
