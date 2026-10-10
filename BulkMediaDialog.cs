@@ -17,9 +17,14 @@ internal sealed class BulkMediaDialog : Form
     private bool running;
     private bool updating;
     private readonly Stopwatch clock = new();
+    // Avance total: se mide sobre las ROMs que tienen trabajo (las ya completas no cuentan) y se refresca cada segundo.
+    private int plannedWork;
+    private BulkMediaRunner? activeRunner;
+    private string baseTitle = "";
+    private readonly System.Windows.Forms.Timer uiTimer = new() { Interval = 1000 };
 
     private readonly DataGridView systemsGrid = new();
-    private readonly Label systemsCount = new() { AutoSize = true, Margin = new Padding(12, 7, 3, 0) };
+    private readonly GroupBox systemsGroupBox = new() { Text = "Sistemas a los que se aplica", Dock = DockStyle.Fill };
     private readonly Button selectAllButton = new() { Text = "Seleccionar todos", AutoSize = true };
     private readonly Button selectNoneButton = new() { Text = "Deseleccionar todos", AutoSize = true };
     private readonly Dictionary<string, CheckBox> folderChecks = new();
@@ -54,7 +59,9 @@ internal sealed class BulkMediaDialog : Form
         this.trace = trace;
         this.defaultNormalizedVideo = defaultNormalizedVideo;
         credentials = ScreenScraperCredentialStore.Load();
-        Text = "Descarga masiva de medios — ScreenScraper";
+        Text = baseTitle = "Descarga masiva de medios — ScreenScraper";
+        uiTimer.Tick += (_, _) => RefreshProgress();
+        FormClosed += (_, _) => uiTimer.Dispose();
         Width = 1220; Height = 720; MinimumSize = new Size(1000, 640);
         StartPosition = FormStartPosition.CenterParent;
         CancelButton = closeButton;
@@ -62,6 +69,13 @@ internal sealed class BulkMediaDialog : Form
         ApplySettings(BulkMediaSettings.Load(defaultNormalizedVideo));
         FillSystems();
 
+        // Doble clic en cualquier parte de la fila (menos en su casilla, que ya responde a cada clic) marca o desmarca el sistema.
+        systemsGrid.CellDoubleClick += (_, e) =>
+        {
+            if (running || e.RowIndex < 0 || e.ColumnIndex == 0) return;
+            var cell = systemsGrid.Rows[e.RowIndex].Cells["use"];
+            if (!cell.ReadOnly) cell.Value = cell.Value is not true;
+        };
         selectAllButton.Click += (_, _) => SetAllSystems(true);
         selectNoneButton.Click += (_, _) => SetAllSystems(false);
         systemsGrid.CurrentCellDirtyStateChanged += (_, _) => { if (systemsGrid.IsCurrentCellDirty) systemsGrid.CommitEdit(DataGridViewDataErrorContexts.Commit); };
@@ -114,17 +128,16 @@ internal sealed class BulkMediaDialog : Form
         systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "ss", HeaderText = "Sistema en ScreenScraper", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, ReadOnly = true });
         systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "roms", HeaderText = "ROMs", Width = 70, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
 
-        var systemsButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
+        var systemsButtons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, Margin = Padding.Empty };
         systemsButtons.Controls.Add(selectAllButton);
         systemsButtons.Controls.Add(selectNoneButton);
-        systemsButtons.Controls.Add(systemsCount);
         var systemsLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
         systemsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         systemsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         systemsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         systemsLayout.Controls.Add(systemsButtons, 0, 0);
         systemsLayout.Controls.Add(systemsGrid, 0, 1);
-        var systemsGroup = new GroupBox { Text = "Sistemas a los que se aplica", Dock = DockStyle.Fill };
+        var systemsGroup = systemsGroupBox;
         systemsGroup.Controls.Add(systemsLayout);
 
         // ---- Medios (las carpetas de ES-DE)
@@ -211,6 +224,13 @@ internal sealed class BulkMediaDialog : Form
         issuesGrid.RowHeadersVisible = false;
         issuesGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         issuesGrid.BackgroundColor = SystemColors.Window;
+        // Lista de incidencias más pequeña: letra de 8 pt, filas y cabecera bajas.
+        var smallFont = new Font(Font.FontFamily, 8F);
+        issuesGrid.DefaultCellStyle.Font = smallFont;
+        issuesGrid.ColumnHeadersDefaultCellStyle.Font = smallFont;
+        issuesGrid.RowTemplate.Height = 18;
+        issuesGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+        issuesGrid.ColumnHeadersHeight = 20;
         issuesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "system", HeaderText = "Sistema", Width = 110 });
         issuesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "rom", HeaderText = "ROM", Width = 330 });
         issuesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "result", HeaderText = "Resultado", Width = 150 });
@@ -219,16 +239,15 @@ internal sealed class BulkMediaDialog : Form
         issuesGroup.Controls.Add(issuesGrid);
 
         // ---- Botones
-        var rightButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = Padding.Empty };
-        rightButtons.Controls.Add(closeButton);
-        rightButtons.Controls.Add(viewSummaryButton);
-        rightButtons.Controls.Add(exportButton);
-        rightButtons.Controls.Add(cancelButton);
-        rightButtons.Controls.Add(startButton);
-        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var centerButtons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, Margin = Padding.Empty };
+        centerButtons.Controls.Add(startButton);
+        centerButtons.Controls.Add(cancelButton);
+        centerButtons.Controls.Add(exportButton);
+        centerButtons.Controls.Add(viewSummaryButton);
+        centerButtons.Controls.Add(closeButton);
+        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 1, Margin = Padding.Empty };
         buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        buttons.Controls.Add(rightButtons, 1, 0);
+        buttons.Controls.Add(centerButtons, 0, 0);
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, Padding = new Padding(8, 6, 8, 4) };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -236,7 +255,7 @@ internal sealed class BulkMediaDialog : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         layout.Controls.Add(content, 0, 0);
         layout.Controls.Add(summaryLabel, 0, 1);
@@ -372,7 +391,7 @@ internal sealed class BulkMediaDialog : Form
     {
         var rows = systemsGrid.Rows.Cast<DataGridViewRow>().Where(r => r.Cells["use"].Value is true && !r.Cells["use"].ReadOnly).ToList();
         int romCount = rows.Sum(r => Convert.ToInt32(r.Cells["roms"].Value));
-        systemsCount.Text = rows.Count == 0 ? "Ninguno marcado" : $"{rows.Count} marcados · {romCount:N0} ROMs";
+        systemsGroupBox.Text = rows.Count == 0 ? "Sistemas a los que se aplica" : $"Sistemas a los que se aplica — {rows.Count} marcados · {romCount:N0} ROMs";
     }
 
     // ---- Ejecución
@@ -403,6 +422,7 @@ internal sealed class BulkMediaDialog : Form
         try { plan = await Task.Run(() => BulkMediaRunner.Plan(options)); }
         finally { SetRunning(false); }
 
+        plannedWork = plan.RomsWithWork;
         if (plan.Roms == 0)
         {
             statusLabel.Text = "Los sistemas marcados no tienen ROMs que procesar.";
@@ -426,13 +446,6 @@ internal sealed class BulkMediaDialog : Form
         text.AppendLine($"Si ya existe en destino: {overwriteText}");
         text.AppendLine($"Peticiones en paralelo: {options.Threads} (según tu membresía de ScreenScraper)");
         text.AppendLine($"Si no se reconoce por hash: {(options.SearchByName ? "se busca por el nombre del juego" : "se anota como no encontrada")}");
-        text.AppendLine();
-        text.AppendLine($"ROMs con algo pendiente: {plan.RomsWithWork:N0}   ·   ya completas (se omiten): {plan.RomsComplete:N0}");
-        text.AppendLine($"Peticiones a ScreenScraper: hasta unas {plan.RomsWithWork + plan.FolderTargets:N0}.");
-        text.AppendLine(ScreenScraperQuota.Describe());
-        text.AppendLine();
-        text.AppendLine("Con una cuenta gratuita ScreenScraper limita la velocidad y admite un solo hilo, así que puede tardar horas o días. " +
-                        "Puedes cancelar y retomarlo más tarde: lo ya guardado no se vuelve a pedir (salvo que sobrescribas).");
         if (plan.RomsWithWork == 0)
         {
             QuietMessage.Show(this, "Descarga masiva", text.ToString() + "\r\nNo hay nada pendiente.");
@@ -444,6 +457,8 @@ internal sealed class BulkMediaDialog : Form
         cts = new CancellationTokenSource();
         issuesGrid.Rows.Clear();
         clock.Restart();
+        etaComputedAtSeconds = -1000;
+        etaText = "calculando…";
         SetRunning(true);
         var status = new Progress<BulkStatus>(OnStatus);
         var issues = new Progress<BulkIssue>(i =>
@@ -454,6 +469,8 @@ internal sealed class BulkMediaDialog : Form
             gridRow.Cells["rom"].ToolTipText = i.Rom;
         });
         var runner = new BulkMediaRunner(options, credentials, trace, status, issues);
+        activeRunner = runner;
+        uiTimer.Start();
         try { await runner.RunAsync(cts.Token); }
         catch (Exception ex)
         {
@@ -463,14 +480,17 @@ internal sealed class BulkMediaDialog : Form
         finally
         {
             clock.Stop();
+            uiTimer.Stop();
+            activeRunner = null;
             CollectionChanged |= runner.CollectionChanged;
             MetadataChanged |= runner.MetadataChanged;
             SetRunning(false);
         }
+        Text = baseTitle;
         summaryLabel.Text = SummaryText(runner.Summary);
         string result = runner.Summary.StoppedReason.Length > 0 ? runner.Summary.StoppedReason : "Descarga terminada.";
         statusLabel.Text = result;
-        progressBar.Value = runner.Summary.RomsTotal > 0 ? Math.Clamp(runner.Summary.RomsDone * 100 / runner.Summary.RomsTotal, 0, 100) : 100;
+        progressBar.Value = runner.Summary.StoppedReason.Length == 0 ? 100 : Percent(runner.Summary);
         lastResult = (result, SummaryText(runner.Summary), runner.Summary);
         viewSummaryButton.Enabled = true;
         ShowResult();
@@ -488,15 +508,49 @@ internal sealed class BulkMediaDialog : Form
     private void OnStatus(BulkStatus s)
     {
         statusLabel.Text = s.Text;
-        summaryLabel.Text = SummaryText(s.Summary);
-        if (s.Summary.RomsTotal > 0) progressBar.Value = Math.Clamp(s.Summary.RomsDone * 100 / s.Summary.RomsTotal, 0, 100);
+        RefreshProgress();
     }
+
+    // ROMs con trabajo ya terminadas sobre las que tenían trabajo al empezar.
+    private int FinishedWork(BulkSummary s) => Math.Max(0, s.RomsFinished - s.AlreadyComplete);
+
+    private int Percent(BulkSummary s) => plannedWork > 0 ? Math.Clamp(FinishedWork(s) * 100 / plannedWork, 0, 100) : 0;
+
+    // Resumen, barra de progreso y título de la ventana con el avance total.
+    private void RefreshProgress()
+    {
+        if (activeRunner is null) return;
+        var s = activeRunner.Summary;
+        int percent = Percent(s);
+        progressBar.Value = percent;
+        summaryLabel.Text = SummaryText(s);
+        Text = $"{baseTitle} — {percent} %";
+    }
+
+    private static string FormatSpan(TimeSpan span) => $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}";
+
+    // Tiempo restante a partir del ritmo medio de las ROMs con trabajo ya terminadas; hasta tener datos suficientes, «calculando…».
+    private string RemainingText(TimeSpan elapsed, int finished)
+    {
+        if (plannedWork - finished <= 0) return "0:00:00";
+        if (finished < 2 || elapsed.TotalSeconds < 5) return "calculando…";
+        // La estimación varía mucho de un momento a otro: se recalcula solo cada 5 segundos y entre medias se mantiene el último valor.
+        if (elapsed.TotalSeconds - etaComputedAtSeconds >= 5)
+        {
+            etaText = "~" + FormatSpan(TimeSpan.FromSeconds(elapsed.TotalSeconds * (plannedWork - finished) / finished));
+            etaComputedAtSeconds = elapsed.TotalSeconds;
+        }
+        return etaText;
+    }
+
+    private double etaComputedAtSeconds = -1000;
+    private string etaText = "calculando…";
 
     private string SummaryText(BulkSummary s)
     {
         var parts = new List<string>
         {
-            $"ROMs {s.RomsDone:N0}/{s.RomsTotal:N0}",
+            plannedWork > 0 ? $"ROMs {FinishedWork(s):N0}/{plannedWork:N0}" : $"ROMs {s.RomsDone:N0}/{s.RomsTotal:N0}",
             $"archivos guardados {s.FilesSaved:N0}" + (s.FilesReplaced > 0 ? $" ({s.FilesReplaced:N0} sustituidos)" : ""),
             $"descargado {ScreenScraperDialog.FormatBytes(s.BytesDownloaded)}",
             $"ya completas {s.AlreadyComplete:N0}"
@@ -508,7 +562,9 @@ internal sealed class BulkMediaDialog : Form
         if (s.FoundByName > 0) parts.Add($"por nombre {s.FoundByName:N0}");
         if (s.WithErrors > 0) parts.Add($"con errores {s.WithErrors:N0}");
         if (s.SkippedSystems > 0 || s.SkippedNotFile > 0) parts.Add($"omitidas {s.SkippedNotFile:N0} (no son archivo)");
-        parts.Add($"tiempo {clock.Elapsed:h\\:mm\\:ss}");
+        var elapsed = clock.Elapsed;
+        parts.Add($"tiempo {FormatSpan(elapsed)}");
+        if (running && plannedWork > 0) parts.Add($"restante {RemainingText(elapsed, FinishedWork(s))}");
         return string.Join(" · ", parts);
     }
 

@@ -58,6 +58,7 @@ internal sealed class BulkFolderStats
 internal sealed class BulkSummary
 {
     public readonly Dictionary<string, BulkFolderStats> ByFolder = new(StringComparer.OrdinalIgnoreCase);
+    public int RomsFinished;   // ROMs cuyo proceso ya ha terminado (RomsDone cuenta también las que acaban de empezar)
     public int RomsTotal, RomsDone, AlreadyComplete, NotFound, FoundByName, WithErrors, SkippedNotFile, SkippedSystems;
     public int FilesSaved, FilesReplaced, FilesIdentical, FoldersUnavailable, MetadataUpdated, MetadataFailed;
     public long BytesDownloaded;
@@ -251,6 +252,7 @@ internal sealed class BulkMediaRunner
         try { await ProcessCoreAsync(row, ss, token); }
         finally
         {
+            Interlocked.Increment(ref Summary.RomsFinished);
             // Al terminar la última ROM de un gamelist.xml se escriben sus metadatos de una sola vez.
             if (o.Metadata && row.Gamelist.Length > 0 && remainingByGamelist.TryGetValue(row.Gamelist, out var left) && Interlocked.Decrement(ref left[0]) == 0)
                 await Task.Run(() => FlushGamelist(row.Gamelist));
