@@ -41,7 +41,13 @@ La interfaz, los mensajes y los comentarios del código están en **español**.
 
 ![Editor de metadatos](docs/img/editor-de-metadatos.png)
 
-## Requisitos
+## Descargar
+
+En la sección [**Releases**](../../releases) tienes `ESDERomCleaner-<versión>-win-x64.exe`: un único ejecutable que **no necesita instalar .NET** (lleva el motor de vídeo incluido). Descárgalo y ábrelo; la primera vez tarda unos segundos más porque se extrae a una carpeta temporal.
+
+Como el ejecutable no está firmado, Windows SmartScreen puede avisar la primera vez: pulsa *Más información › Ejecutar de todos modos*.
+
+## Requisitos para compilar
 
 - Windows 10/11 de 64 bits.
 - [.NET 10 SDK](https://dotnet.microsoft.com/download) para compilar.

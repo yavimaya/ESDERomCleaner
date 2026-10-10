@@ -60,7 +60,8 @@ public sealed partial class RomCleanerForm : Form
     {
         if (mediaPlayer is not null) return;
         Core.Initialize();
-        libVlc = new LibVLC("--no-video-title-show", "--no-osd");
+        // Decodificación por software y salida GDI: la ruta Direct3D11 de LibVLC cerraba la aplicación con una excepción en dxgi.dll.
+        libVlc = new LibVLC("--no-video-title-show", "--no-osd", "--avcodec-hw=none", "--vout=wingdi");
         mediaPlayer = new MediaPlayer(libVlc);
         mediaPlayer.Scale = 0;
         mediaPlayer.AspectRatio = null;

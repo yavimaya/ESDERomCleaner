@@ -12,7 +12,12 @@ ES-DE ROM Cleaner: a Windows Forms desktop tool (.NET 10, `net10.0-windows`, x64
 dotnet build                       # Debug build -> bin/Debug/net10.0-windows/ESDERomCleaner.exe
 dotnet build -c Release
 dotnet run                         # launches the GUI
+
+# Release: a single self-contained exe (LibVLC bundled and extracted to %TEMP%\.net on first run)
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o <dir>
 ```
+
+The version lives in `ESDERomCleaner.csproj` (`<Version>`); releases are tagged `vX.Y.Z` on GitHub and the repo is public (https://github.com/yavimaya/ESDERomCleaner, default branch `main`, GPL-3.0).
 
 There is no test project, linter or solution file. Everything lives in the single `ESDERomCleaner.csproj` in the repo root. The csproj excludes `Entrega_ESDERomCleaner\**\*.cs`, so a delivery copy of the sources can sit inside the folder without being compiled. `Modelfile` is an Ollama model definition (qwen3:8b) and isn't used by the app.
 
