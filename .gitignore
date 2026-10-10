@@ -483,3 +483,6 @@ $RECYCLE.BIN/
 
 # Ficheros de prueba locales
 muestra_ss.json
+
+# Notas de trabajo para Claude Code (solo locales)
+CLAUDE.md

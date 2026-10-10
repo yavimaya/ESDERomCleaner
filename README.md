@@ -116,8 +116,6 @@ Todo vive en `%LOCALAPPDATA%\ESDERomCleaner`: opciones, caché del análisis, re
 
 Proyecto personal en desarrollo. Algunas partes del acceso a la API de ScreenScraper (búsqueda por nombre, lectura de la cuenta e idiomas de las ROMs) están escritas pero pendientes de verificar con respuestas reales. Pendiente a medio plazo: un visor de medios a pantalla completa y más opciones de qué hacer con las ROMs candidatas del curado (ocultarlas en ES-DE o generar una copia depurada).
 
-Puedes ver más detalle técnico en [`CLAUDE.md`](CLAUDE.md).
-
 ## Créditos
 
 - [ES-DE](https://es-de.org/) por el frontend cuya estructura se respeta.
