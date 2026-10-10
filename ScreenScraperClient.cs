@@ -97,6 +97,8 @@ internal sealed class ScreenScraperClient
                 if (name.Length == 0) name = common.FirstOrDefault() ?? "";
             }
             if (name.Length == 0) name = "Sistema " + id;
+            // ScreenScraper lo llama «Mame»; aquí es el sistema arcade genérico.
+            if (id == 75) name = "Arcade (MAME)";
             result.Add(new SsSystem(id, name, retropie, recalbox, common));
         }
         return result.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
@@ -289,6 +291,11 @@ internal sealed class ScreenScraperClient
                 game.RomRegions.AddRange(shortNames.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString() ?? "").Where(n => n.Length > 0));
             if (game.RomRegions.Count == 0)
                 game.RomRegions.AddRange(Str(romRegions, "romregions").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+            if (romRegions.TryGetProperty("langues", out var languageGroup) && languageGroup.ValueKind == JsonValueKind.Object &&
+                languageGroup.TryGetProperty("langues_shortname", out var languageCodes) && languageCodes.ValueKind == JsonValueKind.Array)
+                game.RomLanguages.AddRange(languageCodes.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.String).Select(n => (n.GetString() ?? "").ToLowerInvariant()).Where(n => n.Length > 0));
+            if (game.RomLanguages.Count == 0)
+                game.RomLanguages.AddRange(Str(romRegions, "romlangues").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(l => l.ToLowerInvariant()));
         }
         // La ROM trae regiones e idiomas como objetos anidados con listas (regions_en, langues_en...); se aplanan a texto.
         if (jeu.TryGetProperty("rom", out var romInfo) && romInfo.ValueKind == JsonValueKind.Object)

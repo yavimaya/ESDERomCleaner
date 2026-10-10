@@ -247,7 +247,7 @@ public sealed partial class RomCleanerForm : Form
             else if (pendingVideoRow is not null) ScheduleVideoPreview(pendingVideoRow, pendingVideoVersion);
         };
         bulkMedia.Click += (_, _) => OpenBulkMediaDialog();
-        curationRules.Click += (_, _) => OpenCurationDialog();
+        curationRules.Click += async (_, _) => await OpenCurationDialogAsync();
         screenScraperCredentials.Click += (_, _) =>
         {
             if (ScreenScraperAccount.Edit(this, trace, ScreenScraperCredentialStore.Load()) is not null) status.Text = "Credenciales de ScreenScraper guardadas.";

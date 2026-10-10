@@ -44,7 +44,7 @@ internal sealed record BulkMediaSettings(string[] Folders, bool NormalizedVideo,
 
 internal sealed record BulkMediaOptions(
     string Root, IReadOnlyList<RomRow> Roms, IReadOnlyList<SsSystem> SsSystems, IReadOnlyList<string> LocalSystems,
-    IReadOnlyList<EsDeMediaFolder> Folders, bool NormalizedVideo, BulkOverwrite Overwrite, bool Backup, bool SearchByName, int Threads, bool Metadata, bool GamelistBackup);
+    IReadOnlyList<EsDeMediaFolder> Folders, bool NormalizedVideo, BulkOverwrite Overwrite, bool Backup, bool SearchByName, int Threads, bool Metadata, bool GamelistBackup, bool Languages);
 
 internal sealed record BulkIssue(string System, string Rom, string Result, string Detail);
 
@@ -60,7 +60,7 @@ internal sealed class BulkSummary
     public readonly Dictionary<string, BulkFolderStats> ByFolder = new(StringComparer.OrdinalIgnoreCase);
     public int RomsFinished;   // ROMs cuyo proceso ya ha terminado (RomsDone cuenta también las que acaban de empezar)
     public int RomsTotal, RomsDone, AlreadyComplete, NotFound, FoundByName, WithErrors, SkippedNotFile, SkippedSystems;
-    public int FilesSaved, FilesReplaced, FilesIdentical, FoldersUnavailable, MetadataUpdated, MetadataFailed;
+    public int FilesSaved, FilesReplaced, FilesIdentical, FoldersUnavailable, MetadataUpdated, MetadataFailed, LanguagesStored;
     public long BytesDownloaded;
     public string StoppedReason = "";
 }
@@ -106,6 +106,8 @@ internal sealed class BulkMediaRunner
     private readonly IProgress<BulkStatus>? status;
     private readonly IProgress<BulkIssue>? issues;
     private readonly ExistingMediaIndex index = new();
+    // Idiomas de las ROMs: solo se rellena si se pidió la opción «Idiomas» (para las reglas de curado).
+    private readonly RomLanguageIndex? languageIndex;
     private int consecutiveErrors;
     // Metadatos pendientes de escribir, por gamelist.xml y ruta relativa; se escriben una vez por archivo, cuando se han
     // procesado todas sus ROMs (o al terminar si se cancela).
@@ -122,6 +124,7 @@ internal sealed class BulkMediaRunner
     {
         o = options;
         client = new ScreenScraperClient(credentials);
+        languageIndex = options.Languages ? RomLanguageIndex.Load() : null;
         this.trace = trace;
         this.status = status;
         this.issues = issues;
@@ -137,6 +140,7 @@ internal sealed class BulkMediaRunner
     public static BulkPlan Plan(BulkMediaOptions o)
     {
         var index = new ExistingMediaIndex();
+        var languageIndex = o.Languages ? RomLanguageIndex.Load() : null;
         int roms = 0, withWork = 0, targets = 0, unresolved = 0;
         foreach (string system in o.LocalSystems)
         {
@@ -151,7 +155,8 @@ internal sealed class BulkMediaRunner
                     try { if (o.Overwrite != BulkOverwrite.No || !index.Has(RomFolderTarget(o, row, folder))) pending++; }
                     catch { pending++; }
                 }
-                if (pending > 0 || o.Metadata) { withWork++; targets += pending; }
+                bool needLanguages = languageIndex is not null && (o.Overwrite != BulkOverwrite.No || !languageIndex.Has(RomKey.Of(row)));
+                if (pending > 0 || o.Metadata || needLanguages) { withWork++; targets += pending; }
             }
         }
         return new BulkPlan(o.LocalSystems.Count, unresolved, roms, withWork, roms - withWork, targets);
@@ -234,9 +239,10 @@ internal sealed class BulkMediaRunner
         finally
         {
             stopSource = null;
+            languageIndex?.Save();
             // Lo que quede sin escribir (cancelación o parada) se guarda igualmente: son juegos ya consultados.
             foreach (string gamelist in pendingMetadata.Keys.ToList()) FlushGamelist(gamelist);
-            trace.Add("bulk_media_finished", $"done={Summary.RomsDone}/{Summary.RomsTotal}; complete={Summary.AlreadyComplete}; saved={Summary.FilesSaved}; replaced={Summary.FilesReplaced}; identical={Summary.FilesIdentical}; metadata={Summary.MetadataUpdated}/{Summary.MetadataFailed}; " +
+            trace.Add("bulk_media_finished", $"done={Summary.RomsDone}/{Summary.RomsTotal}; complete={Summary.AlreadyComplete}; saved={Summary.FilesSaved}; replaced={Summary.FilesReplaced}; identical={Summary.FilesIdentical}; metadata={Summary.MetadataUpdated}/{Summary.MetadataFailed}; languages={Summary.LanguagesStored}; " +
                 $"not_found={Summary.NotFound}; by_name={Summary.FoundByName}; errors={Summary.WithErrors}; unavailable={Summary.FoldersUnavailable}; bytes={Summary.BytesDownloaded}" +
                 $"; space={string.Join(",", Summary.ByFolder.Select(p => $"{p.Key}:{p.Value.BytesAfter - p.Value.BytesBefore}"))}" +
                 (Summary.StoppedReason.Length > 0 ? $"; stopped={Summary.StoppedReason}" : ""));
@@ -252,7 +258,7 @@ internal sealed class BulkMediaRunner
         try { await ProcessCoreAsync(row, ss, token); }
         finally
         {
-            Interlocked.Increment(ref Summary.RomsFinished);
+            if (Interlocked.Increment(ref Summary.RomsFinished) % 50 == 0) languageIndex?.Save();
             // Al terminar la última ROM de un gamelist.xml se escriben sus metadatos de una sola vez.
             if (o.Metadata && row.Gamelist.Length > 0 && remainingByGamelist.TryGetValue(row.Gamelist, out var left) && Interlocked.Decrement(ref left[0]) == 0)
                 await Task.Run(() => FlushGamelist(row.Gamelist));
@@ -282,7 +288,8 @@ internal sealed class BulkMediaRunner
         var pending = new List<EsDeMediaFolder>();
         foreach (var folder in o.Folders)
             if (o.Overwrite != BulkOverwrite.No || !index.Has(RomFolderTarget(o, row, folder))) pending.Add(folder);
-        if (pending.Count == 0 && !o.Metadata) { Interlocked.Increment(ref Summary.AlreadyComplete); return; }
+        bool needLanguages = languageIndex is not null && (o.Overwrite != BulkOverwrite.No || !languageIndex.Has(RomKey.Of(row)));
+        if (pending.Count == 0 && !o.Metadata && !needLanguages) { Interlocked.Increment(ref Summary.AlreadyComplete); return; }
 
         var (game, via, note) = await FindGameAsync(row, ss, token);
         if (game is null)
@@ -295,6 +302,12 @@ internal sealed class BulkMediaRunner
         if (via == "nombre") { Interlocked.Increment(ref Summary.FoundByName); Issue(row, "Encontrada por nombre", note); }
 
         var regions = SsMediaSelector.RomRegions(game, row.RomName);
+        if (languageIndex is not null)
+        {
+            // Se guarda también si ScreenScraper no da idiomas (lista vacía), para no volver a consultar esa ROM.
+            languageIndex.Set(RomKey.Of(row), new RomLanguageInfo { Languages = game.RomLanguages.ToList(), Regions = game.RomRegions.ToList(), FetchedAt = DateTime.Now });
+            Interlocked.Increment(ref Summary.LanguagesStored);
+        }
         if (o.Metadata)
         {
             if (row.Gamelist.Length == 0 || row.GamelistPath.Length == 0) Issue(row, "Metadatos", "La ROM no tiene entrada en ningún gamelist.xml");

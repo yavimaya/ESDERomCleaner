@@ -12,6 +12,8 @@ internal sealed class CurationDialog : Form
 
     private readonly IReadOnlyList<RomRow> roms;
     private readonly TraceLog trace;
+    // ROMs que el usuario ha decidido eliminar al cerrar el formulario; las borra la ventana principal con su borrado seguro.
+    public List<RomRow> RowsForDeletion { get; } = new();
     // Las supracategorías son editables (botón «Editar supracategorías…»); sus definiciones se guardan aparte.
     private List<SupraDefinition> supraDefs = new();
     private CurationRule[] supra = Array.Empty<CurationRule>();
@@ -40,6 +42,11 @@ internal sealed class CurationDialog : Form
     private readonly DataGridView systemsGrid = new();
     private readonly Label summary = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font(SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont, FontStyle.Bold), AutoEllipsis = true };
     private readonly Label note = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
+    private readonly RomLanguageIndex languageIndex = RomLanguageIndex.Load();
+    private CurationLanguageSettings languageSettings = CurationLanguageSettings.Load();
+    private int languageKnown;
+    private readonly Button languagesButton = new() { Text = "Idiomas…", AutoSize = true, MinimumSize = new Size(110, 28) };
+    private readonly Button deleteButton = new() { Text = "Eliminar candidatas…", AutoSize = true, MinimumSize = new Size(190, 30), ForeColor = Color.Firebrick, Enabled = false };
     private readonly Button editSupraButton = new() { Text = "Editar supracategorías…", AutoSize = true, MinimumSize = new Size(170, 28) };
     private readonly ComboBox profileBox = new() { DropDownStyle = ComboBoxStyle.DropDown, Width = 300, AutoCompleteMode = AutoCompleteMode.SuggestAppend, AutoCompleteSource = AutoCompleteSource.ListItems, MaxDropDownItems = 14 };
     private readonly Button loadProfileButton = new() { Text = "Cargar", AutoSize = true, MinimumSize = new Size(80, 28), Enabled = false };
@@ -91,6 +98,8 @@ internal sealed class CurationDialog : Form
         genreFilter.TextChanged += (_, _) => FillGenres();
         exportButton.Click += (_, _) => Export();
         editSupraButton.Click += (_, _) => EditSupra();
+        languagesButton.Click += (_, _) => EditLanguages();
+        deleteButton.Click += (_, _) => RequestDeletion();
         saveProfileButton.Click += (_, _) => SaveProfile();
         loadProfileButton.Click += (_, _) => LoadProfile();
         deleteProfileButton.Click += (_, _) => DeleteProfile();
@@ -115,8 +124,10 @@ internal sealed class CurationDialog : Form
         supraLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         supraLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         supraLayout.Controls.Add(supraGrid, 0, 0);
-        editSupraButton.Anchor = AnchorStyles.None;
-        supraLayout.Controls.Add(editSupraButton, 0, 1);
+        var supraButtons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, Margin = Padding.Empty };
+        supraButtons.Controls.Add(editSupraButton);
+        supraButtons.Controls.Add(languagesButton);
+        supraLayout.Controls.Add(supraButtons, 0, 1);
         var supraGroup = new GroupBox { Text = "Supracategorías", Dock = DockStyle.Fill };
         supraGroup.Controls.Add(supraLayout);
 
@@ -178,6 +189,7 @@ internal sealed class CurationDialog : Form
 
         var buttons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, Margin = Padding.Empty };
         buttons.Controls.Add(exportButton);
+        buttons.Controls.Add(deleteButton);
         buttons.Controls.Add(closeButton);
         var buttonBar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 1, Margin = Padding.Empty };
         buttonBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -226,7 +238,8 @@ internal sealed class CurationDialog : Form
     // Recalcula las reglas y qué ROMs cumple cada una (se repite al editar las supracategorías).
     private void BuildRules()
     {
-        supra = supraDefs.Select(CurationRule.FromSupra).ToArray();
+        supra = supraDefs.Select(CurationRule.FromSupra).Append(BuildLanguageRule()).ToArray();
+        languageKnown = roms.Count(r => LanguageResolver.Resolve(r, languageIndex, languageSettings.UseFilename).Languages.Count > 0);
         ruleById.Clear();
         hits.Clear();
         counts.Clear();
@@ -316,6 +329,55 @@ internal sealed class CurationDialog : Form
         trace.Add("curation_profile_deleted", $"name={profile.Name}");
         profileBox.Text = "";
         RefillProfiles();
+    }
+
+    // Regla integrada de idiomas: ROMs cuyos idiomas conocidos no incluyen ninguno de los que entiende el usuario.
+    private CurationRule BuildLanguageRule()
+    {
+        string understood = languageSettings.Understood.Count > 0 ? string.Join(", ", languageSettings.Understood.Select(LanguageCatalog.NameOf)) : "ninguno";
+        string description = $"no están en ninguno de: {understood}" + (languageSettings.OnlyTextGenres ? " (solo géneros con texto)" : "");
+        return new CurationRule("lang-unreadable", "Idiomas no entendibles", description, row =>
+        {
+            var (languages, source) = LanguageResolver.Resolve(row, languageIndex, languageSettings.UseFilename);
+            if (languages.Count == 0) return null;
+            if (languages.Any(l => languageSettings.Understood.Contains(l, StringComparer.OrdinalIgnoreCase))) return null;
+            if (languageSettings.OnlyTextGenres && !CurationLanguageSettings.IsTextGenre(CurationRule.EffectiveGenre(row))) return null;
+            return $"idiomas: {string.Join(", ", languages.Select(LanguageCatalog.NameOf))} ({source})";
+        });
+    }
+
+    private void EditLanguages()
+    {
+        int fromScreenScraper = roms.Count(r => languageIndex.TryGet(RomKey.Of(r), out var info) && info.Languages.Count > 0);
+        string coverage = $"Datos de idioma: {fromScreenScraper:N0} ROMs con idiomas de ScreenScraper; {languageKnown:N0} de {roms.Count:N0} con algún idioma conocido. " +
+                          "Para traer más idiomas: Scrapeo › Descarga masiva de medios › «Idiomas (para el curado)».";
+        using var dialog = new CurationLanguagesDialog(languageSettings, coverage);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        languageSettings = dialog.Result;
+        languageSettings.Save();
+        trace.Add("curation_languages_changed", $"understood={string.Join(",", languageSettings.Understood)}; text_only={languageSettings.OnlyTextGenres}; filename={languageSettings.UseFilename}");
+        BuildRules();
+        FillSupra();
+        RefreshAll();
+    }
+
+    // Eliminar las candidatas: aquí solo se confirma el paso; el borrado real lo hace la ventana principal con su plan, su resumen y su
+    // confirmación, que muestran qué se va a borrar antes de tocar nada.
+    private void RequestDeletion()
+    {
+        var union = Union();
+        if (union.Count == 0) return;
+        long bytes = union.Sum(p => p.Row.Size);
+        string text = $"Se van a pasar {union.Count:N0} ROMs ({ScreenScraperDialog.FormatBytes(bytes)}) al borrado seguro de la ventana principal.\r\n\r\n" +
+                      "Allí se calculará el plan completo (ROMs, archivos accesorios, media de ES-DE y gamelists) y verás el resumen para confirmar antes de eliminar nada.\r\n\r\n" +
+                      "El borrado es PERMANENTE: no pasa por la Papelera." +
+                      (excluded.Count > 0 ? $"\r\n\r\nLas {excluded.Count:N0} ROMs excluidas a mano no se tocan." : "");
+        if (!QuietMessage.Confirm(this, "Eliminar candidatas", text, "Continuar al borrado")) return;
+        RowsForDeletion.Clear();
+        RowsForDeletion.AddRange(union.Select(p => p.Row));
+        trace.Add("curation_deletion_requested", $"roms={RowsForDeletion.Count}; bytes={bytes}");
+        DialogResult = DialogResult.OK;
+        Close();
     }
 
     private void EditSupra()
@@ -417,7 +479,7 @@ internal sealed class CurationDialog : Form
 
     // Candidatas de todo lo marcado, una sola vez por ROM aunque cumpla más de una regla.
     private static string KeyOf(RomRow row) =>
-        $"{row.System}|{(row.GamelistPath.Length > 0 ? PathRules.Relative(row.GamelistPath) : row.RomName.ToLowerInvariant())}";
+        RomKey.Of(row);
 
     private List<(RomRow Row, List<Hit> Hits)> Union(bool includeExcluded = false) =>
         hits.Where(h => checkedIds.Contains(h.Rule.Id) && (includeExcluded || !excluded.Contains(KeyOf(h.Row))))
@@ -433,7 +495,9 @@ internal sealed class CurationDialog : Form
         double percent = roms.Count > 0 ? union.Count * 100.0 / roms.Count : 0;
         summary.Text = $"Con lo marcado ({checkedIds.Count} reglas): {union.Count:N0} ROMs candidatas de {roms.Count:N0} ({percent:0.0} %) · espacio: {ScreenScraperDialog.FormatBytes(bytes)}";
         int genericSports = roms.Count(r => r.Genre.Equals("Deportes", StringComparison.OrdinalIgnoreCase));
-        note.Text = $"Excluidas a mano: {excluded.Count:N0}   ·   {genericSports:N0} ROMs tienen el género «Deportes» sin subgénero; solo las detectan las supracategorías de deportes por palabras del nombre.";
+        deleteButton.Text = $"Eliminar {union.Count:N0} candidatas…";
+        deleteButton.Enabled = union.Count > 0;
+        note.Text = $"Excluidas a mano: {excluded.Count:N0}   ·   Idioma conocido: {languageKnown:N0} de {roms.Count:N0}   ·   {genericSports:N0} ROMs tienen el género «Deportes» sin subgénero; solo las detectan las supracategorías de deportes por palabras del nombre.";
         FillSystems(union);
         RefreshCandidates();
     }

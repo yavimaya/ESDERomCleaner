@@ -62,7 +62,7 @@ internal sealed class BulkMediaDialog : Form
         Text = baseTitle = "Descarga masiva de medios — ScreenScraper";
         uiTimer.Tick += (_, _) => RefreshProgress();
         FormClosed += (_, _) => uiTimer.Dispose();
-        Width = 1220; Height = 720; MinimumSize = new Size(1000, 640);
+        Width = 1220; Height = 770; MinimumSize = new Size(1000, 700);
         StartPosition = FormStartPosition.CenterParent;
         CancelButton = closeButton;
         BuildLayout();
@@ -162,6 +162,10 @@ internal sealed class BulkMediaDialog : Form
         };
         folderChecks["metadata"] = metadataCheck;
         AddWide(metadataCheck);
+        // Los idiomas de cada ROM se consultan a ScreenScraper y se guardan solo en la aplicación, para las reglas de curado por idioma.
+        var languagesCheck = new CheckBox { Text = "Idiomas (para el curado)", AutoSize = true, Margin = new Padding(6, 3, 3, 6) };
+        folderChecks["languages"] = languagesCheck;
+        AddWide(languagesCheck);
         int slot = 0;
         foreach (var folder in EsDeMediaInstaller.Folders)
         {
@@ -205,7 +209,7 @@ internal sealed class BulkMediaDialog : Form
 
         var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
         right.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 250));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 296));
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         right.Controls.Add(mediaGroup, 0, 0);
         right.Controls.Add(optionsGroup, 0, 1);
@@ -399,7 +403,7 @@ internal sealed class BulkMediaDialog : Form
     private BulkMediaOptions BuildOptions(List<string> systems)
     {
         var folders = EsDeMediaInstaller.Folders.Where(f => folderChecks[f.Folder].Checked).ToList();
-        return new BulkMediaOptions(root, roms, ssSystems, systems, folders, normalizedRadio.Checked, OverwriteMode(), OverwriteMode() != BulkOverwrite.No && backupCheck.Checked, searchNameCheck.Checked, Threads(), folderChecks["metadata"].Checked, gamelistBackups);
+        return new BulkMediaOptions(root, roms, ssSystems, systems, folders, normalizedRadio.Checked, OverwriteMode(), OverwriteMode() != BulkOverwrite.No && backupCheck.Checked, searchNameCheck.Checked, Threads(), folderChecks["metadata"].Checked, gamelistBackups, folderChecks["languages"].Checked);
     }
 
     private async Task StartAsync()
@@ -431,6 +435,8 @@ internal sealed class BulkMediaDialog : Form
         var text = new StringBuilder();
         text.AppendLine($"Sistemas: {systems.Count - plan.UnresolvedSystems} (ROMs: {plan.Roms:N0})" + (plan.UnresolvedSystems > 0 ? $"  ·  {plan.UnresolvedSystems} no reconocidos en ScreenScraper, se omiten" : ""));
         text.AppendLine($"Medios: {(options.Folders.Count > 0 ? string.Join(", ", options.Folders.Select(f => f.Folder)) : "(ninguno)")}");
+        if (options.Languages)
+            text.AppendLine("Idiomas: se consultan a ScreenScraper y se guardan solo en la aplicación, para el curado; no se modifica ningún gamelist.");
         if (options.Metadata)
             text.AppendLine("Metadatos: SE SOBRESCRIBEN en el gamelist.xml el nombre, la descripción, la valoración, la fecha, el desarrollador, el editor, el género y los jugadores " +
                             "con los de ScreenScraper; los campos que ScreenScraper no tenga se dejan como están" + (options.GamelistBackup ? ". Se hace copia de seguridad del gamelist.xml." : "."));
@@ -556,6 +562,7 @@ internal sealed class BulkMediaDialog : Form
             $"ya completas {s.AlreadyComplete:N0}"
         };
         if (s.MetadataUpdated > 0 || s.MetadataFailed > 0) parts.Add($"metadatos {s.MetadataUpdated:N0}" + (s.MetadataFailed > 0 ? $" ({s.MetadataFailed:N0} fallidos)" : ""));
+        if (s.LanguagesStored > 0) parts.Add($"idiomas {s.LanguagesStored:N0}");
         if (s.FilesIdentical > 0) parts.Add($"idénticos {s.FilesIdentical:N0}");
         if (s.FoldersUnavailable > 0) parts.Add($"sin medio disponible {s.FoldersUnavailable:N0}");
         if (s.NotFound > 0) parts.Add($"no encontradas {s.NotFound:N0}");

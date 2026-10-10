@@ -29,7 +29,17 @@ public sealed partial class RomCleanerForm : Form
             return;
         }
 
+        await DeleteRowsAsync(selectedRows);
+    }
+
+    // Borrado seguro de unas ROMs concretas (plan, resumen con confirmación, ejecución y actualización de los sistemas afectados).
+    // Lo usan tanto la selección de la ventana principal como el formulario de curado.
+    private async Task DeleteRowsAsync(RomRow[] selectedRows)
+    {
+        if (cts is not null) return;
+        var rowPaths = selectedRows.Select(row => row.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
         bool backupsEnabledForOperation = createGamelistBackups;
+
         var service = new DeletionService();
         DeletionPlan plan;
         var planningCancellation = new CancellationTokenSource();
@@ -96,7 +106,7 @@ public sealed partial class RomCleanerForm : Form
             MessageBox.Show(this, finalSummary, "Resultado de la eliminación", MessageBoxButtons.OK,
                 MessageBoxIcon.None);
 
-            selected.Clear();
+            selected.RemoveWhere(path => rowPaths.Contains(path));
             status.Text = $"Borrado terminado: {result.DeletedRomCount}/{result.RomCountPlanned} ROMs. Actualizando sistemas afectados…";
             try
             {

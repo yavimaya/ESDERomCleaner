@@ -43,6 +43,8 @@ internal sealed class SsGame
     public List<SsGenre> Genres { get; } = new();
     // Regiones de la ROM identificada por hash (códigos cortos de ScreenScraper: us, eu, jp, wor...).
     public List<string> RomRegions { get; } = new();
+    // Idiomas de la ROM identificada (códigos cortos: en, fr, ja…). Vacío si ScreenScraper no los indica.
+    public List<string> RomLanguages { get; } = new();
 
     public string BestName
     {

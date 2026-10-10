@@ -33,6 +33,13 @@ internal sealed class CurationRule
     private readonly string? namePattern;
     private readonly Regex? genre;
     private readonly Regex? name;
+    // Regla con criterio propio: devuelve el motivo si la ROM es candidata y null si no.
+    private readonly Func<RomRow, string?>? custom;
+
+    public CurationRule(string id, string title, string description, Func<RomRow, string?> custom)
+    {
+        Id = id; Title = title; Description = description; this.custom = custom;
+    }
 
     public CurationRule(string id, string title, string description, string? genrePattern, string? namePattern)
     {
@@ -44,7 +51,7 @@ internal sealed class CurationRule
     }
 
     // Criterio exacto, para consultarlo como ayuda.
-    public string Criteria =>
+    public string Criteria => custom is not null ? "Regla de idiomas: se configura con el botón «Idiomas…»" :
         (genrePattern is null ? "" : $"Géneros: {genrePattern}") +
         (genrePattern is not null && namePattern is not null ? "\r\n" : "") +
         (namePattern is null ? "" : $"Palabras del nombre: {namePattern}");
@@ -76,6 +83,13 @@ internal sealed class CurationRule
     public bool Matches(RomRow row, out string reason)
     {
         reason = "";
+        if (custom is not null)
+        {
+            string? why = custom(row);
+            if (why is null) return false;
+            reason = why;
+            return true;
+        }
         if (genre is not null)
         {
             string genreName = EffectiveGenre(row);
