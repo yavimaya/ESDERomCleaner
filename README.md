@@ -103,4 +103,4 @@ Puedes ver más detalle técnico en [`CLAUDE.md`](CLAUDE.md).
 
 ## Licencia
 
-Por definir.
+Este proyecto se distribuye bajo la licencia [GNU GPL v3.0](LICENSE): puedes usarlo, estudiarlo y modificarlo, y si redistribuyes versiones modificadas debes publicarlas también bajo la misma licencia.
