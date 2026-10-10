@@ -19,6 +19,28 @@ La interfaz, los mensajes y los comentarios del código están en **español**.
 - **Clonar** la colección a otra carpeta con `robocopy /MIR`, validando que origen y destino no se solapan.
 - **Trazabilidad**: cada acción relevante queda anotada en un registro que se puede consultar desde la propia aplicación.
 
+## Capturas
+
+**Ventana principal.** Sistemas, géneros, ROMs de cada género, miximage y descripción de la ROM enfocada.
+
+![Ventana principal](docs/img/ventana-principal.png)
+
+**Scrapeo de una ROM.** Compara el medio que ya tienes con el que ofrece ScreenScraper (imagen o vídeo, con sonido opcional) y elige qué guardar en cada carpeta de ES-DE.
+
+![Scrapeo de una ROM](docs/img/scrapeo-de-una-rom.png)
+
+**Descarga masiva.** Varios sistemas a la vez, con el porcentaje total en el título, el tiempo restante estimado y la lista de incidencias.
+
+![Descarga masiva de medios](docs/img/descarga-masiva.png)
+
+**Curado del romset.** Marca géneros y supracategorías para ver qué ROMs saldrían como candidatas a descartar, con el espacio que liberarías; las excluidas a mano aparecen tachadas.
+
+![Análisis de curado](docs/img/curado-analisis.png)
+
+**Editor de metadatos.** Compacto, con el género en un desplegable y el botón de guardar activo solo si hay cambios.
+
+![Editor de metadatos](docs/img/editor-de-metadatos.png)
+
 ## Requisitos
 
 - Windows 10/11 de 64 bits.
