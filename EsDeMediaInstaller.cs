@@ -124,8 +124,15 @@ internal static class EsDeMediaInstaller
             foreach (string existing in Existing(targetBase))
             {
                 string relative = Path.GetRelativePath(systemMediaRoot, existing);
-                string backup = Path.Combine(backupDir, row.System, relative);
-                Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
+                // Con copia de seguridad el archivo se aparta a media_backups; sin ella, a un archivo oculto temporal junto al original
+                // (para poder deshacer si algo falla) y no se crea ninguna carpeta de copias.
+                string backup;
+                if (keepBackup)
+                {
+                    backup = Path.Combine(backupDir, row.System, relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
+                }
+                else backup = Path.Combine(Path.GetDirectoryName(existing)!, "." + Path.GetFileName(existing) + "." + Guid.NewGuid().ToString("N") + ".old");
                 File.Move(existing, backup, overwrite: false);
                 moved.Add((existing, backup));
                 backups.Add(backup);
