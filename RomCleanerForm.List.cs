@@ -14,6 +14,14 @@ public sealed partial class RomCleanerForm : Form
     private async Task ScanAsync()
     {
         if (cts != null) return;
+        string rootPath = root.Text.Trim().Trim('"');
+        if (!ValidateRoot(rootPath, out string problem))
+        {
+            status.Text = "Ruta raíz no válida.";
+            QuietMessage.Show(this, "Ruta raíz no válida", problem);
+            return;
+        }
+        root.Text = rootPath;
         selected.Clear(); cts = new CancellationTokenSource(); var token = cts.Token;
         scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = deleteSelected.Enabled = false; cancel.Enabled = true; progress.Style = ProgressBarStyle.Blocks; progress.Value = 0;
         trace.Add("scan_started", root.Text);
@@ -33,9 +41,9 @@ public sealed partial class RomCleanerForm : Form
             UpdateCollectionCounters();
             int identified = all.Count(r => r.Status == RomStatus.Ok); int ambiguous = all.Count(r => r.Status == RomStatus.Ambiguous);
 
-            systems.Items.Clear();
-            foreach (var s in all.Select(r => r.System).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s, StringComparer.OrdinalIgnoreCase)) systems.Items.Add(s);
-            if (systems.Items.Count > 0) systems.SelectedIndex = 0; else { current.Clear(); categories.Items.Clear(); roms.Items.Clear(); details.Clear(); }
+            RefreshSystemsList();
+            // Solo se recuerda una ruta con la que el análisis ha funcionado.
+            if (!lastRootPath.Equals(rootPath, StringComparison.OrdinalIgnoreCase)) { lastRootPath = rootPath; SaveOptions(); }
             status.Text = "Archivos consultados; calculando tamaños…";
             await mediaSizeTask;
             mediaBytes = mediaSizeTask.Result;
@@ -48,6 +56,56 @@ public sealed partial class RomCleanerForm : Form
         catch (Exception ex) { sizesCalculating = false; status.Text = "Error de escaneo."; trace.Add("scan_error", ex.ToString()); MessageBox.Show(this, ex.Message, "No se pudo analizar", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally { try { await mediaSizeTask; } catch { } cts.Dispose(); cts = null; scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = true; deleteSelected.Enabled = selected.Count > 0; cancel.Enabled = false; progress.Style = ProgressBarStyle.Blocks; progress.Value = 0; }
     }
+    // La ruta raíz debe ser la carpeta que contiene Roms y ES-DE\gamelists. Se comprueba antes de empezar para dar un mensaje claro.
+    private static bool ValidateRoot(string path, out string problem)
+    {
+        problem = "";
+        if (path.Length == 0)
+        {
+            problem = "Indica la ruta raíz de la colección: la carpeta que contiene Roms y ES-DE.\r\n\r\nPuedes escribirla o pulsar «Examinar…».";
+            return false;
+        }
+        if (!Path.IsPathRooted(path) || !Directory.Exists(path))
+        {
+            problem = $"La carpeta «{path}» no existe.\r\n\r\nRevisa la ruta raíz (por ejemplo C:\\Temp\\NOVA) o pulsa «Examinar…» para elegirla.";
+            return false;
+        }
+        if (!Directory.Exists(Path.Combine(path, "Roms")))
+        {
+            problem = $"La carpeta «{path}» existe, pero no contiene una carpeta «Roms».\r\n\r\nLa ruta raíz debe ser la que contiene Roms y ES-DE; quizá tengas que subir o bajar un nivel.";
+            return false;
+        }
+        if (!Directory.Exists(Path.Combine(path, "ES-DE", "gamelists")))
+        {
+            problem = $"En «{path}» no se encuentra «ES-DE\\gamelists».\r\n\r\nLa ruta raíz debe contener las carpetas Roms y ES-DE.";
+            return false;
+        }
+        return true;
+    }
+
+    // Carpetas que no son sistemas de juegos (lanzadores de apps, emuladores…): solo se muestran con la opción «Mostrar sistemas accesorios».
+    private static readonly HashSet<string> AccessorySystemNames = new(StringComparer.OrdinalIgnoreCase) { "androidapps", "emulators", "desktop" };
+
+    private bool IsVisibleSystem(string system) => showAccessory.Checked || !AccessorySystemNames.Contains(system);
+
+    // Rellena la lista de sistemas; si el sistema que se estaba viendo sigue disponible, se conserva sin recargar nada.
+    private void RefreshSystemsList()
+    {
+        string? keep = systems.SelectedItem as string;
+        var names = all.Select(r => r.System).Distinct(StringComparer.OrdinalIgnoreCase).Where(IsVisibleSystem).OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+        bool keepSelection = keep is not null && names.Contains(keep, StringComparer.OrdinalIgnoreCase);
+        changing = keepSelection;
+        try
+        {
+            systems.Items.Clear();
+            foreach (string s in names) systems.Items.Add(s);
+            if (keepSelection) systems.SelectedIndex = names.FindIndex(n => n.Equals(keep, StringComparison.OrdinalIgnoreCase));
+        }
+        finally { changing = false; }
+        if (keepSelection) return;
+        if (systems.Items.Count > 0) systems.SelectedIndex = 0; else { current.Clear(); categories.Items.Clear(); roms.Items.Clear(); details.Clear(); }
+    }
+
     private static string Genre(RomRow r) => string.IsNullOrWhiteSpace(r.Genre) ? "Sin género" : r.Genre;
     private void ChangeSystem()
     {

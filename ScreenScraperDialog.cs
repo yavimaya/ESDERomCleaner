@@ -240,7 +240,7 @@ internal sealed class ScreenScraperDialog : Form
             systemCombo.Items.Clear();
             foreach (var system in allSystems) systemCombo.Items.Add(system);
             systemCombo.EndUpdate();
-            var match = FindSystem(row.System);
+            var match = SsSystemResolver.Find(allSystems, row.System);
             if (match is not null)
             {
                 systemCombo.SelectedItem = match;
@@ -262,14 +262,6 @@ internal sealed class ScreenScraperDialog : Form
         systemPrompt.Visible = true;
         systemCombo.Visible = true;
         statusLabel.Text = message;
-    }
-
-    private SsSystem? FindSystem(string folder)
-    {
-        string key = folder.Trim().ToLowerInvariant();
-        return allSystems.FirstOrDefault(s => s.Retropie == key)
-            ?? allSystems.FirstOrDefault(s => s.Recalbox == key)
-            ?? allSystems.FirstOrDefault(s => s.CommonNames.Any(n => n.Equals(key, StringComparison.OrdinalIgnoreCase)));
     }
 
     private async Task SearchAsync(bool automatic = false)

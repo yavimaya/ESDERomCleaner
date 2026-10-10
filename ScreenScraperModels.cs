@@ -13,6 +13,9 @@ internal sealed record SsSystem(int Id, string Name, string Retropie, string Rec
 
 internal sealed record SsText(string Key, string Text);
 
+// Género de ScreenScraper: tiene un padre (ParentId «0» si es una categoría principal) y nombres por idioma.
+internal sealed record SsGenre(string Id, string ParentId, bool Principal, List<SsText> Names);
+
 // Url contiene las credenciales en claro: nunca se muestra ni se escribe en trazas.
 internal sealed record SsMedia(string Type, string Parent, string Region, string Format, long Size, string Md5, string Url)
 {
@@ -37,6 +40,7 @@ internal sealed class SsGame
     public Dictionary<string, List<List<SsText>>> Groups { get; } = new();
     public List<SsMedia> Medias { get; } = new();
     public List<SsText> RomProperties { get; } = new();
+    public List<SsGenre> Genres { get; } = new();
     // Regiones de la ROM identificada por hash (códigos cortos de ScreenScraper: us, eu, jp, wor...).
     public List<string> RomRegions { get; } = new();
 
@@ -70,6 +74,9 @@ internal static class SsRegions
         return result;
     }
 }
+
+// Resultado de una búsqueda por nombre: identificador del juego y todos los nombres que ScreenScraper conoce de él.
+internal sealed record SsGameHit(string Id, List<string> Names);
 
 internal sealed record SsLookupResult(List<SsGame> Games, string RawJson);
 

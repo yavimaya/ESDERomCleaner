@@ -60,6 +60,8 @@ internal static class EsDeMediaInstaller
         return Path.Combine(SystemMediaRoot(root, row.System), folder, relativeDir, stem);
     }
 
+    public static bool IsMediaFile(string path) => MediaExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
     // Medios que ES-DE ya tiene para esa ROM en esa carpeta (mismo nombre, cualquier extensión de medio).
     public static List<string> Existing(string targetBase)
     {
@@ -79,7 +81,7 @@ internal static class EsDeMediaInstaller
 
     // Instala cada medio: copia a un temporal junto al destino, aparta los medios existentes a la copia de seguridad
     // y mueve el temporal a su sitio. Si algo falla en un medio, se restauran sus archivos apartados.
-    public static void Install(string root, RomRow row, IReadOnlyList<MediaInstallRequest> requests, List<MediaInstallResult> results, List<string> errors, IProgress<string>? progress, CancellationToken token)
+    public static void Install(string root, RomRow row, IReadOnlyList<MediaInstallRequest> requests, List<MediaInstallResult> results, List<string> errors, IProgress<string>? progress, CancellationToken token, bool keepBackup = true)
     {
         string mediaRoot = Path.Combine(Path.GetFullPath(root), "ES-DE", "downloaded_media");
         string systemMediaRoot = SystemMediaRoot(root, row.System);
@@ -92,12 +94,12 @@ internal static class EsDeMediaInstaller
         {
             token.ThrowIfCancellationRequested();
             progress?.Report($"Guardando {request.Folder}…");
-            try { results.Add(InstallOne(root, row, request, systemMediaRoot, backupDir)); }
+            try { results.Add(InstallOne(root, row, request, systemMediaRoot, backupDir, keepBackup)); }
             catch (Exception ex) { errors.Add($"{request.Folder}: {ex.Message}"); }
         }
     }
 
-    private static MediaInstallResult InstallOne(string root, RomRow row, MediaInstallRequest request, string systemMediaRoot, string backupDir)
+    private static MediaInstallResult InstallOne(string root, RomRow row, MediaInstallRequest request, string systemMediaRoot, string backupDir, bool keepBackup)
     {
         string targetBase = TargetBase(root, row, request.Folder);
         string target = targetBase + "." + request.Media.Format.ToLowerInvariant();
@@ -112,6 +114,7 @@ internal static class EsDeMediaInstaller
 
         string temp = Path.Combine(targetDir, $".{Path.GetFileName(targetBase)}.{Guid.NewGuid():N}.tmp");
         var moved = new List<(string Original, string Backup)>();
+        var backups = new List<string>();
         try
         {
             File.Copy(request.SourcePath, temp, overwrite: false);
@@ -125,8 +128,15 @@ internal static class EsDeMediaInstaller
                 Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
                 File.Move(existing, backup, overwrite: false);
                 moved.Add((existing, backup));
+                backups.Add(backup);
             }
             File.Move(temp, target, overwrite: false);
+            // Sin copia de seguridad, lo sustituido se elimina una vez el medio nuevo ya está en su sitio.
+            if (!keepBackup)
+            {
+                foreach (var (_, backupFile) in moved) try { File.Delete(backupFile); } catch { }
+                backups.Clear();
+            }
         }
         catch
         {
@@ -135,6 +145,6 @@ internal static class EsDeMediaInstaller
                 try { if (!File.Exists(original)) File.Move(backup, original); } catch { }
             throw;
         }
-        return new MediaInstallResult(request.Folder, request.Media, target, moved.Select(m => m.Original).ToList(), moved.Select(m => m.Backup).ToList());
+        return new MediaInstallResult(request.Folder, request.Media, target, moved.Select(m => m.Original).ToList(), backups);
     }
 }

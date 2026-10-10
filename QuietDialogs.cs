@@ -75,6 +75,30 @@ internal sealed class MediaSaveConfirmDialog : Form
 // Aviso con un único botón, sin icono: no suena nada al mostrarse (los MessageBox con icono reproducen un sonido del sistema).
 internal static class QuietMessage
 {
+    // Pregunta con dos botones, sin icono ni sonido. Devuelve true si se pulsa el botón de aceptar.
+    public static bool Confirm(IWin32Window? owner, string title, string text, string okText = "Aceptar")
+    {
+        using var dialog = new Form
+        {
+            Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
+            ShowInTaskbar = false, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(700, 160),
+            Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont
+        };
+        var label = new Label { Dock = DockStyle.Fill, Text = text, AutoSize = false, Padding = new Padding(14, 12, 14, 0) };
+        var ok = new Button { Text = okText, DialogResult = DialogResult.OK, MinimumSize = new Size(110, 28), AutoSize = true };
+        var cancel = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, MinimumSize = new Size(90, 28), AutoSize = true };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 44, Padding = new Padding(8, 6, 8, 4) };
+        buttons.Controls.Add(cancel);
+        buttons.Controls.Add(ok);
+        dialog.Controls.Add(label);
+        dialog.Controls.Add(buttons);
+        dialog.AcceptButton = ok;
+        dialog.CancelButton = cancel;
+        var size = TextRenderer.MeasureText(text, dialog.Font, new Size(672, 0), TextFormatFlags.WordBreak);
+        dialog.ClientSize = new Size(700, Math.Clamp(size.Height + 12 + 44 + 20, 120, 640));
+        return dialog.ShowDialog(owner) == DialogResult.OK;
+    }
+
     public static void Show(IWin32Window? owner, string title, string text)
     {
         using var dialog = new Form

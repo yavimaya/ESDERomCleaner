@@ -102,12 +102,57 @@ internal sealed class ScreenScraperClient
         return result.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    // Lee del servidor los datos de la cuenta (hilos, cuota, velocidad) sin consultar ningún juego.
+    public async Task RefreshUserAsync(CancellationToken token)
+    {
+        string body = await GetStringAsync(BuildUrl("ssuserInfos.php"), token);
+        using var doc = ParseJson(body);
+        if (doc.RootElement.TryGetProperty("response", out var response) && response.TryGetProperty("ssuser", out var user) && user.ValueKind == JsonValueKind.Object)
+            ScreenScraperQuota.Sync(user);
+    }
+
     public async Task<SsLookupResult> LookupAsync(int systemId, string romFileName, RomHashes hashes, CancellationToken token)
     {
         string url = BuildUrl("jeuInfos.php",
             ("crc", hashes.Crc32), ("md5", hashes.Md5), ("sha1", hashes.Sha1),
             ("systemeid", systemId.ToString()), ("romtype", "rom"), ("romnom", romFileName),
             ("romtaille", hashes.Size.ToString()));
+        return await LookupUrlAsync(url, token);
+    }
+
+    // Ficha completa de un juego ya identificado (p. ej. tras buscarlo por nombre), sin hash de ROM.
+    public Task<SsLookupResult> LookupByGameIdAsync(int systemId, string gameId, CancellationToken token) =>
+        LookupUrlAsync(BuildUrl("jeuInfos.php", ("systemeid", systemId.ToString()), ("gameid", gameId)), token);
+
+    // Búsqueda por texto dentro de un sistema. Devuelve los juegos con todos sus nombres regionales para poder exigir
+    // una coincidencia exacta. Si ScreenScraper no encuentra nada (404), la lista queda vacía.
+    public async Task<List<SsGameHit>> SearchGamesAsync(int systemId, string name, CancellationToken token)
+    {
+        string body;
+        try { body = await GetStringAsync(BuildUrl("jeuRecherche.php", ("systemeid", systemId.ToString()), ("recherche", name)), token); }
+        catch (ScreenScraperException ex) when (ex.StatusCode == 404) { return new(); }
+        using var doc = ParseJson(body);
+        var hits = new List<SsGameHit>();
+        if (!doc.RootElement.TryGetProperty("response", out var response)) return hits;
+        if (response.TryGetProperty("ssuser", out var user) && user.ValueKind == JsonValueKind.Object) ScreenScraperQuota.Sync(user);
+        if (!response.TryGetProperty("jeux", out var games) || games.ValueKind != JsonValueKind.Array) return hits;
+        foreach (var game in games.EnumerateArray())
+        {
+            string id = Str(game, "id");
+            if (id.Length == 0) continue;
+            var names = new List<string>();
+            var texts = new List<SsText>();
+            FillTexts(texts, game, "noms", "region");
+            names.AddRange(texts.Select(t => t.Text));
+            string single = Str(game, "nom");
+            if (single.Length > 0) names.Add(single);
+            hits.Add(new SsGameHit(id, names));
+        }
+        return hits;
+    }
+
+    private async Task<SsLookupResult> LookupUrlAsync(string url, CancellationToken token)
+    {
         string body = await GetStringAsync(url, token);
         using var doc = ParseJson(body);
         string pretty = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
@@ -220,6 +265,7 @@ internal sealed class ScreenScraperClient
             {
                 var texts = new List<SsText>();
                 FillTexts(texts, item, "noms", "langue");
+                if (texts.Count > 0 && group == "genres") game.Genres.Add(new SsGenre(Str(item, "id"), Str(item, "parentid"), Str(item, "principale") == "1", texts));
                 if (texts.Count > 0) list.Add(texts);
             }
             if (list.Count > 0) game.Groups[group] = list;

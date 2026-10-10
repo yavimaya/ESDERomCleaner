@@ -16,7 +16,7 @@ public sealed partial class RomCleanerForm : Form
         if (roms.SelectedItem is not RomItem item) return;
         try
         {
-            if (!RomMetadataEditor.Show(this, item.Row, createGamelistBackups)) return;
+            if (!RomMetadataEditor.Show(this, item.Row, createGamelistBackups, all.Select(r => r.Genre).Where(g => !string.IsNullOrWhiteSpace(g)).Distinct(StringComparer.OrdinalIgnoreCase).ToList())) return;
 
             trace.Add("metadata_saved", $"system={item.Row.System}; path={item.Row.GamelistPath}");
             RefreshMetadataAfterSave(item.Row);

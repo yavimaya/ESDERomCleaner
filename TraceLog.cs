@@ -5,10 +5,15 @@ namespace ESDERomCleaner;
 internal sealed class TraceLog
 {
     private readonly string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "traceability.jsonl");
+    private static readonly object Gate = new();
     public void Add(string action, string details)
     {
-        try { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.AppendAllText(path, JsonSerializer.Serialize(new TraceRecord(DateTime.UtcNow, action, details)) + Environment.NewLine); }
-        catch { }
+        // La descarga masiva escribe desde varios hilos a la vez.
+        lock (Gate)
+        {
+            try { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.AppendAllText(path, JsonSerializer.Serialize(new TraceRecord(DateTime.UtcNow, action, details)) + Environment.NewLine); }
+            catch { }
+        }
     }
     public List<TraceRecord> ReadRecords(int max)
     {

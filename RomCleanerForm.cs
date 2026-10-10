@@ -25,6 +25,8 @@ public sealed partial class RomCleanerForm : Form
     private readonly VideoView videoView = new() { Dock = DockStyle.Fill, BackColor = SystemColors.Control, Visible = false };
     private readonly ToolStripMenuItem showVideos = new("Mostrar vídeos") { CheckOnClick = true, Checked = true };
     private readonly ToolStripMenuItem videoSound = new("Sonido en vídeos") { CheckOnClick = true, Checked = true };
+    private readonly ToolStripMenuItem showAccessory = new("Mostrar sistemas accesorios") { CheckOnClick = true, Checked = false, ToolTipText = "Muestra también las carpetas que no son sistemas de juegos, como androidapps, emulators o desktop." };
+    private readonly ToolStripMenuItem bulkMedia = new("Descarga masiva de medios (ScreenScraper)…");
     private readonly ToolStripMenuItem normalizedVideo = new("Vídeo normalizado") { CheckOnClick = true, Checked = true, ToolTipText = "Al elegir medios de ScreenScraper, proponer por defecto el vídeo normalizado (más ligero y con volumen igualado) en lugar del original." };
     private readonly System.Windows.Forms.Timer videoPreviewTimer = new() { Interval = 3000 };
     private readonly System.Windows.Forms.Timer videoMonitorTimer = new() { Interval = 250 };
@@ -53,11 +55,14 @@ public sealed partial class RomCleanerForm : Form
     private string cachePath = "—";
     private CancellationTokenSource? cts;
     private bool changing;
+    private const string DefaultRoot = @"C:\Temp\NOVA";
+    // Última ruta raíz con la que se analizó una colección; solo se actualiza cuando el análisis tiene éxito.
+    private string lastRootPath = DefaultRoot;
     private readonly ToolStripMenuItem selectContext = new("Añadir a selección");
     private readonly ToolStripMenuItem backupOption = new("Crear copias de seguridad de gamelist.xml") { CheckOnClick = true };
     private bool createGamelistBackups = false;
 
-    private sealed record AppOptions(bool CreateGamelistBackups, bool ShowVideos, bool VideoSound, bool NormalizedVideo);
+    private sealed record AppOptions(bool CreateGamelistBackups, bool ShowVideos, bool VideoSound, bool NormalizedVideo, bool ShowAccessorySystems, string RootPath);
     private static string OptionsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "settings.json");
 
     private static bool ReadBool(JsonElement element, string name, bool fallback) =>
@@ -67,7 +72,7 @@ public sealed partial class RomCleanerForm : Form
 
     private static AppOptions LoadOptions()
     {
-        var defaults = new AppOptions(false, true, true, true);
+        var defaults = new AppOptions(false, true, true, true, false, DefaultRoot);
         try
         {
             if (!File.Exists(OptionsPath)) return defaults;
@@ -77,7 +82,9 @@ public sealed partial class RomCleanerForm : Form
                 ReadBool(element, nameof(AppOptions.CreateGamelistBackups), defaults.CreateGamelistBackups),
                 ReadBool(element, nameof(AppOptions.ShowVideos), defaults.ShowVideos),
                 ReadBool(element, nameof(AppOptions.VideoSound), defaults.VideoSound),
-                ReadBool(element, nameof(AppOptions.NormalizedVideo), defaults.NormalizedVideo));
+                ReadBool(element, nameof(AppOptions.NormalizedVideo), defaults.NormalizedVideo),
+                ReadBool(element, nameof(AppOptions.ShowAccessorySystems), defaults.ShowAccessorySystems),
+                element.TryGetProperty(nameof(AppOptions.RootPath), out var rootValue) && rootValue.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(rootValue.GetString()) ? rootValue.GetString()! : defaults.RootPath);
         }
         catch { return defaults; }
     }
@@ -104,7 +111,7 @@ public sealed partial class RomCleanerForm : Form
     {
         try
         {
-            WriteOptions(new AppOptions(enabled, showVideos.Checked, videoSound.Checked, normalizedVideo.Checked));
+            WriteOptions(new AppOptions(enabled, showVideos.Checked, videoSound.Checked, normalizedVideo.Checked, showAccessory.Checked, lastRootPath));
             createGamelistBackups = enabled;
             trace.Add("option_gamelist_backups_changed", enabled ? "enabled" : "disabled");
             status.Text = enabled ? "Copias de seguridad de gamelist.xml activadas." : "Copias de seguridad de gamelist.xml desactivadas.";
@@ -118,11 +125,11 @@ public sealed partial class RomCleanerForm : Form
         }
     }
 
-    private void SaveVideoOptions()
+    private void SaveOptions()
     {
         try
         {
-            WriteOptions(new AppOptions(createGamelistBackups, showVideos.Checked, videoSound.Checked, normalizedVideo.Checked));
+            WriteOptions(new AppOptions(createGamelistBackups, showVideos.Checked, videoSound.Checked, normalizedVideo.Checked, showAccessory.Checked, lastRootPath));
             trace.Add("option_video_changed", $"show={showVideos.Checked}; sound={videoSound.Checked}; normalized={normalizedVideo.Checked}");
         }
         catch (Exception ex)
@@ -141,12 +148,14 @@ public sealed partial class RomCleanerForm : Form
         showVideos.Checked = options.ShowVideos;
         videoSound.Checked = options.VideoSound;
         normalizedVideo.Checked = options.NormalizedVideo;
+        showAccessory.Checked = options.ShowAccessorySystems;
+        lastRootPath = options.RootPath;
         KeyPreview = true;
         KeyDown += HandlePanelNavigation;
         FormClosing += (_, _) => StopVideoPlayback();
         FormClosed += (_, _) => DisposeVideoPlayer();
         BuildLayout();
-        root.Text = @"C:\Temp\NOVA";
+        root.Text = lastRootPath;
         WireEvents();
     }
 
@@ -228,7 +237,7 @@ public sealed partial class RomCleanerForm : Form
         videoMonitorTimer.Tick += (_, _) => CheckVideoPlayback();
         showVideos.CheckedChanged += (_, _) =>
         {
-            SaveVideoOptions();
+            SaveOptions();
             if (!showVideos.Checked)
             {
                 videoPreviewTimer.Stop();
@@ -237,8 +246,15 @@ public sealed partial class RomCleanerForm : Form
             }
             else if (pendingVideoRow is not null) ScheduleVideoPreview(pendingVideoRow, pendingVideoVersion);
         };
-        normalizedVideo.CheckedChanged += (_, _) => SaveVideoOptions();
-        videoSound.CheckedChanged += (_, _) => { if (mediaPlayer is not null) mediaPlayer.Volume = videoSound.Checked ? 100 : 0; SaveVideoOptions(); };
+        normalizedVideo.CheckedChanged += (_, _) => SaveOptions();
+        bulkMedia.Click += (_, _) => OpenBulkMediaDialog();
+        showAccessory.CheckedChanged += (_, _) =>
+        {
+            SaveOptions();
+            trace.Add("option_accessory_systems_changed", showAccessory.Checked ? "shown" : "hidden");
+            RefreshSystemsList();
+        };
+        videoSound.CheckedChanged += (_, _) => { if (mediaPlayer is not null) mediaPlayer.Volume = videoSound.Checked ? 100 : 0; SaveOptions(); };
     }
 
     private void ShowExtensions()

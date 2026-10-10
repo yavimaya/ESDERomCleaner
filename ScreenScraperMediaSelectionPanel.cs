@@ -6,9 +6,6 @@ namespace ESDERomCleaner;
 // El estado, el progreso y el bloqueo de la ventana se comunican al diálogo anfitrión mediante eventos.
 internal sealed class ScreenScraperMediaSelectionPanel : UserControl
 {
-    // Regiones de reserva cuando ScreenScraper no tiene ese tipo de medio para la región de la ROM.
-    private static readonly string[] FallbackRegions = ["wor", "eu", "us", "jp"];
-
     private sealed class FolderState
     {
         public required EsDeMediaFolder Folder { get; init; }
@@ -71,7 +68,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         this.trace = trace;
         this.preferNormalizedVideo = preferNormalizedVideo;
         // Solo se ofrecen medios de la región de la ROM (o sin región). Fuente: ScreenScraper; si no la da, el nombre del archivo.
-        romRegions = game.RomRegions.Count > 0 ? game.RomRegions.ToList() : SsRegions.FromFileName(row.RomName);
+        romRegions = SsMediaSelector.RomRegions(game, row.RomName);
         romRegionsSource = game.RomRegions.Count > 0 ? "según ScreenScraper" : romRegions.Count > 0 ? "según el nombre del archivo" : "desconocida: se ofrecen todas";
         Dock = DockStyle.Fill;
         BuildLayout();
@@ -225,22 +222,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         {
             foreach (var folder in EsDeMediaInstaller.Folders)
             {
-                var usable = game.Medias.Where(m => EsDeMediaInstaller.Accepts(folder, m)).ToList();
-                string[] typeOrder = TypeOrder(folder);
-                int TypeRank(SsMedia m) => Array.FindIndex(typeOrder, t => t.Equals(m.Type, StringComparison.OrdinalIgnoreCase));
-                var candidates = usable
-                    .Where(MatchesRomRegion)
-                    .OrderBy(TypeRank)
-                    .ThenBy(m => RomRegionRank(m.Region))
-                    .ToList();
-                // Sin medios de la región de la ROM: se ofrecen los de las regiones de reserva, en su orden de prioridad.
-                bool fallback = candidates.Count == 0 && romRegions.Count > 0;
-                if (fallback)
-                    candidates = usable
-                        .Where(m => FallbackRank(m.Region) < FallbackRegions.Length)
-                        .OrderBy(m => FallbackRank(m.Region))
-                        .ThenBy(TypeRank)
-                        .ToList();
+                var (candidates, fallback) = SsMediaSelector.Candidates(game, romRegions, folder, SsMediaSelector.TypeOrder(folder, preferNormalizedVideo, miximageV2Only: false));
                 var state = new FolderState { Folder = folder, Candidates = candidates, Fallback = fallback && candidates.Count > 0, TargetBase = EsDeMediaInstaller.TargetBase(root, row, folder.Folder) };
                 state.Existing = EsDeMediaInstaller.Existing(state.TargetBase);
                 state.Chosen = candidates.FirstOrDefault();
@@ -257,22 +239,6 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
             saveButton.Enabled = false;
         }
         finally { updating = false; }
-    }
-
-    private bool MatchesRomRegion(SsMedia media) =>
-        media.Region.Length == 0 || romRegions.Count == 0 || romRegions.Contains(media.Region, StringComparer.OrdinalIgnoreCase);
-
-    // Los medios sin región (válidos para todas) van detrás de los de la región exacta de la ROM.
-    private int RomRegionRank(string region)
-    {
-        int index = romRegions.FindIndex(r => r.Equals(region, StringComparison.OrdinalIgnoreCase));
-        return index >= 0 ? index : romRegions.Count;
-    }
-
-    private static int FallbackRank(string region)
-    {
-        int index = Array.FindIndex(FallbackRegions, r => r.Equals(region, StringComparison.OrdinalIgnoreCase));
-        return index >= 0 ? index : FallbackRegions.Length;
     }
 
     private FolderState? SelectedState()
@@ -424,10 +390,6 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         if (caption.IsDisposed || !Equals(caption.Tag, path)) return;
         caption.Text = caption.Text.Replace(VideoInfoPending, info.Length > 0 ? " · " + info : "");
     }
-
-    // Orden de preferencia de tipos de la carpeta; en vídeos depende de la opción «Vídeo normalizado».
-    private string[] TypeOrder(EsDeMediaFolder folder) =>
-        folder.Folder == "videos" ? (preferNormalizedVideo ? ["video-normalized", "video"] : ["video", "video-normalized"]) : folder.SsTypes;
 
     private static string ImageResolution(string path)
     {
