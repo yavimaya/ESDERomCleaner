@@ -35,7 +35,8 @@ public sealed partial class RomCleanerForm : Form
         {
             string? path = await Task.Run(() => FindVideo(root.Text, row));
             if (version != previewVersion || !showVideos.Checked || !File.Exists(path)) return;
-            EnsureVideoPlayer();
+            await EnsureVideoPlayerAsync();
+            if (version != previewVersion || !showVideos.Checked) return; // mientras cargaba el motor se cambió de ROM
             currentVideoMedia?.Dispose();
             currentVideoMedia = new Media(libVlc!, new Uri(Path.GetFullPath(path!)));
             mediaPlayer!.Volume = videoSound.Checked ? 100 : 0;
@@ -56,12 +57,32 @@ public sealed partial class RomCleanerForm : Form
         }
     }
 
-    private void EnsureVideoPlayer()
+    private Task? libVlcWarmup;
+
+    // Cargar LibVLC (sus bibliotecas y complementos) tarda varios segundos la primera vez; se hace en segundo plano nada más abrir la ventana,
+    // para que el primer vídeo no deje la aplicación bloqueada.
+    private void WarmUpVideoEngine()
+    {
+        if (libVlcWarmup is not null) return;
+        libVlcWarmup = Task.Run(() =>
+        {
+            try
+            {
+                Core.Initialize();
+                // Decodificación por software y salida GDI: la ruta Direct3D11 de LibVLC cerraba la aplicación con una excepción en dxgi.dll.
+                libVlc ??= new LibVLC("--no-video-title-show", "--no-osd", "--avcodec-hw=none", "--vout=wingdi");
+            }
+            catch (Exception ex) { trace.Add("libvlc_init_error", ex.ToString()); }
+        });
+    }
+
+    private async Task EnsureVideoPlayerAsync()
     {
         if (mediaPlayer is not null) return;
-        Core.Initialize();
-        // Decodificación por software y salida GDI: la ruta Direct3D11 de LibVLC cerraba la aplicación con una excepción en dxgi.dll.
-        libVlc = new LibVLC("--no-video-title-show", "--no-osd", "--avcodec-hw=none", "--vout=wingdi");
+        WarmUpVideoEngine();
+        await libVlcWarmup!;
+        if (mediaPlayer is not null) return;
+        if (libVlc is null) throw new InvalidOperationException("No se pudo iniciar el motor de vídeo (LibVLC).");
         mediaPlayer = new MediaPlayer(libVlc);
         mediaPlayer.Scale = 0;
         mediaPlayer.AspectRatio = null;

@@ -575,6 +575,7 @@ internal sealed class AddRomsDialog : Form
             using var tick = new System.Windows.Forms.Timer { Interval = 120 };
             tick.Tick += (_, _) =>
             {
+                if (IsDisposed) { tick.Stop(); return; }
                 status.Text = progressText;
                 if (marquee) progress.Style = ProgressBarStyle.Marquee;
                 else { progress.Style = ProgressBarStyle.Blocks; progress.Value = Math.Clamp(progressValue, 0, 1000); }
@@ -663,6 +664,12 @@ internal sealed class AddRomsDialog : Form
     }
 
     private void AddRow(RomIdentity identity)
+    {
+        if (IsDisposed) return; // el formulario se cerró mientras se identificaba: sus tablas ya no existen
+        AddRowCore(identity);
+    }
+
+    private void AddRowCore(RomIdentity identity)
     {
         string? folder = ProposeFolder(identity, out string note);
         var target = folder is null ? doubtGrid : grid;
@@ -753,7 +760,7 @@ internal sealed class AddRomsDialog : Form
         var addedLock = new object();
         string progressText = ""; int progressValue = 0;
         using var tick = new System.Windows.Forms.Timer { Interval = 120 };
-        tick.Tick += (_, _) => { status.Text = progressText; progress.Value = Math.Clamp(progressValue, 0, 1000); };
+        tick.Tick += (_, _) => { if (IsDisposed) { tick.Stop(); return; } status.Text = progressText; progress.Value = Math.Clamp(progressValue, 0, 1000); };
         tick.Start();
         string verb = move ? "Moviendo" : "Copiando";
         progressText = $"Paso 1 de 1: {verb} 0/{jobs.Count}…";

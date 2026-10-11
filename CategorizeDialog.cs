@@ -92,7 +92,7 @@ internal sealed class CategorizeDialog : Form
             MetadataChanged = runner.MetadataChanged;
             var summary = runner.Summary;
             Result = summary.StoppedReason.Length > 0 ? summary.StoppedReason
-                : $"Categorizadas {summary.MetadataUpdated:N0} ROM(s)" + (summary.LanguagesStored > 0 ? $", idiomas de {summary.LanguagesStored:N0}" : "") +
+                : $"Categorizadas {summary.MetadataUpdated:N0} ROM(s)" +
                   (summary.NotFound > 0 ? $"; {summary.NotFound:N0} no encontradas" : "") + (summary.MetadataFailed > 0 ? $"; {summary.MetadataFailed:N0} fallidas" : "") + ".";
         }
         catch (OperationCanceledException) { MetadataChanged |= runner?.MetadataChanged ?? false; Result = "Categorización cancelada."; }

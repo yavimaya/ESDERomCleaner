@@ -9,6 +9,8 @@ public sealed partial class RomCleanerForm
     {
         dataFolderMenu.Click += (_, _) => ChangeDataFolder();
         tempFolderMenu.Click += (_, _) => ChangeTempFolder();
+        // El motor de vídeo se prepara en segundo plano con la ventana ya visible.
+        Shown += (_, _) => { if (showVideos.Checked) WarmUpVideoEngine(); };
     }
 
     private void ChangeDataFolder()
