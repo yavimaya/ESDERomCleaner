@@ -75,9 +75,11 @@ public sealed partial class RomCleanerForm : Form
         else if (offerUnclassified && unclassified is { Count: > 0 })
         {
             var listed = unclassified.Select(s => (s, all.Count(r => r.Status == RomStatus.Ok && r.System.Equals(s, StringComparison.OrdinalIgnoreCase)))).ToList();
-            bool accepted;
-            using (var dialog = new UnclassifiedSystemsDialog(listed)) accepted = dialog.ShowDialog(this) == DialogResult.OK;
-            if (accepted) await OpenBulkMediaDialogAsync(unclassified);
+            UnclassifiedChoice choice;
+            using (var dialog = new UnclassifiedSystemsDialog(listed)) { dialog.ShowDialog(this); choice = dialog.Choice; }
+            // «Categorizar» abre la descarga masiva solo con los metadatos marcados (traen la categoría); «Categorizar y scrapear» añade los medios elegidos la última vez.
+            if (choice == UnclassifiedChoice.Categorize) await OpenBulkMediaDialogAsync(unclassified, preset: BulkPreset.MetadataOnly);
+            else if (choice == UnclassifiedChoice.CategorizeAndScrape) await OpenBulkMediaDialogAsync(unclassified, preset: BulkPreset.WithMetadata);
         }
     }
     // La ruta raíz debe ser la carpeta que contiene Roms y ES-DE\gamelists. Se comprueba antes de empezar para dar un mensaje claro.

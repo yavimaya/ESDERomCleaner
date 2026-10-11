@@ -4,6 +4,9 @@ using System.Text;
 namespace ESDERomCleaner;
 
 // Descarga masiva de medios de ScreenScraper para uno o varios sistemas de la colección.
+// Qué se marca al abrir la descarga masiva: lo último que se eligió, solo los metadatos (categorizar), o lo último que se eligió más los metadatos.
+internal enum BulkPreset { Saved, MetadataOnly, WithMetadata }
+
 internal sealed class BulkMediaDialog : Form
 {
     private readonly IReadOnlyList<RomRow> roms;
@@ -53,7 +56,7 @@ internal sealed class BulkMediaDialog : Form
 
     private readonly HashSet<string> preselectedSystems;
 
-    public BulkMediaDialog(IReadOnlyList<RomRow> roms, string root, TraceLog trace, bool defaultNormalizedVideo, bool gamelistBackups, IEnumerable<string>? preselected = null)
+    public BulkMediaDialog(IReadOnlyList<RomRow> roms, string root, TraceLog trace, bool defaultNormalizedVideo, bool gamelistBackups, IEnumerable<string>? preselected = null, BulkPreset preset = BulkPreset.Saved)
     {
         preselectedSystems = new HashSet<string>(preselected ?? [], StringComparer.OrdinalIgnoreCase);
         this.gamelistBackups = gamelistBackups;
@@ -70,6 +73,8 @@ internal sealed class BulkMediaDialog : Form
         CancelButton = closeButton;
         BuildLayout();
         ApplySettings(BulkMediaSettings.Load(defaultNormalizedVideo));
+        if (preset == BulkPreset.MetadataOnly) foreach (var pair in folderChecks) pair.Value.Checked = pair.Key == "metadata";
+        else if (preset == BulkPreset.WithMetadata) folderChecks["metadata"].Checked = true;
         FillSystems();
 
         // Doble clic en cualquier parte de la fila (menos en su casilla, que ya responde a cada clic) marca o desmarca el sistema.
