@@ -13,7 +13,7 @@ La interfaz, los mensajes y los comentarios del código están en **español**.
 ## Qué puedes hacer
 
 - **Crear la estructura de ES-DE** (carpetas de todos los sistemas oficiales, de medios y de datos, con su `systeminfo.txt`) si la ruta elegida no la tiene, y **generar los `gamelist.xml`** desde las ROMs que haya en cada carpeta. Si copias ROMs nuevas, al analizar te ofrece añadirlas al gamelist (y, si quieres, categorizarlas y descargar sus medios).
-- **Añadir ROMs** (menú *Añadir ROMs*): arrastra archivos o carpetas (hasta 2 niveles de subcarpetas) y la aplicación las **identifica por hash** con los DAT de **No-Intro, Redump, TOSEC, MAME y FBNeo** (descargables desde la propia aplicación) o con los DAT que importes (GoodTools, clrmamepro, emuladores…), las coloca en la carpeta de su sistema y solo pregunta cuando hay dudas. Entiende **packs** (comprimidos con otros comprimidos dentro, recursivamente), prueba el hash sin cabecera (NES, FDS, Lynx, SNES…) y descarta lo que no son ROMs. Puedes elegir **cómo se guardan**: como llegan, sin comprimir, ZIP o 7z (con nivel de compresión), respetando las extensiones que admite cada sistema.
+- **Añadir ROMs** (menú *Añadir ROMs*): arrastra archivos o carpetas (hasta 2 niveles de subcarpetas) y la aplicación las **identifica por hash** con los DAT de **No-Intro, Redump, TOSEC, MAME y FBNeo** (descargables desde la propia aplicación) o con los DAT que importes (GoodTools, clrmamepro, emuladores…), las coloca en la carpeta de su sistema y solo pregunta cuando hay dudas. Entiende **packs** (comprimidos con otros comprimidos dentro, recursivamente), prueba el hash sin cabecera (NES, FDS, Lynx, SNES…) y descarta lo que no son ROMs. Puedes elegir **cómo se guardan**: como llegan, sin comprimir, ZIP o 7z (con nivel de compresión; 7-Zip va incluido en la aplicación), respetando las extensiones que admite cada sistema.
 - **Explorar** la colección por sistema y categoría (género), con búsqueda (también por expresión regular), vista previa de la *miximage* y reproducción del vídeo de la ROM enfocada.
 - **Editar metadatos** de un juego (`gamelist.xml`): nombre, descripción, valoración, fecha, desarrollador, género, favoritos, etc.
 - **Scrapear con ScreenScraper**:
@@ -127,7 +127,7 @@ Por defecto todo vive en `%LOCALAPPDATA%\ESDERomCleaner` (se puede cambiar en *O
 - [ScreenScraper](https://www.screenscraper.fr/) por su base de datos y su API.
 - [LibVLCSharp](https://github.com/videolan/libvlcsharp) y [VLC](https://www.videolan.org/) para la reproducción de vídeo.
 - [libretro-database](https://github.com/libretro/libretro-database) por mantener los DAT de No-Intro, Redump, TOSEC, MAME y FBNeo que se usan para identificar las ROMs, y los proyectos No-Intro, Redump y TOSEC que los elaboran.
-- [SharpCompress](https://github.com/adamhathcock/sharpcompress) para leer archivos 7z y rar. Para crear archivos 7z se usa [7-Zip](https://www.7-zip.org/) si está instalado.
+- [SharpCompress](https://github.com/adamhathcock/sharpcompress) para leer archivos 7z y rar. [7-Zip](https://www.7-zip.org/) (7za.exe, licencia LGPL, incluido en la aplicación) para crear archivos 7z.
 
 ## Licencia
 

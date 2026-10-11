@@ -20,8 +20,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="7-Zip.CommandLine" Version="25.1.0" GeneratePathProperty="true" ExcludeAssets="all" />
     <PackageReference Include="LibVLCSharp.WinForms" Version="3.10.1" />
     <PackageReference Include="SharpCompress" Version="0.50.5" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23.1" />
+  </ItemGroup>
+
+  <!-- 7-Zip incorporado (7za.exe, de línea de comandos) para crear archivos .7z sin depender de que esté instalado. Licencia LGPL: se incluye su texto. -->
+  <ItemGroup>
+    <None Include="$(Pkg7-Zip_CommandLine)\tools\x64\7za.exe" Link="7z\7za.exe" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(Pkg7-Zip_CommandLine)\tools\License.txt" Link="7z\License.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

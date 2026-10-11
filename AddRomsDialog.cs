@@ -105,7 +105,7 @@ internal sealed class AddRomsDialog : Form
         {
             levelBox.Enabled = CurrentStorage.Format is StorageFormat.Zip or StorageFormat.SevenZip;
             if (CurrentStorage.Format == StorageFormat.SevenZip && RomStorage.SevenZipPath() is null)
-                storageHint.Text = "7z necesita 7-Zip instalado; sin él se guardará en zip.";
+                storageHint.Text = "No se encuentra 7za.exe junto a la aplicación: se guardará en zip.";
             else storageHint.Text = "";
             new StorageSettings { Format = CurrentStorage.Format, Level = CurrentStorage.Level }.Save();
             foreach (var row in grid.Rows.Cast<DataGridViewRow>().ToList()) UpdateRowState(row);

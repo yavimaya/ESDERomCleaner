@@ -88,11 +88,12 @@ internal static class RomStorage
 {
     private static bool IsArchive(string path) => Path.GetExtension(path).ToLowerInvariant() is ".zip" or ".7z" or ".rar";
 
-    // Ruta de 7z.exe (7-Zip) si está instalado: se usa para crear archivos .7z, que .NET no sabe escribir.
+    // 7-Zip para crear archivos .7z (.NET no sabe escribirlos): primero el 7za.exe que lleva incorporado la aplicación y, si no está, el 7-Zip instalado.
     public static string? SevenZipPath()
     {
         string[] candidates =
         [
+            Path.Combine(AppContext.BaseDirectory, "7z", "7za.exe"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "7-Zip", "7z.exe"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "7-Zip", "7z.exe")
         ];
@@ -112,7 +113,7 @@ internal static class RomStorage
         StorageFormat wanted = options.Format;
         if (wanted == StorageFormat.SevenZip && SevenZipPath() is null)
         {
-            if (Admits(".zip")) return (StorageFormat.Zip, "no está 7-Zip instalado: se guarda en zip");
+            if (Admits(".zip")) return (StorageFormat.Zip, "no se encuentra 7za.exe: se guarda en zip");
             wanted = StorageFormat.Raw;
         }
         if (wanted == StorageFormat.SevenZip && !Admits(".7z"))
