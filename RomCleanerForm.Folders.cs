@@ -91,3 +91,15 @@ public sealed partial class RomCleanerForm
         }
     }
 }
+
+public sealed partial class RomCleanerForm
+{
+    // Versión de la aplicación (la de «Version» en el csproj, p. ej. «v0.1.1») para el título de la ventana.
+    private static string AppVersion()
+    {
+        var info = typeof(RomCleanerForm).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion;
+        string version = (info ?? typeof(RomCleanerForm).Assembly.GetName().Version?.ToString(3) ?? "").Split('+')[0];
+        return version.Length > 0 ? "v" + version : "";
+    }
+}

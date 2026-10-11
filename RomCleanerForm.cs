@@ -145,7 +145,7 @@ public sealed partial class RomCleanerForm : Form
 
     public RomCleanerForm()
     {
-        Text = "ES-DE ROM Cleaner"; Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application; MinimumSize = new Size(1000, 680); Size = new Size(1060, 720); StartPosition = FormStartPosition.CenterScreen;
+        Text = $"ES-DE ROM Cleaner {AppVersion()}"; Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application; MinimumSize = new Size(1000, 680); Size = new Size(1060, 720); StartPosition = FormStartPosition.CenterScreen;
         var options = LoadOptions();
         createGamelistBackups = options.CreateGamelistBackups;
         backupOption.Checked = createGamelistBackups;

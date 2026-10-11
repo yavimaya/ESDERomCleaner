@@ -88,9 +88,14 @@ internal static class SystemFormats
             if (File.Exists(info) || !EsDeSystemExtensions.BySystem.TryGetValue(folder, out var extensions)) return;
             Directory.CreateDirectory(dir);
             var text = new StringBuilder();
+            // Mismo formato que el que genera ES-DE; se omiten los comandos de lanzamiento, que dependen de la plataforma y del emulador de cada usuario.
+            EsDeSystemInfo.BySystem.TryGetValue(folder, out var info2);
             text.AppendLine("System name:").AppendLine(folder).AppendLine();
+            if (info2.FullName is { Length: > 0 }) text.AppendLine("Full system name:").AppendLine(info2.FullName).AppendLine();
             text.AppendLine("Supported file extensions:");
             text.AppendLine(string.Join(" ", extensions.SelectMany(e => new[] { e, e.ToUpperInvariant() }).Distinct())).AppendLine();
+            if (info2.Platform is { Length: > 0 }) text.AppendLine("Platform (for scraping):").AppendLine(info2.Platform).AppendLine();
+            if (info2.Theme is { Length: > 0 }) text.AppendLine("Theme folder:").AppendLine(info2.Theme);
             File.WriteAllText(info, text.ToString(), new UTF8Encoding(false));
         }
         catch { }
