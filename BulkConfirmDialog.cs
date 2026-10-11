@@ -9,11 +9,11 @@ internal sealed class BulkConfirmDialog : Form
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
         Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
-        const int width = 520, rowHeight = 20, headerHeight = 22;
+        const int width = 400, rowHeight = 20, headerHeight = 22;
         int visibleRows = Math.Min(systems.Count, 8);
         int gridHeight = headerHeight + visibleRows * rowHeight + 2;
 
-        var header = new Label { Text = "Se van a descargar los elementos seleccionados de estos sistemas:", Location = new Point(10, 8), Size = new Size(width - 20, 20), AutoSize = false };
+        var header = new Label { Text = "Se van a scrapear los elementos seleccionados:", Location = new Point(10, 8), Size = new Size(width - 20, 20), AutoSize = false };
         var grid = new StaticGrid
         {
             Location = new Point(10, 32), Size = new Size(width - 20, gridHeight),
@@ -23,7 +23,7 @@ internal sealed class BulkConfirmDialog : Form
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sistema", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, SortMode = DataGridViewColumnSortMode.NotSortable });
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
-            HeaderText = "ROMs", Width = 90, SortMode = DataGridViewColumnSortMode.NotSortable,
+            HeaderText = "ROMs", Width = 70, SortMode = DataGridViewColumnSortMode.NotSortable,
             DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter },
             HeaderCell = { Style = { Alignment = DataGridViewContentAlignment.MiddleCenter } }
         });

@@ -12,7 +12,7 @@
     <VlcWindowsX86Enabled>false</VlcWindowsX86Enabled>
     <VlcWindowsArm64Enabled>false</VlcWindowsArm64Enabled>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,6 +23,7 @@
     <PackageReference Include="7-Zip.CommandLine" Version="25.1.0" GeneratePathProperty="true" ExcludeAssets="all" />
     <PackageReference Include="LibVLCSharp.WinForms" Version="3.10.1" />
     <PackageReference Include="SharpCompress" Version="0.50.5" />
+    <PackageReference Include="System.IO.Hashing" Version="10.0.12" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23.1" />
   </ItemGroup>
 

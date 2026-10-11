@@ -38,10 +38,10 @@ internal sealed class BulkMediaDialog : Form
     private readonly RadioButton overwriteSizeRadio = new() { Text = "Solo si el tamaño es distinto del actual", AutoSize = true, Margin = new Padding(26, 0, 3, 0) };
     // Los hilos los fija la membresía de ScreenScraper (se leen del servidor), no el usuario.
     private readonly Label threadsInfo = new() { AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 6, 3, 3) };
-    private readonly Button startButton = new() { Text = "Iniciar descarga", AutoSize = true, MinimumSize = new Size(130, 30) };
+    private readonly Button startButton = new() { Text = "Scrapear", AutoSize = true, MinimumSize = new Size(130, 30) };
     private readonly Button cancelButton = new() { Text = "Cancelar", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
     private readonly Button viewSummaryButton = new() { Text = "Ver resumen", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
-    private readonly Button exportButton = new() { Text = "Exportar incidencias…", AutoSize = true, MinimumSize = new Size(90, 30) };
+    private readonly Button exportButton = new() { Text = "Exportar incidencias…", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
     private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 30), DialogResult = DialogResult.Cancel };
     private readonly Label summaryLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
     private readonly Label statusLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
@@ -355,7 +355,7 @@ internal sealed class BulkMediaDialog : Form
             }
             finally { updating = false; }
             UpdateSystemsCount();
-            statusLabel.Text = "Marca los sistemas y los medios que quieres descargar y pulsa «Iniciar descarga».";
+            statusLabel.Text = "Marca los sistemas y los medios que quieres descargar y pulsa «Scrapear».";
         }
         catch (Exception ex) { statusLabel.Text = "No se pudo cargar la lista de sistemas: " + ex.Message; }
     }
@@ -459,12 +459,12 @@ internal sealed class BulkMediaDialog : Form
             info.ShowDialog(this);
             return;
         }
-        using (var confirmDialog = new BulkConfirmDialog(rows, footer, "Iniciar descarga", confirm: true))
+        using (var confirmDialog = new BulkConfirmDialog(rows, footer, "Scrapear", confirm: true))
             if (confirmDialog.ShowDialog(this) != DialogResult.OK) return;
 
         cts?.Dispose();
         cts = new CancellationTokenSource();
-        issuesGrid.Rows.Clear();
+        issuesGrid.Rows.Clear(); UpdateExportButton();
         clock.Restart();
         etaComputedAtSeconds = -1000;
         etaText = "calculando…";
@@ -476,6 +476,7 @@ internal sealed class BulkMediaDialog : Form
             var gridRow = issuesGrid.Rows[issuesGrid.Rows.Add(i.System, i.Rom, i.Result, i.Detail)];
             gridRow.Cells["detail"].ToolTipText = i.Detail;
             gridRow.Cells["rom"].ToolTipText = i.Rom;
+            UpdateExportButton();
         });
         var runner = new BulkMediaRunner(options, credentials, trace, status, issues);
         activeRunner = runner;
@@ -587,12 +588,15 @@ internal sealed class BulkMediaDialog : Form
         foreach (var check in folderChecks.Values) check.Enabled = !locked;
         allMediaCheck.Enabled = !locked;
         overwriteCheck.Enabled = searchNameCheck.Enabled = !locked;
-        startButton.Enabled = closeButton.Enabled = exportButton.Enabled = !locked;
+        startButton.Enabled = closeButton.Enabled = !locked; UpdateExportButton();
         viewSummaryButton.Enabled = !locked && lastResult is not null;
         cancelButton.Enabled = running;
         if (!value) UpdateDependentControls();
         else { normalizedRadio.Enabled = originalRadio.Enabled = backupCheck.Enabled = overwriteAlwaysRadio.Enabled = overwriteSizeRadio.Enabled = false; }
     }
+
+    // «Exportar incidencias» solo está disponible cuando hay alguna en la lista.
+    private void UpdateExportButton() => exportButton.Enabled = issuesGrid.Rows.Count > 0;
 
     private void ExportIssues()
     {

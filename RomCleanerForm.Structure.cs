@@ -42,6 +42,10 @@ public sealed partial class RomCleanerForm
             + (hasContent ? "\r\n\r\nLa carpeta ya contiene otros archivos; no se tocarán. Comprueba que no te falta subir o bajar un nivel." : "");
         if (!QuietMessage.Confirm(this, "Crear estructura de ES-DE", text, "Crear estructura")) return false;
 
+        // Son unas 2.500 carpetas: puede tardar unos segundos, así que se muestra el cursor de espera.
+        var previousCursor = Cursor;
+        Cursor = Cursors.WaitCursor;
+        status.Text = "Creando la estructura de ES-DE…";
         try
         {
             foreach (var folder in missing) Directory.CreateDirectory(Path.Combine(rootPath, folder));
@@ -54,6 +58,7 @@ public sealed partial class RomCleanerForm
             QuietMessage.Show(this, "No se pudo crear la estructura", ex.Message);
             return false;
         }
+        finally { Cursor = previousCursor; }
 
         root.Text = rootPath;
         trace.Add("structure_created", $"root={rootPath}; folders={missing.Length}");

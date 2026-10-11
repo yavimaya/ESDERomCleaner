@@ -250,7 +250,15 @@ internal static class RomDatabase
 
     public static Task<DatIndex> GetIndexAsync()
     {
-        lock (Gate) return indexTask ??= Task.Run(LoadOrBuild);
+        lock (Gate)
+        {
+            if (indexTask is not null) return indexTask;
+            var task = Task.Run(LoadOrBuild);
+            indexTask = task;
+            // Si falla, no se queda guardado el fallo: la próxima vez se vuelve a intentar.
+            task.ContinueWith(t => { lock (Gate) if (ReferenceEquals(indexTask, t)) indexTask = null; }, TaskContinuationOptions.OnlyOnFaulted);
+            return task;
+        }
     }
 
     // true si el índice ya está cargado en memoria (no hay que prepararlo).

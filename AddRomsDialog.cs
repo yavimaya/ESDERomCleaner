@@ -11,10 +11,33 @@ internal sealed class AddRomsDialog : Form
     private readonly DataGridView doubtGrid; // con dudas: hay que elegir la carpeta
     private readonly Label doubtLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.BottomLeft, Font = null };
     private readonly ProgressBar progress = new();
-    private readonly ComboBox formatBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
-    private readonly ComboBox levelBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
-    private readonly Label storageHint = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(14, 6, 0, 0) };
-    private StorageOptions CurrentStorage => new((StorageFormat)Math.Max(0, formatBox.SelectedIndex), (StorageLevel)Math.Max(0, levelBox.SelectedIndex));
+    private readonly Label storageSummary = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, ForeColor = SystemColors.GrayText };
+    private StorageOptions storageOptions = new(StorageFormat.Keep, StorageLevel.Normal);
+    private StorageOptions CurrentStorage => storageOptions;
+
+    // Resumen de lo elegido en Opciones › Cómo guardar las ROMs…
+    private void UpdateStorageSummary()
+    {
+        string text = storageOptions.Format switch
+        {
+            StorageFormat.Keep => "Se guardarán como llegan, sin tocarlas.",
+            StorageFormat.Raw => "Se guardarán sin comprimir (se extrae lo comprimido).",
+            StorageFormat.Zip => $"Se guardarán en ZIP, compresión {RomStorage.LevelName(storageOptions.Level)}.",
+            _ => $"Se guardarán en 7z, compresión {RomStorage.LevelName(storageOptions.Level)}."
+        };
+        if (storageOptions.Format == StorageFormat.SevenZip && RomStorage.SevenZipPath() is null) text += " (No se encuentra 7za.exe: se usará zip.)";
+        storageSummary.Text = text + " Si el sistema no admite el formato, se usa el más parecido. Cámbialo en Opciones.";
+    }
+
+    private void ChooseStorage()
+    {
+        using var dialog = new StorageOptionsDialog(storageOptions);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        storageOptions = dialog.Result;
+        new StorageSettings { Format = storageOptions.Format, Level = storageOptions.Level }.Save();
+        UpdateStorageSummary();
+        foreach (var row in grid.Rows.Cast<DataGridViewRow>().ToList()) UpdateRowState(row);
+    }
     private readonly Label identifiedLabel = new();
     private readonly Label status = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft };
     private readonly CheckBox moveFiles = new() { Text = "Mover los archivos en lugar de copiarlos", AutoSize = true };
@@ -34,6 +57,14 @@ internal sealed class AddRomsDialog : Form
     private bool syncingColumns;
     private int lastIgnored;
 
+    // Ejecuta una acción sobre la interfaz desde cualquier hilo. Si el formulario ya se ha cerrado (o aún no tiene ventana), se ignora en vez de provocar una excepción.
+    private void Ui(Action action)
+    {
+        if (IsDisposed || Disposing || !IsHandleCreated) return;
+        try { BeginInvoke(() => { if (!IsDisposed) action(); }); }
+        catch (InvalidOperationException) { }
+    }
+
     // Carpeta que agrupa los temporales de todas las sesiones del formulario (los de sesiones anteriores que no se limpiaron, por un cierre brusco).
     private static string ExpandRoot => Path.Combine(AppPaths.Temp, "expand");
 
@@ -46,7 +77,97 @@ internal sealed class AddRomsDialog : Form
     private void CleanTemp() => DeleteFolder(tempRoot);
     private static void CleanLeftovers() => DeleteFolder(ExpandRoot);
 
+    // ---- Duplicadas: ROMs que ya existen en la colección
+
+    private readonly StaticGrid dupGrid;
+    private readonly Label dupLabel = new();
+    private TableLayoutPanel middle = null!;
+    private readonly Label dupCount = new() { AutoSize = true, Margin = new Padding(2, 8, 10, 0), Text = "0 duplicadas" };
+    private readonly Button dupButton = new() { Text = "⛔", Width = 32, Height = 28, Font = new Font("Segoe UI Symbol", 11f), UseCompatibleTextRendering = true, Margin = new Padding(3, 3, 0, 3) };
+    private bool dupVisible;
+
+    // Índice de lo que ya hay en la carpeta de un sistema: por nombre de fichero (sin extensión) y por nombre de ROM normalizado (archivos y gamelist).
+    private sealed class FolderIndex
+    {
+        public Dictionary<string, string> Stems { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, string> Names { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private readonly Dictionary<string, FolderIndex> folderIndexes = new(StringComparer.OrdinalIgnoreCase);
+
+    private FolderIndex GetFolderIndex(string folder)
+    {
+        if (folderIndexes.TryGetValue(folder, out var cached)) return cached;
+        var index = new FolderIndex();
+        string dir = Path.Combine(root, "Roms", folder);
+        try
+        {
+            if (Directory.Exists(dir))
+                foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                {
+                    if (GamelistGenerator.IsNotRom(file)) continue;
+                    index.Stems.TryAdd(Path.GetFileNameWithoutExtension(file), file);
+                    index.Names.TryAdd(PathRules.Name(file), file);
+                }
+            string list = Path.Combine(root, "ES-DE", "gamelists", folder, "gamelist.xml");
+            if (File.Exists(list))
+                foreach (var entry in GamelistParser.Parse(list, CancellationToken.None))
+                    index.Names.TryAdd(PathRules.Name(entry.Name + ".x"), Path.Combine(dir, entry.RelativeKey.Replace('/', Path.DirectorySeparatorChar)));
+        }
+        catch { /* si no se puede leer la carpeta, simplemente no se detectan duplicadas en ella */ }
+        folderIndexes[folder] = index;
+        return index;
+    }
+
+    private (string Path, string Kind)? FindExisting(RomIdentity identity, string folder)
+    {
+        var index = GetFolderIndex(folder);
+        if (index.Stems.TryGetValue(Path.GetFileNameWithoutExtension(identity.Path), out var byFile)) return (byFile, "Nombre de fichero");
+        foreach (var name in new[] { PathRules.Name(identity.Game + ".x"), PathRules.Name(identity.Path) })
+            if (name.Length > 0 && index.Names.TryGetValue(name, out var byName)) return (byName, "Nombre de ROM");
+        return null;
+    }
+
+    // Si la ROM ya existe en la carpeta elegida, pasa a la lista de duplicadas y se quita de la suya. Devuelve true si es duplicada.
+    private bool TryDuplicate(DataGridViewRow row, string folder)
+    {
+        if (row.Cells["state"].Value as string == "Duplicada" || row.Tag is not RomIdentity identity) return row.Cells["state"].Value as string == "Duplicada";
+        var existing = FindExisting(identity, folder);
+        if (existing is null) return false;
+        row.Cells["state"].Value = "Duplicada";
+        string relative = Path.GetRelativePath(Path.Combine(root, "Roms", folder), existing.Value.Path);
+        dupGrid.Rows.Add(Path.GetFileName(identity.Path), identity.Game, folder, relative, existing.Value.Kind);
+        items.Remove(identity);
+        var owner = row.DataGridView;
+        Ui(() =>
+        {
+            try { if (row.DataGridView == owner && owner is not null) owner.Rows.Remove(row); } catch (InvalidOperationException) { }
+            UpdateAddButton(); UpdateDoubtLabel(); UpdateDupUi();
+        });
+        UpdateDupUi();
+        return true;
+    }
+
+    private void UpdateDupUi()
+    {
+        dupCount.Text = dupGrid.Rows.Count == 1 ? "1 duplicada" : $"{dupGrid.Rows.Count} duplicadas";
+        dupButton.ForeColor = dupGrid.Rows.Count > 0 ? Color.Firebrick : SystemColors.ControlText;
+        dupLabel.Text = $"Ya existen en la colección ({dupGrid.Rows.Count}), no se añaden: se comparan por nombre de fichero y por nombre de ROM";
+    }
+
+    private void ToggleDuplicates()
+    {
+        dupVisible = !dupVisible;
+        middle.RowStyles[4].Height = dupVisible ? 24 : 0;
+        middle.RowStyles[5].Height = dupVisible ? 130 : 0;
+        dupLabel.Visible = dupGrid.Visible = dupVisible;
+    }
+
     public bool CollectionChanged { get; private set; }
+    // El usuario ha aceptado scrapear las ROMs que acaba de añadir: la ventana principal abre directamente el scrapeo con ellas.
+    public bool ScrapeRequested { get; private set; }
+    // Rutas completas de los archivos que se han creado en Roms durante esta sesión (para proponer scrapear solo esas ROMs).
+    public List<string> AddedPaths { get; } = [];
 
     public AddRomsDialog(string root, TraceLog trace)
     {
@@ -75,55 +196,57 @@ internal sealed class AddRomsDialog : Form
         identifiedLabel.Dock = DockStyle.Fill; identifiedLabel.TextAlign = ContentAlignment.BottomLeft;
         doubtLabel.Text = "Sin decidir: elige la carpeta de destino y pasarán a la lista de arriba (doble clic para quitarlas)";
 
-        var middle = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
+        // Tercera lista, oculta por defecto: las ROMs que ya existen en la colección (no se añaden). Se muestra con el botón de «prohibido».
+        dupGrid = new StaticGrid { Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
+        dupGrid.ApplyInfoStyle(18, 20);
+        const DataGridViewAutoSizeColumnMode fill = DataGridViewAutoSizeColumnMode.Fill;
+        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Archivo nuevo", AutoSizeMode = fill, FillWeight = 28, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
+        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ROM", AutoSizeMode = fill, FillWeight = 24, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
+        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Carpeta", AutoSizeMode = fill, FillWeight = 10, MinimumWidth = 70, SortMode = DataGridViewColumnSortMode.NotSortable });
+        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Ya existe como", AutoSizeMode = fill, FillWeight = 28, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
+        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Coincide por", AutoSizeMode = fill, FillWeight = 14, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
+        dupLabel.Dock = DockStyle.Fill; dupLabel.TextAlign = ContentAlignment.BottomLeft; dupLabel.Visible = false; dupGrid.Visible = false;
+        dupLabel.Text = "Ya existen en la colección (no se añaden): se comparan por nombre de fichero y por nombre de ROM";
+
+        middle = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6 };
         middle.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         middle.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
         middle.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         middle.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
+        middle.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
+        middle.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
         middle.Controls.Add(identifiedLabel, 0, 0); middle.Controls.Add(grid, 0, 1);
         middle.Controls.Add(doubtLabel, 0, 2); middle.Controls.Add(doubtGrid, 0, 3);
+        middle.Controls.Add(dupLabel, 0, 4); middle.Controls.Add(dupGrid, 0, 5);
 
         var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 128, ColumnCount = 1, RowCount = 4 };
         bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 16));
-        bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
         bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        // Cómo se guardan las ROMs en la colección: formato y nivel de compresión (se recuerdan para la próxima vez).
+        // Cómo se guardan las ROMs: se elige en Opciones › Cómo guardar las ROMs… (se recuerda); aquí solo se muestra el resumen.
         var storage = StorageSettings.Load();
-        formatBox.Items.AddRange(["Como llegan (sin tocarlas)", "Sin comprimir (extraer)", "ZIP", "7z"]);
-        levelBox.Items.AddRange(["Sin compresión (almacenar)", "Rápida", "Normal", "Máxima"]);
-        formatBox.SelectedIndex = (int)storage.Format; levelBox.SelectedIndex = (int)storage.Level;
-        levelBox.Enabled = storage.Format is StorageFormat.Zip or StorageFormat.SevenZip;
-        var storagePanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(6, 2, 6, 0), WrapContents = false };
-        storagePanel.Controls.Add(new Label { Text = "Guardar las ROMs:", AutoSize = true, Margin = new Padding(0, 6, 4, 0) });
-        storagePanel.Controls.Add(formatBox);
-        storagePanel.Controls.Add(new Label { Text = "Compresión:", AutoSize = true, Margin = new Padding(14, 6, 4, 0) });
-        storagePanel.Controls.Add(levelBox);
-        storagePanel.Controls.Add(storageHint);
-        void StorageChanged()
-        {
-            levelBox.Enabled = CurrentStorage.Format is StorageFormat.Zip or StorageFormat.SevenZip;
-            if (CurrentStorage.Format == StorageFormat.SevenZip && RomStorage.SevenZipPath() is null)
-                storageHint.Text = "No se encuentra 7za.exe junto a la aplicación: se guardará en zip.";
-            else storageHint.Text = "";
-            new StorageSettings { Format = CurrentStorage.Format, Level = CurrentStorage.Level }.Save();
-            foreach (var row in grid.Rows.Cast<DataGridViewRow>().ToList()) UpdateRowState(row);
-        }
-        formatBox.SelectedIndexChanged += (_, _) => StorageChanged();
-        levelBox.SelectedIndexChanged += (_, _) => StorageChanged();
+        storageOptions = new StorageOptions(storage.Format, storage.Level);
+        storageSummary.Dock = DockStyle.Fill; storageSummary.Padding = new Padding(6, 0, 0, 0);
+        UpdateStorageSummary();
         status.Dock = DockStyle.Fill;
         progress.Dock = DockStyle.Fill; progress.Margin = new Padding(6, 2, 6, 2); progress.Minimum = 0; progress.Maximum = 1000; progress.Visible = false;
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(6, 4, 6, 4) };
         buttons.Controls.Add(closeButton); buttons.Controls.Add(addButton);
-        buttons.Controls.Add(clearButton); buttons.Controls.Add(removeButton); buttons.Controls.Add(browseButton); buttons.Controls.Add(moveFiles);
-        bottom.Controls.Add(status, 0, 0); bottom.Controls.Add(progress, 0, 1); bottom.Controls.Add(storagePanel, 0, 2); bottom.Controls.Add(buttons, 0, 3);
+        buttons.Controls.Add(clearButton); buttons.Controls.Add(removeButton); buttons.Controls.Add(browseButton);
+        // Botón de «prohibido el paso» con el número de duplicadas al lado: muestra u oculta la lista de las que ya existen.
+        buttons.Controls.Add(dupCount); buttons.Controls.Add(dupButton); buttons.Controls.Add(moveFiles);
+        new ToolTip().SetToolTip(dupButton, "Mostrar u ocultar las ROMs que ya existen en la colección");
+        dupButton.Click += (_, _) => ToggleDuplicates();
+        bottom.Controls.Add(status, 0, 0); bottom.Controls.Add(progress, 0, 1); bottom.Controls.Add(storageSummary, 0, 2); bottom.Controls.Add(buttons, 0, 3);
 
         Controls.Add(middle); Controls.Add(bottom); Controls.Add(dropZone);
 
         // Menú superior: las bases de datos de ROMs se gestionan desde aquí.
         var menuBar = new MenuStrip();
         var optionsMenu = new ToolStripMenuItem("Opciones");
+        optionsMenu.DropDownItems.Add("Cómo guardar las ROMs…", null, (_, _) => ChooseStorage());
         optionsMenu.DropDownItems.Add("Bases de datos de ROMs…", null, (_, _) => OpenDatManager());
         menuBar.Items.Add(optionsMenu);
         MainMenuStrip = menuBar;
@@ -159,7 +282,7 @@ internal sealed class AddRomsDialog : Form
         {
             if (e.RowIndex < 0 || e.ColumnIndex != doubtGrid.Columns["folder"]!.Index) return;
             if (doubtGrid.Rows[e.RowIndex].Cells["folder"].Value is not string { Length: > 0 }) return;
-            BeginInvoke(() => MoveToDecided(doubtGrid.Rows[e.RowIndex]));
+            Ui(() => MoveToDecided(doubtGrid.Rows[e.RowIndex]));
         };
         grid.CellValueChanged += (_, e) => { if (e.RowIndex >= 0 && e.ColumnIndex == grid.Columns["folder"]!.Index) UpdateRowState(grid.Rows[e.RowIndex]); };
         UpdateDoubtLabel();
@@ -285,7 +408,7 @@ internal sealed class AddRomsDialog : Form
                 }
             }
         var indexes = rows.Select(r => r.Index).Where(i => i >= 0).OrderByDescending(i => i).ToList();
-        BeginInvoke(() =>
+        Ui(() =>
         {
             try { g.CancelEdit(); } catch (InvalidOperationException) { }
             foreach (int i in indexes) if (i < g.Rows.Count) g.Rows.RemoveAt(i);
@@ -323,7 +446,7 @@ internal sealed class AddRomsDialog : Form
     {
         if (working || (grid.Rows.Count == 0 && doubtGrid.Rows.Count == 0)) return;
         if (!QuietMessage.Confirm(this, "Vaciar listas", "¿Vaciar las dos listas? No se borra ni se copia ningún archivo.", "Vaciar")) return;
-        grid.Rows.Clear(); doubtGrid.Rows.Clear();
+        grid.Rows.Clear(); doubtGrid.Rows.Clear(); dupGrid.Rows.Clear(); UpdateDupUi();
         items.Clear(); known.Clear(); packCounts.Clear();
         CleanTemp();
         UpdateAddButton(); UpdateDoubtLabel(); UpdateRemoveButton();
@@ -439,47 +562,83 @@ internal sealed class AddRomsDialog : Form
 
             // Packs (comprimidos con otros comprimidos dentro): se extraen recursivamente hasta las ROMs finales, que son las que se identifican.
             var work = new List<(string File, string? Origin)>();
-            int examined = 0;
 
             // Paso 2: cargar las bases de datos en memoria (solo tarda la primera vez o tras cambiarlas).
             if (RomDatabase.IndexReady) status.Text = "Paso 2 de 4: Base de datos de hashes OK!";
             else await PrepareIndexAsync("Paso 2 de 4: ");
 
-            foreach (var file in files)
+            // Los pasos 3 y 4 trabajan en paralelo (varios archivos a la vez). Un temporizador de la interfaz refleja el avance sin saturarla.
+            int degree = Math.Clamp(Environment.ProcessorCount / 2, 2, 8);
+            var token = cts.Token;
+            string progressText = ""; int progressValue = 0; bool marquee = false;
+            Func<int>? flushRows = null;
+            using var tick = new System.Windows.Forms.Timer { Interval = 120 };
+            tick.Tick += (_, _) =>
             {
-                examined++;
-                status.Text = $"Paso 3 de 4: Examinando {examined}/{files.Count} ({(examined - 1) * 100 / files.Count} %): {Path.GetFileName(file)}…";
-                // Con un solo archivo no hay porcentaje que dar (puede ser un pack grande): barra en movimiento.
-                if (files.Count == 1) progress.Style = ProgressBarStyle.Marquee;
-                else { progress.Style = ProgressBarStyle.Blocks; progress.Value = (examined - 1) * 1000 / files.Count; }
-                List<string> parts;
-                try { parts = await Task.Run(() => ArchiveExpander.Expand(file, tempRoot, cts.Token), cts.Token); }
-                catch (OperationCanceledException) { return; }
-                if (parts.Count == 1 && parts[0] == file) { work.Add((file, null)); continue; }
-                string origin = Path.GetFullPath(file);
-                packCounts[origin] = packCounts.GetValueOrDefault(origin) + parts.Count;
-                foreach (var part in parts) work.Add((part, origin));
-            }
+                status.Text = progressText;
+                if (marquee) progress.Style = ProgressBarStyle.Marquee;
+                else { progress.Style = ProgressBarStyle.Blocks; progress.Value = Math.Clamp(progressValue, 0, 1000); }
+                flushRows?.Invoke();
+            };
+            tick.Start();
+            try
+            {
+                // Paso 3: examinar (extraer packs).
+                var expanded = new List<string>?[files.Count];
+                int examinedDone = 0;
+                marquee = files.Count == 1; // con un solo archivo (posible pack grande) no hay porcentaje que dar
+                progressText = $"Paso 3 de 4: Examinando 0/{files.Count}…";
+                await Parallel.ForEachAsync(Enumerable.Range(0, files.Count), new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = token }, (i, ct) =>
+                {
+                    expanded[i] = ArchiveExpander.Expand(files[i], tempRoot, ct);
+                    int d = Interlocked.Increment(ref examinedDone);
+                    progressText = $"Paso 3 de 4: Examinando {d}/{files.Count} ({d * 100 / files.Count} %): {Path.GetFileName(files[i])}";
+                    progressValue = d * 1000 / files.Count;
+                    return ValueTask.CompletedTask;
+                });
+                for (int i = 0; i < files.Count; i++)
+                {
+                    var parts = expanded[i]!;
+                    if (parts.Count == 1 && parts[0] == files[i]) { work.Add((files[i], null)); continue; }
+                    string origin = Path.GetFullPath(files[i]);
+                    packCounts[origin] = packCounts.GetValueOrDefault(origin) + parts.Count;
+                    foreach (var part in parts) work.Add((part, origin));
+                }
 
-            int n = 0;
-            progress.Style = ProgressBarStyle.Blocks;
-            foreach (var (file, origin) in work)
-            {
-                n++;
-                status.Text = $"Paso 4 de 4: Identificando {n}/{work.Count} ({(n - 1) * 100 / work.Count} %): {Path.GetFileName(file)}…";
-                progress.Value = (n - 1) * 1000 / work.Count;
-                RomIdentity identity;
-                try { identity = await RomIdentifier.IdentifyAsync(file, cts.Token); }
-                catch (OperationCanceledException) { return; }
-                identity.Origin = origin;
-                items.Add(identity);
-                AddRow(identity);
-                Application.DoEvents();
+                // Paso 4: identificar. Las filas se añaden en el orden original según terminan.
+                marquee = false;
+                var identities = new RomIdentity?[work.Count];
+                int identified = 0, nextRow = 0;
+                flushRows = () =>
+                {
+                    int added = 0;
+                    while (nextRow < work.Count && Volatile.Read(ref identities[nextRow]) is { } id && added < 150)
+                    {
+                        id.Origin = work[nextRow].Origin;
+                        items.Add(id);
+                        AddRow(id);
+                        nextRow++; added++;
+                    }
+                    return added;
+                };
+                progressText = $"Paso 4 de 4: Identificando 0/{work.Count}…"; progressValue = 0;
+                await Parallel.ForEachAsync(Enumerable.Range(0, work.Count), new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = token }, async (i, ct) =>
+                {
+                    var identity = await RomIdentifier.IdentifyAsync(work[i].File, ct);
+                    Volatile.Write(ref identities[i], identity);
+                    int d = Interlocked.Increment(ref identified);
+                    progressText = $"Paso 4 de 4: Identificando {d}/{work.Count} ({d * 100 / work.Count} %): {Path.GetFileName(work[i].File)}";
+                    progressValue = d * 1000 / work.Count;
+                });
+                tick.Stop();
+                while (flushRows() > 0) { } // las filas que falten por añadir
             }
+            catch (OperationCanceledException) { return; }
+            finally { tick.Stop(); }
             int doubts = doubtGrid.Rows.Count;
             status.Text = $"{items.Count} archivo(s)." + (lastIgnored > 0 ? $" {lastIgnored} ignorado(s) por no ser ROMs." : "") + (doubts > 0 ? $" {doubts} sin decidir: elige su carpeta." : " Pulsa «Añadir a la colección».");
         }
-        finally { working = false; progress.Visible = false; progress.Style = ProgressBarStyle.Blocks; UpdateAddButton(); }
+        finally { working = false; if (!IsDisposed) { progress.Visible = false; progress.Style = ProgressBarStyle.Blocks; UpdateAddButton(); } }
     }
 
     // Carpeta que se propone para la ROM, o null si hay dudas.
@@ -556,6 +715,8 @@ internal sealed class AddRomsDialog : Form
         }
         else
         {
+            // Si ya existe en la colección, no se añade: pasa a la lista de duplicadas.
+            if (TryDuplicate(row, folder)) return;
             bool created = !existingFolders.Contains(folder, StringComparer.OrdinalIgnoreCase);
             // Formato con el que se guardará (según lo que admita el sistema) y nombre que tendrá el archivo de destino.
             var (format, note) = RomStorage.Plan(identity, CurrentStorage, SystemFormats.AllowedExtensions(root, folder));
@@ -579,37 +740,80 @@ internal sealed class AddRomsDialog : Form
         var ready = grid.Rows.Cast<DataGridViewRow>().Where(r => r.Cells["state"].Value is string s && s.StartsWith("Lista", StringComparison.Ordinal)).ToList();
         if (ready.Count == 0) return;
         bool move = moveFiles.Checked;
-        working = true; addButton.Enabled = false;
+        working = true; addButton.Enabled = false; UpdateRemoveButton();
         int added = 0, failed = 0, done = 0;
         progress.Style = ProgressBarStyle.Blocks; progress.Value = 0; progress.Visible = true;
+
+        // Los datos de cada fila se leen aquí, en el hilo de la interfaz; el trabajo pesado (copiar, extraer, comprimir) va en paralelo.
+        var jobs = ready.Select(r => (Row: r, Identity: (RomIdentity)r.Tag!, Folder: (string)r.Cells["folder"].Value!)).ToList();
+        var options = CurrentStorage;
+        int cores = Environment.ProcessorCount;
+        // Copiar depende del disco (pocas a la vez); zip usa un núcleo por ROM; 7z ya usa 2 hilos por proceso.
+        int degree = options.Format switch { StorageFormat.Keep or StorageFormat.Raw => 3, StorageFormat.Zip => Math.Clamp(cores / 2, 2, 8), _ => Math.Clamp(cores / 3, 2, 4) };
+        var addedLock = new object();
+        string progressText = ""; int progressValue = 0;
+        using var tick = new System.Windows.Forms.Timer { Interval = 120 };
+        tick.Tick += (_, _) => { status.Text = progressText; progress.Value = Math.Clamp(progressValue, 0, 1000); };
+        tick.Start();
+        string verb = move ? "Moviendo" : "Copiando";
+        progressText = $"Paso 1 de 1: {verb} 0/{jobs.Count}…";
         try
         {
-            foreach (var row in ready)
+            await Parallel.ForEachAsync(jobs, new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = cts.Token }, async (job, ct) =>
             {
-                var identity = (RomIdentity)row.Tag!;
-                string folder = (string)row.Cells["folder"].Value!;
-                string destinationDir = Path.Combine(root, "Roms", folder);
-                row.Cells["state"].Value = "Copiando…";
-                status.Text = $"Paso 1 de 1: {(move ? "Moviendo" : "Copiando")} {++done}/{ready.Count} ({(done - 1) * 100 / ready.Count} %): {Path.GetFileName(identity.Path)}…";
-                progress.Value = (done - 1) * 1000 / ready.Count;
+                var (row, identity, folder) = job;
+                Ui(() => row.Cells["state"].Value = "Copiando…");
                 try
                 {
-                    // Se deja el systeminfo.txt del sistema si falta y se decide el formato real según lo que admita (su lista de extensiones).
-                    SystemFormats.EnsureSystemInfo(root, folder);
-                    var (format, _) = RomStorage.Plan(identity, CurrentStorage, SystemFormats.AllowedExtensions(root, folder));
-                    var level = CurrentStorage.Level;
-                    await Task.Run(() => RomStorage.Store(identity, destinationDir, format, level, move, cts.Token));
-                    row.Cells["state"].Value = (move ? "Movida" : "Copiada") + " · " + RomStorage.Describe(format, level);
-                    row.DefaultCellStyle.BackColor = Color.Honeydew;
-                    row.Cells["folder"].ReadOnly = true;
-                    added++;
-                    trace.Add("rom_added", $"system={folder}; file={Path.GetFileName(identity.Path)}; method={identity.Method}; move={move}");
+                    await Task.Run(() =>
+                    {
+                        // Se deja el systeminfo.txt del sistema si falta y se decide el formato real según lo que admita (su lista de extensiones).
+                        SystemFormats.EnsureSystemInfo(root, folder);
+                        var (format, _) = RomStorage.Plan(identity, options, SystemFormats.AllowedExtensions(root, folder));
+                        var created = RomStorage.Store(identity, Path.Combine(root, "Roms", folder), format, options.Level, move, ct);
+                        lock (addedLock) AddedPaths.AddRange(created.Select(Path.GetFullPath));
+                        Interlocked.Increment(ref added);
+                        trace.Add("rom_added", $"system={folder}; file={Path.GetFileName(identity.Path)}; method={identity.Method}; move={move}");
+                        Ui(() =>
+                        {
+                            folderIndexes.Remove(folder); // la carpeta ha cambiado: se vuelve a indexar la próxima vez
+                            row.Cells["state"].Value = (move ? "Movida" : "Copiada") + " · " + RomStorage.Describe(format, options.Level);
+                            row.DefaultCellStyle.BackColor = Color.Honeydew;
+                            row.Cells["folder"].ReadOnly = true;
+                        });
+                    }, ct);
                 }
-                catch (Exception ex) { row.Cells["state"].Value = "Error: " + ex.Message; failed++; }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    Interlocked.Increment(ref failed);
+                    Ui(() => row.Cells["state"].Value = "Error: " + ex.Message);
+                }
+                finally
+                {
+                    int d = Interlocked.Increment(ref done);
+                    progressText = $"Paso 1 de 1: {verb} {d}/{jobs.Count} ({d * 100 / jobs.Count} %): {Path.GetFileName(identity.Path)}";
+                    progressValue = d * 1000 / jobs.Count;
+                }
+            });
+        }
+        catch (OperationCanceledException) { }
+        finally { tick.Stop(); working = false; if (!IsDisposed) { progress.Visible = false; UpdateAddButton(); UpdateRemoveButton(); } }
+        if (added > 0) CollectionChanged = true; // aunque se haya cerrado el formulario, las ROMs ya añadidas deben pasar a los gamelists
+        if (IsDisposed) return;
+        status.Text = $"{added} ROM(s) añadidas a la colección" + (failed > 0 ? $", {failed} con error" : "") + ". Al cerrar se actualizarán los gamelists.";
+
+        // Nada más terminar de añadir: se pregunta por scrapear justo esas ROMs y, si se acepta, se cierra el formulario y se abre el scrapeo.
+        if (added > 0)
+        {
+            int systems = AddedPaths.Select(p => Path.GetFileName(Path.GetDirectoryName(p)) ?? "").Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            if (QuietMessage.Confirm(this, "Scrapear las ROMs añadidas",
+                $"Se han añadido {added:N0} ROM(s) de {systems:N0} sistema(s).\r\n\r\n¿Quieres categorizarlas y descargar sus medios con ScreenScraper? Se abrirá la descarga masiva solo con esas ROMs.",
+                "Scrapear"))
+            {
+                ScrapeRequested = true;
+                Close();
             }
         }
-        finally { working = false; progress.Visible = false; UpdateAddButton(); }
-        if (added > 0) CollectionChanged = true;
-        status.Text = $"{added} ROM(s) añadidas a la colección" + (failed > 0 ? $", {failed} con error" : "") + ". Al cerrar se actualizarán los gamelists.";
     }
 }

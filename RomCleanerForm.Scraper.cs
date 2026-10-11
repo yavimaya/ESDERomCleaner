@@ -6,8 +6,10 @@ public sealed partial class RomCleanerForm
     private static bool PreferNormalizedVideo() => BulkMediaSettings.Load(true).NormalizedVideo;
 
     // «preselected»: sistemas que se abren ya marcados (viene de la propuesta tras analizar, con la colección recién cargada).
-    private async Task OpenBulkMediaDialogAsync(IReadOnlyCollection<string>? preselected = null)
+    // «onlyRows»: la descarga trabaja solo con esas ROMs (de uno o varios sistemas), todas marcadas; es el caso de las ROMs recién añadidas.
+    private async Task OpenBulkMediaDialogAsync(IReadOnlyCollection<string>? preselected = null, IReadOnlyList<RomRow>? onlyRows = null)
     {
+        if (onlyRows is not null) preselected = onlyRows.Select(r => r.System).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (preselected is null)
         {
             if (!await EnsureCollectionLoadedAsync())
@@ -20,7 +22,7 @@ public sealed partial class RomCleanerForm
         }
         StopVideoPlayback();
         trace.Add("bulk_media_dialog_opened", root.Text);
-        using var dialog = new BulkMediaDialog(all.Where(r => IsVisibleSystem(r.System)).ToList(), root.Text, trace, PreferNormalizedVideo(), createGamelistBackups, preselected);
+        using var dialog = new BulkMediaDialog(onlyRows?.ToList() ?? all.Where(r => IsVisibleSystem(r.System)).ToList(), root.Text, trace, PreferNormalizedVideo(), createGamelistBackups, preselected);
         dialog.ShowDialog(this);
         if (!dialog.MetadataChanged && !dialog.CollectionChanged) return;
         // Los índices de miximages y vídeos se construyen una vez por carpeta: hay que olvidarlos para ver los nuevos.

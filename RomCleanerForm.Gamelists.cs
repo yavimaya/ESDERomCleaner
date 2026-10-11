@@ -13,19 +13,32 @@ public sealed partial class RomCleanerForm
         if (!EnsureCollectionRoot()) return;
         StopVideoPlayback();
         trace.Add("add_roms_dialog_opened", root.Text);
-        bool changed;
+        bool changed, scrapeRequested;
+        List<string> added;
         using (var dialog = new AddRomsDialog(root.Text.Trim().Trim('"'), trace))
         {
             dialog.ShowDialog(this);
             changed = dialog.CollectionChanged;
+            scrapeRequested = dialog.ScrapeRequested;
+            added = dialog.AddedPaths.ToList();
         }
-        // Las ROMs nuevas aún no figuran en ningún gamelist: se ofrece añadirlas (y, si se quiere, scrapearlas).
-        if (changed) await CreateGamelistsAsync(scanAfter: true, quiet: true);
+        if (!changed) return;
+
+        // Las ROMs recién añadidas se incorporan a sus gamelists sin preguntar (se han añadido a propósito) y se vuelve a analizar.
+        var addedSet = new HashSet<string>(added, StringComparer.OrdinalIgnoreCase);
+        await CreateGamelistsAsync(scanAfter: true, quiet: true, offerScrape: false, onlyPaths: addedSet, silent: true);
+
+        // Si en el formulario se aceptó scrapearlas, se abre directamente la descarga masiva con esas ROMs (de uno o varios sistemas).
+        if (!scrapeRequested) return;
+        var rows = all.Where(r => r.Path.Length > 0 && addedSet.Contains(Path.GetFullPath(r.Path))).ToList();
+        if (rows.Count == 0) { QuietMessage.Show(this, "Scrapear las ROMs añadidas", "Las ROMs añadidas no aparecen en la colección analizada, así que no se puede abrir el scrapeo."); return; }
+        await OpenBulkMediaDialogAsync(onlyRows: rows);
     }
 
     // Ofrece crear los gamelist.xml que faltan a partir de las ROMs. Con «quiet» no avisa si no hay nada que crear
     // (se usa al analizar o al abrir la descarga masiva). Devuelve true si se creó alguno.
-    private async Task<bool> CreateGamelistsAsync(bool scanAfter, bool quiet, string? reason = null, bool offerScrape = true)
+    // «onlyPaths»: solo se añaden esas ROMs (las recién añadidas). «silent»: sin preguntar, porque el usuario ya las ha añadido a propósito.
+    private async Task<bool> CreateGamelistsAsync(bool scanAfter, bool quiet, string? reason = null, bool offerScrape = true, HashSet<string>? onlyPaths = null, bool silent = false)
     {
         if (cts != null) return false;
         if (!EnsureCollectionRoot()) return false;
@@ -34,6 +47,8 @@ public sealed partial class RomCleanerForm
         List<GeneratedGamelist> plan;
         try { plan = await Task.Run(() => GamelistGenerator.Plan(rootPath, CancellationToken.None)); }
         catch (Exception ex) { QuietMessage.Show(this, "Crear gamelists", ex.Message); return false; }
+        if (onlyPaths is not null)
+            plan = plan.Select(p => p with { RomPaths = p.RomPaths.Where(r => onlyPaths.Contains(Path.GetFullPath(r))).ToList() }).Where(p => p.RomPaths.Count > 0).ToList();
 
         if (plan.Count == 0)
         {
@@ -44,11 +59,13 @@ public sealed partial class RomCleanerForm
 
         // Con offerScrape se propone además categorizar y descargar los medios de esos sistemas justo después del análisis.
         GamelistPlanChoice choice;
-        using (var dialog = new GamelistPlanDialog(plan, offerScrape))
-        {
-            dialog.ShowDialog(this);
-            choice = dialog.Choice;
-        }
+        if (silent) choice = GamelistPlanChoice.AddOnly;
+        else
+            using (var dialog = new GamelistPlanDialog(plan, offerScrape))
+            {
+                dialog.ShowDialog(this);
+                choice = dialog.Choice;
+            }
         if (choice == GamelistPlanChoice.Cancel)
         {
             status.Text = "No se añadieron ROMs a los gamelists.";

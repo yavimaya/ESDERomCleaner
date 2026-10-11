@@ -255,6 +255,7 @@ internal sealed class DatManagerDialog : Form
         try { await Task.WhenAll(tasks); }
         catch (OperationCanceledException) { }
         finally { busy = false; timer.Stop(); }
+        if (IsDisposed) return; // se cerró la ventana durante la descarga
 
         int ok = outcome.Count(o => o == 1), failed = outcome.Count(o => o == 2);
         trace.Add("dat_downloaded", $"ok={ok}; failed={failed}");

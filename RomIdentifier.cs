@@ -22,23 +22,10 @@ internal sealed class RomIdentity
 
 internal static class RomIdentifier
 {
-    private static readonly uint[] CrcTable = BuildTable();
-
-    private static uint[] BuildTable()
-    {
-        var table = new uint[256];
-        for (uint i = 0; i < 256; i++)
-        {
-            uint c = i;
-            for (int k = 0; k < 8; k++) c = (c & 1) != 0 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-            table[i] = c;
-        }
-        return table;
-    }
-
     public static (uint Crc, long Size) HashFile(string path, CancellationToken token)
     {
-        uint crc = 0xFFFFFFFFu;
+        // CRC32 acelerado por hardware (System.IO.Hashing), mucho más rápido que el cálculo byte a byte con tabla.
+        var crc = new System.IO.Hashing.Crc32();
         long size = 0;
         var buffer = new byte[1 << 20];
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20, FileOptions.SequentialScan);
@@ -46,10 +33,10 @@ internal static class RomIdentifier
         while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
         {
             token.ThrowIfCancellationRequested();
-            for (int i = 0; i < read; i++) crc = CrcTable[(crc ^ buffer[i]) & 0xFF] ^ (crc >> 8);
+            crc.Append(buffer.AsSpan(0, read));
             size += read;
         }
-        return (~crc, size);
+        return (crc.GetCurrentHashAsUInt32(), size);
     }
 
     private static List<string> CueTracks(string cue)
@@ -132,16 +119,16 @@ internal static class RomIdentifier
             int read = 0, n;
             while (read < skip && (n = stream.Read(head, read, skip - read)) > 0) read += n;
             if (read < skip || !LooksHeadered(ext, head, read, size)) return;
-            uint crc = 0xFFFFFFFFu;
+            var crc = new System.IO.Hashing.Crc32();
             long total = 0;
             var buffer = new byte[1 << 20];
             while ((n = stream.Read(buffer, 0, buffer.Length)) > 0)
             {
                 token.ThrowIfCancellationRequested();
-                for (int i = 0; i < n; i++) crc = CrcTable[(crc ^ buffer[i]) & 0xFF] ^ (crc >> 8);
+                crc.Append(buffer.AsSpan(0, n));
                 total += n;
             }
-            keys.Add((~crc, total));
+            keys.Add((crc.GetCurrentHashAsUInt32(), total));
         }
 
         string outer = System.IO.Path.GetExtension(path).ToLowerInvariant();
