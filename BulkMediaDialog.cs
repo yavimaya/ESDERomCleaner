@@ -51,8 +51,11 @@ internal sealed class BulkMediaDialog : Form
     public bool CollectionChanged { get; private set; }
     public bool MetadataChanged { get; private set; }
 
-    public BulkMediaDialog(IReadOnlyList<RomRow> roms, string root, TraceLog trace, bool defaultNormalizedVideo, bool gamelistBackups)
+    private readonly HashSet<string> preselectedSystems;
+
+    public BulkMediaDialog(IReadOnlyList<RomRow> roms, string root, TraceLog trace, bool defaultNormalizedVideo, bool gamelistBackups, IEnumerable<string>? preselected = null)
     {
+        preselectedSystems = new HashSet<string>(preselected ?? [], StringComparer.OrdinalIgnoreCase);
         this.gamelistBackups = gamelistBackups;
         this.roms = roms;
         this.root = root;
@@ -126,7 +129,7 @@ internal sealed class BulkMediaDialog : Form
         systemsGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "use", HeaderText = "", Width = 34 });
         systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "system", HeaderText = "Carpeta de ES-DE", Width = 150, ReadOnly = true });
         systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "ss", HeaderText = "Sistema en ScreenScraper", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, ReadOnly = true });
-        systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "roms", HeaderText = "ROMs", Width = 70, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
+        systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "roms", HeaderText = "ROMs", Width = 70, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter }, HeaderCell = { Style = { Alignment = DataGridViewContentAlignment.MiddleCenter } } });
 
         var systemsButtons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, Margin = Padding.Empty };
         systemsButtons.Controls.Add(selectAllButton);
@@ -317,7 +320,7 @@ internal sealed class BulkMediaDialog : Form
             foreach (var group in roms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0)
                                       .GroupBy(r => r.System, StringComparer.OrdinalIgnoreCase)
                                       .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
-                systemsGrid.Rows.Add(false, group.Key, "", group.Count());
+                systemsGrid.Rows.Add(preselectedSystems.Contains(group.Key), group.Key, "", group.Count());
         }
         finally { updating = false; }
         UpdateSystemsCount();
@@ -432,16 +435,10 @@ internal sealed class BulkMediaDialog : Form
             statusLabel.Text = "Los sistemas marcados no tienen ROMs que procesar.";
             return;
         }
-        var text = new StringBuilder();
-        text.AppendLine($"Sistemas: {systems.Count - plan.UnresolvedSystems} (ROMs: {plan.Roms:N0})" + (plan.UnresolvedSystems > 0 ? $"  ·  {plan.UnresolvedSystems} no reconocidos en ScreenScraper, se omiten" : ""));
-        text.AppendLine($"Medios: {(options.Folders.Count > 0 ? string.Join(", ", options.Folders.Select(f => f.Folder)) : "(ninguno)")}");
-        if (options.Languages)
-            text.AppendLine("Idiomas: se consultan a ScreenScraper y se guardan solo en la aplicación, para el curado; no se modifica ningún gamelist.");
-        if (options.Metadata)
-            text.AppendLine("Metadatos: SE SOBRESCRIBEN en el gamelist.xml el nombre, la descripción, la valoración, la fecha, el desarrollador, el editor, el género y los jugadores " +
-                            "con los de ScreenScraper; los campos que ScreenScraper no tenga se dejan como están" + (options.GamelistBackup ? ". Se hace copia de seguridad del gamelist.xml." : "."));
-        if (options.Folders.Any(f => f.Folder == "videos")) text.AppendLine($"Vídeo: {(options.NormalizedVideo ? "normalizado" : "original")}");
-        if (options.Folders.Any(f => f.Folder == "miximages")) text.AppendLine("Miximages: Recalbox v2");
+        var counts = roms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0)
+            .GroupBy(r => r.System, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+        var rows = systems.Select(s => (s, counts.GetValueOrDefault(s))).ToList();
         string overwriteText = options.Overwrite switch
         {
             BulkOverwrite.Always => "SE SOBRESCRIBE SIEMPRE",
@@ -449,15 +446,21 @@ internal sealed class BulkMediaDialog : Form
             _ => "se respeta y no se vuelve a pedir"
         };
         if (options.Overwrite != BulkOverwrite.No) overwriteText += options.Backup ? " (con copia de seguridad)" : " (sin copia de seguridad)";
-        text.AppendLine($"Si ya existe en destino: {overwriteText}");
-        text.AppendLine($"Peticiones en paralelo: {options.Threads} (según tu membresía de ScreenScraper)");
-        text.AppendLine($"Si no se reconoce por hash: {(options.SearchByName ? "se busca por el nombre del juego" : "se anota como no encontrada")}");
+        var footer = new List<string>
+        {
+            $"Si ya existe en destino: {overwriteText}.",
+            $"Si no se reconoce por hash: {(options.SearchByName ? "se busca por el nombre del juego" : "se anota como no encontrada")}."
+        };
+        if (plan.UnresolvedSystems > 0) footer.Add($"{plan.UnresolvedSystems} sistema(s) no reconocidos en ScreenScraper se omiten.");
         if (plan.RomsWithWork == 0)
         {
-            QuietMessage.Show(this, "Descarga masiva", text.ToString() + "\r\nNo hay nada pendiente.");
+            footer.Add("No hay nada pendiente.");
+            using var info = new BulkConfirmDialog(rows, footer, "Aceptar", confirm: false);
+            info.ShowDialog(this);
             return;
         }
-        if (!QuietMessage.Confirm(this, "Descarga masiva de medios", text.ToString(), "Iniciar descarga")) return;
+        using (var confirmDialog = new BulkConfirmDialog(rows, footer, "Iniciar descarga", confirm: true))
+            if (confirmDialog.ShowDialog(this) != DialogResult.OK) return;
 
         cts?.Dispose();
         cts = new CancellationTokenSource();

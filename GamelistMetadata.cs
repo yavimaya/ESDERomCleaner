@@ -64,7 +64,10 @@ internal sealed record GamelistMetadata(string Name, string Desc, string Rating,
         var child = game.Genres.FirstOrDefault(g => g.ParentId.Length > 0 && g.ParentId != "0");
         if (child is null) return NameOf(game.Genres.FirstOrDefault(g => g.Principal) ?? game.Genres[0]);
         var parent = game.Genres.FirstOrDefault(g => g.Id == child.ParentId);
-        return parent is null ? NameOf(child) : NameOf(parent) + " / " + NameOf(child);
+        // ScreenScraper ya suele dar el subgénero con el nombre del padre delante («Plataformas / Corre y Salta»).
+        string childName = NameOf(child);
+        if (parent is null || childName.Contains('/')) return childName;
+        return NameOf(parent) + " / " + childName;
     }
 
     // Sin caracteres que el XML no admite.

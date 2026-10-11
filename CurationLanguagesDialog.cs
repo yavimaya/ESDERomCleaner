@@ -6,7 +6,7 @@ internal sealed class CurationLanguagesDialog : Form
     private readonly CheckedListBox list = new() { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false };
     private readonly CheckBox onlyTextGenres = new()
     {
-        Text = "Solo en géneros que dependen del texto (rol, aventura, novela visual, estrategia, quiz, educativos…)",
+        Text = "Solo en categorías que dependen del texto (rol, aventura, novela visual, estrategia, quiz, educativos…)",
         AutoSize = true, MaximumSize = new Size(440, 0), Margin = new Padding(3, 6, 3, 3)
     };
     private readonly CheckBox useFilename = new()

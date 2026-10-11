@@ -14,7 +14,7 @@ internal sealed record BulkMediaSettings(string[] Folders, bool NormalizedVideo,
         ["covers", "backcovers", "3dboxes", "physicalmedia", "screenshots", "titlescreens", "marquees", "miximages", "videos"],
         normalizedVideo, BulkOverwrite.No, true, false, []);
 
-    private static string StorePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "bulk_media.json");
+    private static string StorePath => Path.Combine(AppPaths.Data, "bulk_media.json");
 
     public static BulkMediaSettings Load(bool defaultNormalizedVideo)
     {

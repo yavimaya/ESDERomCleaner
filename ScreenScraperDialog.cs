@@ -324,7 +324,7 @@ internal sealed class ScreenScraperDialog : Form
         Add("Jugadores", game.Players);
         Add("Nota (sobre 20)", game.Rating);
         foreach (var d in game.Dates) Add($"Fecha ({d.Key})", d.Text);
-        foreach (var (group, label) in new[] { ("genres", "Géneros"), ("modes", "Modos"), ("familles", "Familias"), ("numeros", "Serie / número"), ("themes", "Temas"), ("styles", "Estilos") })
+        foreach (var (group, label) in new[] { ("genres", "Categorías"), ("modes", "Modos"), ("familles", "Familias"), ("numeros", "Serie / número"), ("themes", "Temas"), ("styles", "Estilos") })
         {
             if (!game.Groups.TryGetValue(group, out var items)) continue;
             Add(label, string.Join(" · ", items.Select(texts => SsPick.Text(texts, PreferredLanguages))));
@@ -335,7 +335,7 @@ internal sealed class ScreenScraperDialog : Form
 
         currentGame = game;
         BuildSelectionTab(game);
-        // Primero los medios del juego y al final los pictogramas de género, editor, etc.
+        // Primero los medios del juego y al final los pictogramas de categoría, editor, etc.
         foreach (var m in game.Medias.OrderBy(m => m.IsGameMedia ? 0 : 1).ThenBy(m => m.Type, StringComparer.OrdinalIgnoreCase).ThenBy(m => m.Region, StringComparer.OrdinalIgnoreCase))
         {
             int index = mediaGrid.Rows.Add(m.Type, SsMediaInfo.Describe(m.Type), m.Region, m.Format, m.Size > 0 ? FormatBytes(m.Size) : "", "", "", SsMediaInfo.EsDeFolder(m.Type), m.Parent);
@@ -352,7 +352,7 @@ internal sealed class ScreenScraperDialog : Form
         int pdfs = gameMedias.Count(m => SsMediaInfo.Kind(m.Format) == "pdf");
         int types = gameMedias.Select(m => m.Type).Distinct(StringComparer.OrdinalIgnoreCase).Count();
         int extra = game.Medias.Count - gameMedias.Count;
-        mediaSummary.Text = $"  {gameMedias.Count} medios del juego de {types} tipos: {images} imágenes, {videos} vídeos, {pdfs} manuales/PDF, {gameMedias.Count - images - videos - pdfs} otros." + (extra > 0 ? $" (+{extra} pictogramas de género, editor, etc.)" : "");
+        mediaSummary.Text = $"  {gameMedias.Count} medios del juego de {types} tipos: {images} imágenes, {videos} vídeos, {pdfs} manuales/PDF, {gameMedias.Count - images - videos - pdfs} otros." + (extra > 0 ? $" (+{extra} pictogramas de categoría, editor, etc.)" : "");
         statusLabel.Text = $"Encontrado: {game.BestName}  ·  hash de {hashes.Basis}";
         ShowSelectedMedia();
     }

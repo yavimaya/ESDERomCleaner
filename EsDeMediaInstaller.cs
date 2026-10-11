@@ -30,7 +30,7 @@ internal static class EsDeMediaInstaller
     private static readonly string[] VideoFormats = ["mp4", "m4v", "mkv", "avi", "mov", "webm", "wmv", "mpg", "mpeg", "ogv"];
     private static readonly string[] MediaExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".mp4", ".m4v", ".mkv", ".avi", ".mov", ".webm", ".wmv", ".mpg", ".mpeg", ".ogv", ".pdf"];
 
-    public static string BackupRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "media_backups");
+    public static string BackupRoot => Path.Combine(AppPaths.Data, "media_backups");
 
     // Solo formatos que ES-DE sabe mostrar en esa carpeta (por ejemplo, nada de SVG en carátulas).
     public static bool Accepts(EsDeMediaFolder folder, SsMedia media)

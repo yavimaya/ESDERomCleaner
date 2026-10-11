@@ -27,7 +27,7 @@ internal sealed class RomLanguageIndex
     private Dictionary<string, RomLanguageInfo> map = new(StringComparer.OrdinalIgnoreCase);
     private bool dirty;
 
-    private static string StorePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "rom_languages.json");
+    private static string StorePath => Path.Combine(AppPaths.Data, "rom_languages.json");
 
     public static RomLanguageIndex Load()
     {
@@ -149,7 +149,7 @@ internal sealed class CurationLanguageSettings
     public bool OnlyTextGenres { get; set; }
     public bool UseFilename { get; set; } = true;
 
-    private static string StorePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "curation_languages.json");
+    private static string StorePath => Path.Combine(AppPaths.Data, "curation_languages.json");
 
     public static CurationLanguageSettings Load()
     {

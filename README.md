@@ -2,15 +2,19 @@
 
 Herramienta de escritorio para Windows que ayuda a **mantener y "curar" una colección de [ES-DE](https://es-de.org/)** (EmulationStation Desktop Edition): explorar tus ROMs por género, ver sus imágenes y vídeos, completar su información con [ScreenScraper](https://www.screenscraper.fr/), quitar de la colección lo que no te interesa y clonar el resultado a otra carpeta o dispositivo.
 
-> **Requisito imprescindible:** la herramienta trabaja sobre una colección que **ya tenga la estructura de carpetas de ES-DE con sus `gamelist.xml`** (ver [Estructura de colección esperada](#estructura-de-colección-esperada)). Si la colección no tiene esa estructura, no se puede analizar. En futuras versiones se podrá crear la estructura cuando falte.
+> **VERSIÓN ALPHA.** Este programa está en desarrollo activo y **pueden fallar muchas cosas**: errores, funciones a medio terminar, textos sin pulir y comportamientos sin probar con colecciones reales. Úsalo **siempre sobre una copia** de tu colección y avisa de lo que falle abriendo una [incidencia](../../issues).
 
 > **Aviso:** el borrado de ROMs y de sus archivos asociados es **permanente** (no pasa por la Papelera). Antes de usarlo en serio, prueba con una copia de tu colección.
+
+La herramienta trabaja sobre una colección con la **estructura de carpetas de ES-DE** (`Roms`, `ES-DE\gamelists`, `ES-DE\downloaded_media`). Si no la tienes, la propia aplicación puede **crearla completa** y **generar los `gamelist.xml`** a partir de tus ROMs (ver [Estructura de colección](#estructura-de-colección)). Hay más documentación en la [wiki](../../wiki).
 
 La interfaz, los mensajes y los comentarios del código están en **español**.
 
 ## Qué puedes hacer
 
-- **Explorar** la colección por sistema y género, con búsqueda (también por expresión regular), vista previa de la *miximage* y reproducción del vídeo de la ROM enfocada.
+- **Crear la estructura de ES-DE** (carpetas de todos los sistemas oficiales, de medios y de datos, con su `systeminfo.txt`) si la ruta elegida no la tiene, y **generar los `gamelist.xml`** desde las ROMs que haya en cada carpeta. Si copias ROMs nuevas, al analizar te ofrece añadirlas al gamelist (y, si quieres, categorizarlas y descargar sus medios).
+- **Añadir ROMs** (menú *Añadir ROMs*): arrastra archivos o carpetas (hasta 2 niveles de subcarpetas) y la aplicación las **identifica por hash** con los DAT de **No-Intro, Redump, TOSEC, MAME y FBNeo** (descargables desde la propia aplicación) o con los DAT que importes (GoodTools, clrmamepro, emuladores…), las coloca en la carpeta de su sistema y solo pregunta cuando hay dudas. Entiende **packs** (comprimidos con otros comprimidos dentro, recursivamente), prueba el hash sin cabecera (NES, FDS, Lynx, SNES…) y descarta lo que no son ROMs. Puedes elegir **cómo se guardan**: como llegan, sin comprimir, ZIP o 7z (con nivel de compresión), respetando las extensiones que admite cada sistema.
+- **Explorar** la colección por sistema y categoría (género), con búsqueda (también por expresión regular), vista previa de la *miximage* y reproducción del vídeo de la ROM enfocada.
 - **Editar metadatos** de un juego (`gamelist.xml`): nombre, descripción, valoración, fecha, desarrollador, género, favoritos, etc.
 - **Scrapear con ScreenScraper**:
   - Consulta de una ROM por hash (o por nombre), con todos sus metadatos y medios disponibles.
@@ -20,6 +24,7 @@ La interfaz, los mensajes y los comentarios del código están en **español**.
 - **Borrado seguro**: plan previo con todo lo que se va a tocar (ROMs, archivos accesorios, media, gamelists), comprobación de que nada ha cambiado antes de ejecutar, copia de seguridad opcional de los gamelists y actualización solo de los sistemas afectados.
 - **Clonar la estructura de ES-DE a otra carpeta o a una tarjeta SD** (botón *Clonar*): pensado para llevar la colección ya depurada a Android, donde ES-DE suele usarse con tarjeta SD. Ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd).
 - **Trazabilidad**: cada acción relevante queda anotada en un registro que se puede consultar desde la propia aplicación.
+- **Carpetas de trabajo configurables** (menú *Opciones*): la carpeta de datos de la aplicación y la carpeta de temporales se pueden cambiar; si eliges una vacía, la aplicación crea en ella los archivos mínimos de trabajo.
 
 ## Capturas
 
@@ -65,7 +70,7 @@ dotnet run            # abre la aplicación
 
 Todo el código está en un único proyecto (`ESDERomCleaner.csproj`). No hay proyecto de pruebas. El motor de vídeo (LibVLC) se incorpora mediante paquetes NuGet.
 
-## Estructura de colección esperada
+## Estructura de colección
 
 Se trabaja sobre una carpeta raíz que contiene:
 
@@ -75,7 +80,7 @@ ES-DE/gamelists/<sistema>/gamelist.xml          listas de juegos
 ES-DE/downloaded_media/<sistema>/<tipo>/...     imágenes, vídeos, manuales…
 ```
 
-> **Importante:** la carpeta raíz debe contener `Roms` y `ES-DE\gamelists` (con un `gamelist.xml` por sistema). La aplicación lo comprueba antes de empezar y, si falta algo, te lo indica y no analiza. De momento no crea la estructura por ti; está previsto para una versión futura.
+La carpeta raíz debe contener `Roms` y `ES-DE\gamelists`. Si falta algo (o no has elegido carpeta), la aplicación te lo explica y **te ofrece crear la estructura completa** de ES-DE, vacía. Después, al analizar, si hay ROMs que no figuran en ningún `gamelist.xml` te ofrece **crearlos o ampliarlos** con las ROMs que falten (solo con su ruta y nombre; el resto se rellena con el scrapeo).
 
 La aplicación recuerda la última carpeta raíz que analizó con éxito.
 
@@ -93,7 +98,7 @@ ES-DE es también un frontend para **Android**, donde las colecciones suelen viv
 
 ## Cómo se usa
 
-1. Indica la carpeta raíz y pulsa **Analizar colección**.
+1. Indica la carpeta raíz y pulsa **Analizar colección** (si no tiene la estructura de ES-DE o los gamelists, te ofrece crearlos). Para meter ROMs nuevas: menú **Añadir ROMs** (descarga antes las bases de datos en *Añadir ROMs › Bases de datos de ROMs…*).
 2. **Scrapeo › Credenciales de ScreenScraper…** (o **Alta en ScreenScraper…** si todavía no tienes cuenta).
 3. Para una ROM concreta: clic derecho › *Scrapear con ScreenScraper…*. Para sistemas enteros: **Scrapeo › Descarga masiva de medios…**
 4. Para depurar la colección: **Curado › Reglas de curado (análisis)…**, marca lo que quieras descartar y revisa las candidatas antes de eliminar nada.
@@ -101,7 +106,7 @@ ES-DE es también un frontend para **Android**, donde las colecciones suelen viv
 
 ## Datos que guarda la aplicación
 
-Todo vive en `%LOCALAPPDATA%\ESDERomCleaner`: opciones, caché del análisis, registro de trazas, caché y copias de seguridad de medios, índice de idiomas, perfiles y reglas del curado.
+Por defecto todo vive en `%LOCALAPPDATA%\ESDERomCleaner` (se puede cambiar en *Opciones › Carpeta de datos…*): opciones, caché del análisis, registro de trazas, caché y copias de seguridad de medios, índice de idiomas, perfiles y reglas del curado, bases de datos de hashes (DAT) y su índice. Los temporales (lo que se extrae de los packs) van a `%TEMP%\ESDERomCleaner` y se borran solos.
 
 - Las **credenciales de ScreenScraper** se guardan cifradas con DPAPI (solo las puede leer tu usuario de Windows en ese equipo) y nunca se escriben en trazas ni en pantalla.
 - La aplicación **no modifica** tus gamelists salvo cuando editas metadatos, descargas metadatos o eliminas ROMs, y siempre de forma atómica y conservando el resto del archivo tal cual.
@@ -114,13 +119,15 @@ Todo vive en `%LOCALAPPDATA%\ESDERomCleaner`: opciones, caché del análisis, re
 
 ## Estado del proyecto
 
-Proyecto personal en desarrollo. Algunas partes del acceso a la API de ScreenScraper (búsqueda por nombre, lectura de la cuenta e idiomas de las ROMs) están escritas pero pendientes de verificar con respuestas reales. Pendiente a medio plazo: un visor de medios a pantalla completa y más opciones de qué hacer con las ROMs candidatas del curado (ocultarlas en ES-DE o generar una copia depurada).
+**Versión alpha**: proyecto personal en desarrollo, con muchas partes recién escritas y sin probar a fondo. Algunas partes del acceso a la API de ScreenScraper (búsqueda por nombre, lectura de la cuenta e idiomas de las ROMs) están escritas pero pendientes de verificar con respuestas reales. Pendiente a medio plazo: un visor de medios a pantalla completa y más opciones de qué hacer con las ROMs candidatas del curado (ocultarlas en ES-DE o generar una copia depurada).
 
 ## Créditos
 
 - [ES-DE](https://es-de.org/) por el frontend cuya estructura se respeta.
 - [ScreenScraper](https://www.screenscraper.fr/) por su base de datos y su API.
 - [LibVLCSharp](https://github.com/videolan/libvlcsharp) y [VLC](https://www.videolan.org/) para la reproducción de vídeo.
+- [libretro-database](https://github.com/libretro/libretro-database) por mantener los DAT de No-Intro, Redump, TOSEC, MAME y FBNeo que se usan para identificar las ROMs, y los proyectos No-Intro, Redump y TOSEC que los elaboran.
+- [SharpCompress](https://github.com/adamhathcock/sharpcompress) para leer archivos 7z y rar. Para crear archivos 7z se usa [7-Zip](https://www.7-zip.org/) si está instalado.
 
 ## Licencia
 

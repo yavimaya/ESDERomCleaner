@@ -4,7 +4,7 @@ namespace ESDERomCleaner;
 
 internal sealed class TraceLog
 {
-    private readonly string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "traceability.jsonl");
+    private static string path => Path.Combine(AppPaths.Data, "traceability.jsonl");
     private static readonly object Gate = new();
     public void Add(string action, string details)
     {

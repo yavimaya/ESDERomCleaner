@@ -1,7 +1,7 @@
 namespace ESDERomCleaner;
 
 internal enum RomStatus { Ok, Ambiguous }
-internal sealed record GameEntry(string Path, string Name, string Genre, string Description, string RelativeKey, string NameKey);
+internal sealed record GameEntry(string Path, string Name, string Genre, string Description, string RelativeKey, string NameKey, bool Excluded = false);
 internal sealed record AccessoryFile(string System, string Path, long Size, string RelativePath, string MatchKey);
 internal sealed record RomRow(string System, string Path, string RomName, long Size, string GameName, string Genre, string Description, RomStatus Status, string Gamelist, string GamelistPath)
 {

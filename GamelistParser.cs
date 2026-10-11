@@ -19,7 +19,7 @@ internal static class GamelistParser
             {
                 token.ThrowIfCancellationRequested();
                 string? Field(string name) => game.Elements().FirstOrDefault(e => e.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase))?.Value;
-                Add(result, Field("path"), Field("name"), Field("genre"), Field("desc"));
+                Add(result, Field("path"), Field("name"), Field("genre"), Field("desc"), IsTrue(Field("nogamecount")) || IsTrue(Field("nomultiscrape")));
             }
         }
         catch (OperationCanceledException) { throw; }
@@ -35,12 +35,14 @@ internal static class GamelistParser
                     var m = Regex.Match(game.Groups[1].Value, $@"(?is)<{tag}\b[^>]*>\s*(.*?)\s*</{tag}\s*>");
                     return m.Success ? WebUtility.HtmlDecode(m.Groups[1].Value.Trim()) : null;
                 }
-                Add(result, Field("path"), Field("name"), Field("genre"), Field("desc"));
+                Add(result, Field("path"), Field("name"), Field("genre"), Field("desc"), IsTrue(Field("nogamecount")) || IsTrue(Field("nomultiscrape")));
             }
         }
         return result;
     }
-    private static void Add(List<GameEntry> result, string? rawPath, string? rawName, string? rawGenre, string? rawDesc)
+    // «Excluir del contador» (nogamecount) y «Excluir del multi-scraper» (nomultiscrape): ES-DE los guarda como true/false.
+    private static bool IsTrue(string? value) => value is not null && value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
+    private static void Add(List<GameEntry> result, string? rawPath, string? rawName, string? rawGenre, string? rawDesc, bool excluded)
     {
         if (string.IsNullOrWhiteSpace(rawPath)) return;
         var path = WebUtility.HtmlDecode(rawPath.Trim());
@@ -48,7 +50,7 @@ internal static class GamelistParser
         if (relative.Length == 0) return;
         var key = PathRules.Name(path);
         result.Add(new GameEntry(path, string.IsNullOrWhiteSpace(rawName) ? key : WebUtility.HtmlDecode(rawName),
-            string.IsNullOrWhiteSpace(rawGenre) ? "Sin género" : WebUtility.HtmlDecode(rawGenre),
-            rawDesc is null ? "" : WebUtility.HtmlDecode(rawDesc), relative, key));
+            string.IsNullOrWhiteSpace(rawGenre) ? "Sin categoría" : WebUtility.HtmlDecode(rawGenre),
+            rawDesc is null ? "" : WebUtility.HtmlDecode(rawDesc), relative, key, excluded));
     }
 }

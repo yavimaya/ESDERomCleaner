@@ -22,14 +22,14 @@ internal sealed class SupraEditorDialog : Form
     private readonly Button removeButton = new() { Text = "Eliminar", AutoSize = true, MinimumSize = new Size(90, 28) };
     private readonly TextBox titleBox = new() { Dock = DockStyle.Fill };
     private readonly TextBox descriptionBox = new() { Dock = DockStyle.Fill };
-    private readonly TextBox genreFilter = new() { Dock = DockStyle.Fill, PlaceholderText = "Filtrar géneros…" };
+    private readonly TextBox genreFilter = new() { Dock = DockStyle.Fill, PlaceholderText = "Filtrar categorías…" };
     private readonly CheckedListBox genresList = new() { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false };
     private readonly TextBox keywordsBox = new() { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true, Font = new Font("Consolas", 9F) };
     private readonly Label matchLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font(SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont, FontStyle.Bold), AutoEllipsis = true };
     private readonly Button resetButton = new() { Text = "Restaurar las de partida", AutoSize = true, MinimumSize = new Size(170, 30) };
     private readonly Button saveButton = new() { Text = "Guardar cambios", AutoSize = true, MinimumSize = new Size(140, 30), Enabled = false };
     private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(100, 30) };
-    private readonly GroupBox genresGroup = new() { Text = "Géneros que incluye", Dock = DockStyle.Fill };
+    private readonly GroupBox genresGroup = new() { Text = "Categorías que incluye", Dock = DockStyle.Fill };
     private readonly Panel rightPanel = new() { Dock = DockStyle.Fill };
 
     public SupraEditorDialog(IReadOnlyList<RomRow> roms, IEnumerable<SupraDefinition> current, IReadOnlyDictionary<string, int> genreCounts, Func<List<SupraDefinition>> defaults, Action<List<SupraDefinition>> save)
@@ -216,8 +216,8 @@ internal sealed class SupraEditorDialog : Form
     {
         // El título del grupo indica cuántas categorías (géneros) tiene marcadas la supracategoría seleccionada.
         genresGroup.Text = Current is { } selected
-            ? $"Géneros que incluye ({selected.Genres.Count} {(selected.Genres.Count == 1 ? "seleccionado" : "seleccionados")})"
-            : "Géneros que incluye";
+            ? $"Categorías que incluye ({selected.Genres.Count} {(selected.Genres.Count == 1 ? "seleccionado" : "seleccionados")})"
+            : "Categorías que incluye";
         if (Current is not { } def) { matchLabel.Text = ""; return; }
         var rule = CurationRule.FromSupra(def);
         int count = roms.Count(r => rule.Matches(r, out _));

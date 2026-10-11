@@ -11,9 +11,11 @@ namespace ESDERomCleaner;
 
 public sealed partial class RomCleanerForm : Form
 {
-    private async Task ScanAsync()
+    private async Task ScanAsync(bool offerUnclassified = true)
     {
+        List<string>? unclassified = null;
         if (cts != null) return;
+        if (!EnsureCollectionRoot()) { status.Text = "Ruta raíz no válida."; return; }
         string rootPath = root.Text.Trim().Trim('"');
         if (!ValidateRoot(rootPath, out string problem))
         {
@@ -22,6 +24,8 @@ public sealed partial class RomCleanerForm : Form
             return;
         }
         root.Text = rootPath;
+        // El análisis solo lista los juegos que figuran en un gamelist: si hay ROMs sin gamelist (sistema nuevo o ROMs recién copiadas), se ofrece añadirlas.
+        await CreateGamelistsAsync(scanAfter: false, quiet: true, reason: "Hay ROMs en Roms\\<sistema> que no figuran en ningún gamelist.xml, y el análisis solo lista los juegos de los gamelists.");
         selected.Clear(); cts = new CancellationTokenSource(); var token = cts.Token;
         scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = deleteSelected.Enabled = false; cancel.Enabled = true; progress.Style = ProgressBarStyle.Blocks; progress.Value = 0;
         trace.Add("scan_started", root.Text);
@@ -49,12 +53,32 @@ public sealed partial class RomCleanerForm : Form
             mediaBytes = mediaSizeTask.Result;
             sizesCalculating = false;
             UpdateCollectionCounters();
-            status.Text = $"Escaneo completado: {all.Count:N0} filas · {systems.Items.Count} sistemas · {result.Gamelists} gamelists. Solo lectura.";
+            status.Text = $"Escaneo completado: {all.Count:N0} filas · {systems.Items.Count} sistemas · {result.Gamelists} gamelists.";
+            // Sistemas cuyas ROMs no tienen ninguna categoría (nunca se han scrapeado).
+            unclassified = all.Where(r => r.Status == RomStatus.Ok && IsVisibleSystem(r.System))
+                .GroupBy(r => r.System, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.All(r => string.IsNullOrWhiteSpace(r.Genre) || r.Genre == "Sin categoría"))
+                .Select(g => g.Key).OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
             trace.Add("scan_completed", $"rows={all.Count}; systems={result.SystemCount}; files={result.FileCount}; identified={identified}; ambiguous={ambiguous}; accessories={result.Accessories.Count}; gamelists={result.Gamelists}; cache={result.CachePath}; extensions={string.Join(" | ", result.ExtensionCounts.OrderByDescending(x => x.Value).ThenBy(x => x.Key).Select(x => $"{x.Key}:{x.Value}"))}");
         }
         catch (OperationCanceledException) { sizesCalculating = false; status.Text = "Cancelado. No se modificó ningún archivo."; trace.Add("scan_cancelled", root.Text); }
         catch (Exception ex) { sizesCalculating = false; status.Text = "Error de escaneo."; trace.Add("scan_error", ex.ToString()); MessageBox.Show(this, ex.Message, "No se pudo analizar", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally { try { await mediaSizeTask; } catch { } cts.Dispose(); cts = null; scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = true; deleteSelected.Enabled = selected.Count > 0; cancel.Enabled = false; progress.Style = ProgressBarStyle.Blocks; progress.Value = 0; }
+
+        if (scrapeAfterScan is { Count: > 0 } chosen)
+        {
+            // El usuario ya aceptó categorizar los sistemas nuevos al añadir sus ROMs: se abre la descarga masiva con ellos marcados.
+            scrapeAfterScan = null;
+            await OpenBulkMediaDialogAsync(chosen);
+        }
+        else if (skipUnclassifiedOffer) skipUnclassifiedOffer = false;
+        else if (offerUnclassified && unclassified is { Count: > 0 })
+        {
+            var listed = unclassified.Select(s => (s, all.Count(r => r.Status == RomStatus.Ok && r.System.Equals(s, StringComparison.OrdinalIgnoreCase)))).ToList();
+            bool accepted;
+            using (var dialog = new UnclassifiedSystemsDialog(listed)) accepted = dialog.ShowDialog(this) == DialogResult.OK;
+            if (accepted) await OpenBulkMediaDialogAsync(unclassified);
+        }
     }
     // La ruta raíz debe ser la carpeta que contiene Roms y ES-DE\gamelists. Se comprueba antes de empezar para dar un mensaje claro.
     private static bool ValidateRoot(string path, out string problem)
@@ -102,11 +126,32 @@ public sealed partial class RomCleanerForm : Form
             if (keepSelection) systems.SelectedIndex = names.FindIndex(n => n.Equals(keep, StringComparison.OrdinalIgnoreCase));
         }
         finally { changing = false; }
-        if (keepSelection) return;
+        if (keepSelection) { ReloadCurrentSystem(keep!); return; }
         if (systems.Items.Count > 0) systems.SelectedIndex = 0; else { current.Clear(); categories.Items.Clear(); roms.Items.Clear(); details.Clear(); }
     }
 
-    private static string Genre(RomRow r) => string.IsNullOrWhiteSpace(r.Genre) ? "Sin género" : r.Genre;
+    // Tras un nuevo análisis, vuelve a cargar las ROMs y categorías del sistema que se estaba viendo (conservando la categoría enfocada).
+    private void ReloadCurrentSystem(string system)
+    {
+        string? previousCategory = (categories.SelectedItem as CategoryItem)?.Genre;
+        current = all.Where(r => r.System.Equals(system, StringComparison.OrdinalIgnoreCase)).OrderBy(r => r.RomName, StringComparer.OrdinalIgnoreCase).ToList();
+        systemSummary.Text = $"{system} : {current.Count(r => r.Status == RomStatus.Ok):N0} ROMs identificadas en el gamelist.";
+        changing = true;
+        try
+        {
+            categories.Items.Clear();
+            foreach (var group in current.GroupBy(Genre, StringComparer.OrdinalIgnoreCase).OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+                categories.Items.Add(new CategoryItem(group.Key, group.Count(row => row.Status == RomStatus.Ok)));
+            int index = categories.Items.Cast<CategoryItem>().ToList().FindIndex(c => c.Genre.Equals(previousCategory, StringComparison.OrdinalIgnoreCase));
+            if (index < 0 && categories.Items.Count > 0) index = 0;
+            categories.SelectedIndex = index;
+        }
+        finally { changing = false; }
+        RefreshList();
+        UpdateSelection();
+    }
+
+    private static string Genre(RomRow r) => string.IsNullOrWhiteSpace(r.Genre) ? "Sin categoría" : r.Genre;
     private void ChangeSystem()
     {
         if (systems.SelectedItem is not string s) return;

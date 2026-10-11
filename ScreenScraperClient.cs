@@ -14,7 +14,7 @@ internal sealed class ScreenScraperClient
 
     public ScreenScraperClient(ScreenScraperCredentials credentials) { this.credentials = credentials; }
 
-    private static string SystemsCachePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "screenscraper_systems.json");
+    private static string SystemsCachePath => Path.Combine(AppPaths.Data, "screenscraper_systems.json");
 
     private string BuildUrl(string endpoint, params (string Key, string? Value)[] extra)
     {

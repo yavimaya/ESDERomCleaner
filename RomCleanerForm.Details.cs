@@ -38,6 +38,8 @@ public sealed partial class RomCleanerForm : Form
             throw new InvalidOperationException($"Los metadatos se guardaron, pero no se pudo actualizar la vista: se encontraron {matches.Length} entradas para esa ruta.");
 
         var entry = matches[0];
+        // Si se acaba de marcar «Excluir del contador» o «del multi-scraper», la ROM deja de listarse: hace falta volver a analizar.
+        if (entry.Excluded) { status.Text = "ROM excluida: se vuelve a analizar la colección…"; _ = ScanAsync(offerUnclassified: false); return; }
         var updatedRow = editedRow with
         {
             GameName = entry.Name,
@@ -105,7 +107,7 @@ public sealed partial class RomCleanerForm : Form
 
         RomRow row = item.Row;
         description.Text = string.IsNullOrWhiteSpace(row.Description) ? "Esta ROM no tiene una descripción en su gamelist.xml." : row.Description;
-        details.Text = $"ROM: {row.RomName}\r\nSistema: {row.System}\r\nEstado: {row.Status}\r\nCategoría: {Genre(row)}\r\nTamaño: {FormatSize(row.Size)}\r\nRuta: {row.Path}\r\nGamelist: {row.Gamelist}\r\nPath XML: {row.GamelistPath}\r\n\r\nNombre: {row.GameName}\r\nGénero: {row.Genre}";
+        details.Text = $"ROM: {row.RomName}\r\nSistema: {row.System}\r\nEstado: {row.Status}\r\nCategoría: {Genre(row)}\r\nTamaño: {FormatSize(row.Size)}\r\nRuta: {row.Path}\r\nGamelist: {row.Gamelist}\r\nPath XML: {row.GamelistPath}\r\n\r\nNombre: {row.GameName}\r\nCategoría en el gamelist: {row.Genre}";
         UpdateDataPanel();
 
         int version = ++previewVersion;

@@ -172,7 +172,7 @@ internal static class SsMediaInfo
 // Copias completas de los medios de ScreenScraper para compararlos antes de elegir; se reutilizan entre consultas.
 internal static class SsMediaCache
 {
-    public static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "media_cache");
+    public static string Root => Path.Combine(AppPaths.Data, "media_cache");
 
     public static string PathFor(string gameId, SsMedia media)
     {

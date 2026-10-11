@@ -5,22 +5,29 @@ public sealed partial class RomCleanerForm
     // El tipo de vídeo que se propone por defecto es el último que se eligió en la descarga masiva (normalizado si nunca se ha elegido).
     private static bool PreferNormalizedVideo() => BulkMediaSettings.Load(true).NormalizedVideo;
 
-    private void OpenBulkMediaDialog()
+    // «preselected»: sistemas que se abren ya marcados (viene de la propuesta tras analizar, con la colección recién cargada).
+    private async Task OpenBulkMediaDialogAsync(IReadOnlyCollection<string>? preselected = null)
     {
-        if (all.Count == 0)
+        if (preselected is null)
         {
-            QuietMessage.Show(this, "Descarga masiva de medios", "Primero analiza la colección: la descarga masiva trabaja sobre las ROMs de los sistemas analizados.");
-            return;
+            if (!await EnsureCollectionLoadedAsync())
+            {
+                if (cts == null) QuietMessage.Show(this, "Descarga masiva de medios", "No hay ROMs analizadas: la descarga masiva trabaja sobre las ROMs de la colección. Copia ROMs en Roms\\<sistema> y analiza la colección.");
+                return;
+            }
+            // Los sistemas con ROMs pero sin gamelist no tienen filas que scrapear: se ofrece crear sus gamelists primero.
+            await CreateGamelistsAsync(scanAfter: true, quiet: true, offerScrape: false, reason: "Hay sistemas con ROMs pero sin gamelist.xml, y la descarga masiva solo trabaja con los juegos que figuran en un gamelist.");
         }
         StopVideoPlayback();
         trace.Add("bulk_media_dialog_opened", root.Text);
-        using var dialog = new BulkMediaDialog(all.Where(r => IsVisibleSystem(r.System)).ToList(), root.Text, trace, PreferNormalizedVideo(), createGamelistBackups);
+        using var dialog = new BulkMediaDialog(all.Where(r => IsVisibleSystem(r.System)).ToList(), root.Text, trace, PreferNormalizedVideo(), createGamelistBackups, preselected);
         dialog.ShowDialog(this);
-        if (dialog.MetadataChanged) status.Text = "Metadatos actualizados en los gamelist.xml; analiza de nuevo la colección para verlos en la lista.";
-        if (!dialog.CollectionChanged) return;
+        if (!dialog.MetadataChanged && !dialog.CollectionChanged) return;
         // Los índices de miximages y vídeos se construyen una vez por carpeta: hay que olvidarlos para ver los nuevos.
         MiximageFileIndex.Clear();
         VideoFileIndex.Clear();
+        // Hubo cambios (metadatos, medios o idiomas): se vuelve a analizar para ver ya las categorías, imágenes y vídeos nuevos.
+        await ScanAsync(offerUnclassified: false);
         ShowDetails();
     }
 

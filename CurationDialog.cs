@@ -30,7 +30,7 @@ internal sealed class CurationDialog : Form
     private readonly ContextMenuStrip columnsMenu = new();
     private readonly Button columnsButton = new() { Text = "Columnas ▾", AutoSize = true, Margin = new Padding(16, 1, 3, 0) };
     private static readonly (string Name, string Title)[] ColumnChoices =
-        [("state", "Estado"), ("system", "Sistema"), ("rom", "Nombre del archivo"), ("game", "Nombre"), ("genre", "Género"), ("rules", "Regla(s)"), ("reason", "Motivo"), ("size", "Tamaño")];
+        [("state", "Estado"), ("system", "Sistema"), ("rom", "Nombre del archivo"), ("game", "Nombre"), ("genre", "Categoría"), ("rules", "Regla(s)"), ("reason", "Motivo"), ("size", "Tamaño")];
     private List<CurationProfile> profiles = new();
     private string baseTitle = "";
     private bool updating;
@@ -55,7 +55,7 @@ internal sealed class CurationDialog : Form
     private readonly Button exportButton = new() { Text = "Exportar candidatas…", AutoSize = true, MinimumSize = new Size(150, 30) };
     private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(100, 30), DialogResult = DialogResult.Cancel };
 
-    private static string StorePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "curation.json");
+    private static string StorePath => Path.Combine(AppPaths.Data, "curation.json");
 
     public CurationDialog(IReadOnlyList<RomRow> allRoms, TraceLog trace)
     {
@@ -117,7 +117,7 @@ internal sealed class CurationDialog : Form
         Configure(supraGrid);
         supraGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "use", HeaderText = "", Width = 30 });
         supraGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "rule", HeaderText = "Supracategoría", Width = 190, ReadOnly = true });
-        supraGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "ROMs", Width = 55, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
+        supraGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "ROMs", Width = 55, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter }, HeaderCell = { Style = { Alignment = DataGridViewContentAlignment.MiddleCenter } } });
         supraGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "desc", HeaderText = "Qué incluye", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, ReadOnly = true });
         var supraLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
         supraLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -133,8 +133,8 @@ internal sealed class CurationDialog : Form
 
         Configure(genresGrid);
         genresGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "use", HeaderText = "", Width = 30 });
-        genresGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "rule", HeaderText = "Categoría (género)", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, ReadOnly = true });
-        genresGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "ROMs", Width = 60, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
+        genresGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "rule", HeaderText = "Categoría", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, ReadOnly = true });
+        genresGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "ROMs", Width = 60, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter }, HeaderCell = { Style = { Alignment = DataGridViewContentAlignment.MiddleCenter } } });
         var genresLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
         genresLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         genresLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
@@ -173,7 +173,12 @@ internal sealed class CurationDialog : Form
         Configure(systemsGrid);
         systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "system", HeaderText = "Sistema", Width = 160, ReadOnly = true });
         foreach (var (name, header) in new[] { ("total", "ROMs"), ("cand", "Candidatas"), ("pct", "%"), ("size", "Espacio candidatas") })
-            systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = header, Width = 110, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
+            systemsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = name, HeaderText = header, Width = 110, ReadOnly = true,
+                DefaultCellStyle = new DataGridViewCellStyle { Alignment = name == "total" ? DataGridViewContentAlignment.MiddleCenter : DataGridViewContentAlignment.MiddleRight },
+                HeaderCell = { Style = { Alignment = name == "total" ? DataGridViewContentAlignment.MiddleCenter : DataGridViewContentAlignment.NotSet } }
+            });
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
         var candidatesTab = new TabPage("Candidatas"); candidatesTab.Controls.Add(candidatesLayout);
@@ -335,7 +340,7 @@ internal sealed class CurationDialog : Form
     private CurationRule BuildLanguageRule()
     {
         string understood = languageSettings.Understood.Count > 0 ? string.Join(", ", languageSettings.Understood.Select(LanguageCatalog.NameOf)) : "ninguno";
-        string description = $"no están en ninguno de: {understood}" + (languageSettings.OnlyTextGenres ? " (solo géneros con texto)" : "");
+        string description = $"no están en ninguno de: {understood}" + (languageSettings.OnlyTextGenres ? " (solo categorías con texto)" : "");
         return new CurationRule("lang-unreadable", "Idiomas no entendibles", description, row =>
         {
             var (languages, source) = LanguageResolver.Resolve(row, languageIndex, languageSettings.UseFilename);
@@ -497,7 +502,7 @@ internal sealed class CurationDialog : Form
         int genericSports = roms.Count(r => r.Genre.Equals("Deportes", StringComparison.OrdinalIgnoreCase));
         deleteButton.Text = $"Eliminar {union.Count:N0} candidatas…";
         deleteButton.Enabled = union.Count > 0;
-        note.Text = $"Excluidas a mano: {excluded.Count:N0}   ·   Idioma conocido: {languageKnown:N0} de {roms.Count:N0}   ·   {genericSports:N0} ROMs tienen el género «Deportes» sin subgénero; solo las detectan las supracategorías de deportes por palabras del nombre.";
+        note.Text = $"Excluidas a mano: {excluded.Count:N0}   ·   Idioma conocido: {languageKnown:N0} de {roms.Count:N0}   ·   {genericSports:N0} ROMs tienen la categoría «Deportes» sin subgénero; solo las detectan las supracategorías de deportes por palabras del nombre.";
         FillSystems(union);
         RefreshCandidates();
     }
@@ -594,7 +599,7 @@ internal sealed class CurationDialog : Form
         using var dialog = new SaveFileDialog { Title = "Exportar candidatas", Filter = "CSV (*.csv)|*.csv", DefaultExt = "csv", FileName = $"candidatas_curado_{DateTime.Now:yyyyMMdd_HHmm}.csv" };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         static string Quote(string? value) => "\"" + (value ?? "").Replace("\"", "\"\"") + "\"";
-        var lines = new List<string> { "Sistema;ROM;Nombre;Género;Tamaño (bytes);Reglas;Motivo" };
+        var lines = new List<string> { "Sistema;ROM;Nombre;Categoría;Tamaño (bytes);Reglas;Motivo" };
         foreach (var (row, rowHits) in union)
             lines.Add(string.Join(";", new[] { row.System, row.RomName, row.GameName, CurationRule.EffectiveGenre(row), row.Size.ToString(), string.Join(", ", rowHits.Select(h => h.Rule.Title)), string.Join(" · ", rowHits.Select(h => h.Reason).Distinct()) }.Select(Quote)));
         try

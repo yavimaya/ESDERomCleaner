@@ -4,9 +4,9 @@ public sealed partial class RomCleanerForm
 {
     private async Task OpenCurationDialogAsync()
     {
-        if (all.Count == 0)
+        if (!await EnsureCollectionLoadedAsync())
         {
-            QuietMessage.Show(this, "Curado", "Primero analiza la colección: las reglas de curado trabajan sobre las ROMs de los sistemas analizados.");
+            if (cts == null) QuietMessage.Show(this, "Curado", "No hay ROMs analizadas: las reglas de curado trabajan sobre las ROMs de la colección. Copia ROMs en Roms\\<sistema> y analiza la colección.");
             return;
         }
         trace.Add("curation_dialog_opened", root.Text);

@@ -29,7 +29,10 @@ public sealed partial class RomCleanerForm : Form
     private readonly ToolStripMenuItem screenScraperCredentials = new("Credenciales de ScreenScraper…");
     private readonly ToolStripMenuItem screenScraperSignUp = new("Alta en ScreenScraper…");
     private readonly ToolStripMenuItem curationRules = new("Reglas de curado (análisis)…");
-    private readonly ToolStripMenuItem bulkMedia = new("Descarga masiva de medios…");
+    private readonly ToolStripMenuItem addRoms = new("Añadir ROMs…") { ToolTipText = "Arrastra ROMs para identificarlas y guardarlas en la carpeta de su sistema." };
+    private readonly ToolStripMenuItem datManager = new("Bases de datos de ROMs…") { ToolTipText = "Descarga y actualiza los DAT de No-Intro y Redump con los que se identifican las ROMs." };
+    private readonly ToolStripMenuItem createGamelists =new("Crear gamelists desde las ROMs…") { ToolTipText = "Crea los gamelist.xml que faltan y añade a los existentes las ROMs que no figuran, sin modificar lo que ya tienen." };
+    private readonly ToolStripMenuItem bulkMedia =new("Descarga masiva de medios…");
     private readonly System.Windows.Forms.Timer videoPreviewTimer = new() { Interval = 3000 };
     private readonly System.Windows.Forms.Timer videoMonitorTimer = new() { Interval = 250 };
     private LibVLC? libVlc;
@@ -65,7 +68,7 @@ public sealed partial class RomCleanerForm : Form
     private bool createGamelistBackups = false;
 
     private sealed record AppOptions(bool CreateGamelistBackups, bool ShowVideos, bool VideoSound, bool ShowAccessorySystems, string RootPath);
-    private static string OptionsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "settings.json");
+    private static string OptionsPath => Path.Combine(AppPaths.Data, "settings.json");
 
     private static bool ReadBool(JsonElement element, string name, bool fallback) =>
         element.TryGetProperty(name, out var value) && (value.ValueKind is JsonValueKind.True or JsonValueKind.False)
@@ -179,6 +182,7 @@ public sealed partial class RomCleanerForm : Form
     private void OpenCloneDialog()
     {
         ClearSearchForContextChange();
+        if (!EnsureCollectionRoot()) return;
         trace.Add("mirror_dialog_opened", root.Text);
         try
         {
@@ -246,8 +250,12 @@ public sealed partial class RomCleanerForm : Form
             }
             else if (pendingVideoRow is not null) ScheduleVideoPreview(pendingVideoRow, pendingVideoVersion);
         };
-        bulkMedia.Click += (_, _) => OpenBulkMediaDialog();
-        curationRules.Click += async (_, _) => await OpenCurationDialogAsync();
+        bulkMedia.Click += async (_, _) => await OpenBulkMediaDialogAsync();
+        WireFolderMenus();
+        addRoms.Click += async (_, _) => await OpenAddRomsAsync();
+        datManager.Click += (_, _) => { using var d = new DatManagerDialog(trace, root.Text.Trim().Trim('"')); d.ShowDialog(this); if (RomDatabase.InstalledCount() > 0) _ = RomDatabase.GetIndexAsync(); };
+        createGamelists.Click +=async (_, _) => await CreateGamelistsAsync(scanAfter: true, quiet: false);
+        curationRules.Click +=async (_, _) => await OpenCurationDialogAsync();
         screenScraperCredentials.Click += (_, _) =>
         {
             if (ScreenScraperAccount.Edit(this, trace, ScreenScraperCredentialStore.Load()) is not null) status.Text = "Credenciales de ScreenScraper guardadas.";
@@ -312,7 +320,7 @@ public sealed partial class RomCleanerForm : Form
         new ToolTip().SetToolTip(cacheInfo, $"Caché: {cachePath}");
         var list = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, GridLines = true, HideSelection = false };
         list.Columns.Add("Extensión", 250);
-        list.Columns.Add("ROMs", 120, HorizontalAlignment.Right);
+        list.Columns.Add("ROMs", 120, HorizontalAlignment.Center);
         foreach (var item in counts)
             list.Items.Add(new ListViewItem(new[] { item.Extension, item.Count.ToString("N0") }));
         var close = new Button { Text = "Cerrar", DialogResult = DialogResult.OK, Width = 84, Height = 28 };

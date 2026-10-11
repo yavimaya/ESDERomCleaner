@@ -52,7 +52,7 @@ internal sealed class CurationRule
 
     // Criterio exacto, para consultarlo como ayuda.
     public string Criteria => custom is not null ? "Regla de idiomas: se configura con el botón «Idiomas…»" :
-        (genrePattern is null ? "" : $"Géneros: {genrePattern}") +
+        (genrePattern is null ? "" : $"Categorías: {genrePattern}") +
         (genrePattern is not null && namePattern is not null ? "\r\n" : "") +
         (namePattern is null ? "" : $"Palabras del nombre: {namePattern}");
 
@@ -77,8 +77,8 @@ internal sealed class CurationRule
 
     private static string SafeRegex(string pattern) => IsValidRegex(pattern) ? pattern : Regex.Escape(pattern);
 
-    // Igual que en la ventana principal: sin género en el gamelist se muestra «Sin género».
-    public static string EffectiveGenre(RomRow row) => string.IsNullOrWhiteSpace(row.Genre) ? "Sin género" : row.Genre;
+    // Igual que en la ventana principal: sin categoría en el gamelist se muestra «Sin categoría».
+    public static string EffectiveGenre(RomRow row) => string.IsNullOrWhiteSpace(row.Genre) ? "Sin categoría" : row.Genre;
 
     public bool Matches(RomRow row, out string reason)
     {
@@ -94,7 +94,7 @@ internal sealed class CurationRule
         {
             string genreName = EffectiveGenre(row);
             var m = genre.Match(genreName);
-            if (m.Success) { reason = $"género «{genreName}»"; return true; }
+            if (m.Success) { reason = $"categoría «{genreName}»"; return true; }
         }
         if (name is not null)
         {
@@ -145,7 +145,7 @@ internal static class CurationRuleSet
             Make("ritmo", "Ritmo, música y baile", "juegos musicales y de baile", "ritmo|m[uú]sica|baile", ["dance", "karaoke", "\\bbeat\\b"]),
             Make("pesca-caza", "Pesca y caza", "simuladores de pesca y caza", "pesca|caza", ["fishing", "hunting", "bass"]),
             Make("pinball", "Pinball", "mesas de pinball", "pinball", ["pinball"]),
-            Make("sin-clasificar", "Sin clasificar o varios", "sin género, varios, compilaciones", "sin g[eé]nero|^varios|compilaci", []),
+            Make("sin-clasificar", "Sin clasificar o varios", "sin categoría, varios, compilaciones", "sin (g[eé]nero|categor[ií]a)|^varios|compilaci", []),
         ];
     }
 }
@@ -153,7 +153,7 @@ internal static class CurationRuleSet
 // Las supracategorías editadas por el usuario se guardan aparte; mientras no exista el archivo se usan las de partida.
 internal static class SupraStore
 {
-    private static string StorePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "curation_supracategories.json");
+    private static string StorePath => Path.Combine(AppPaths.Data, "curation_supracategories.json");
 
     public static List<SupraDefinition>? Load()
     {
@@ -193,7 +193,7 @@ internal sealed class CurationProfile
 
 internal static class CurationProfileStore
 {
-    private static string StorePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "curation_profiles.json");
+    private static string StorePath => Path.Combine(AppPaths.Data, "curation_profiles.json");
 
     public static List<CurationProfile> Load()
     {

@@ -18,7 +18,7 @@ internal static class ScreenScraperQuota
     // Hilos simultáneos que permite la cuenta según la última lectura del servidor (0 si aún no se ha leído).
     public static int MaxThreads { get { lock (Gate) return snapshot?.MaxThreads ?? 0; } }
 
-    private static string StorePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "screenscraper_quota.json");
+    private static string StorePath => Path.Combine(AppPaths.Data, "screenscraper_quota.json");
 
     public static void RecordCall(bool ok)
     {

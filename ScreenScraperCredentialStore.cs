@@ -7,7 +7,7 @@ namespace ESDERomCleaner;
 // Guarda las credenciales cifradas con DPAPI (solo las puede descifrar tu usuario de Windows en este equipo).
 internal static class ScreenScraperCredentialStore
 {
-    private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner", "screenscraper.credentials");
+    private static string FilePath => Path.Combine(AppPaths.Data, "screenscraper.credentials");
 
     public static ScreenScraperCredentials Load()
     {

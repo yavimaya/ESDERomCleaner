@@ -53,6 +53,8 @@ internal sealed class CollectionScanner
             foreach (var game in games)
             {
                 token.ThrowIfCancellationRequested();
+                // «Excluir del contador» o «del multi-scraper»: el juego no se cuenta, ni se lista, ni se scrapea, ni entra en el curado.
+                if (game.Excluded) continue;
                 var path = Path.GetFullPath(Path.Combine(sysPath, game.RelativeKey.Replace('/', Path.DirectorySeparatorChar)));
                 if (!Inside(path, sysPath)) { unmatched.Add(game); continue; }
                 bool file = File.Exists(path), dir = Directory.Exists(path);
@@ -113,7 +115,7 @@ internal sealed class CollectionScanner
     }
     internal static string WriteCache(string root, List<RomRow> rows)
     {
-        string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESDERomCleaner");
+        string dir = AppPaths.Data;
         Directory.CreateDirectory(dir);
         string path = Path.Combine(dir, "database.csv"), temp = Path.Combine(dir, "database.tmp." + Guid.NewGuid().ToString("N") + ".csv");
         static string Csv(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";
