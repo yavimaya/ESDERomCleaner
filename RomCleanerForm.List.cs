@@ -65,7 +65,12 @@ public sealed partial class RomCleanerForm : Form
         catch (Exception ex) { sizesCalculating = false; status.Text = "Error de escaneo."; trace.Add("scan_error", ex.ToString()); MessageBox.Show(this, ex.Message, "No se pudo analizar", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally { try { await mediaSizeTask; } catch { } cts.Dispose(); cts = null; scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = true; deleteSelected.Enabled = selected.Count > 0; cancel.Enabled = false; progress.Style = ProgressBarStyle.Blocks; progress.Value = 0; }
 
-        if (scrapeAfterScan is { Count: > 0 } chosen)
+        if (categorizeAfterScan is { Count: > 0 } toCategorize)
+        {
+            categorizeAfterScan = null;
+            await CategorizeAsync(toCategorize);
+        }
+        else if (scrapeAfterScan is { Count: > 0 } chosen)
         {
             // El usuario ya aceptó categorizar los sistemas nuevos al añadir sus ROMs: se abre la descarga masiva con ellos marcados.
             scrapeAfterScan = null;
@@ -77,8 +82,8 @@ public sealed partial class RomCleanerForm : Form
             var listed = unclassified.Select(s => (s, all.Count(r => r.Status == RomStatus.Ok && r.System.Equals(s, StringComparison.OrdinalIgnoreCase)))).ToList();
             UnclassifiedChoice choice;
             using (var dialog = new UnclassifiedSystemsDialog(listed)) { dialog.ShowDialog(this); choice = dialog.Choice; }
-            // «Categorizar» abre la descarga masiva solo con los metadatos marcados (traen la categoría); «Categorizar y scrapear» añade los medios elegidos la última vez.
-            if (choice == UnclassifiedChoice.Categorize) await OpenBulkMediaDialogAsync(unclassified, preset: BulkPreset.MetadataOnly);
+            // «Categorizar» solo descarga los metadatos (que traen la categoría), con una ventana de progreso y sin abrir el scrapeo; «Categorizar y scrapear» abre la descarga masiva con los medios elegidos la última vez.
+            if (choice == UnclassifiedChoice.Categorize) await CategorizeAsync(unclassified);
             else if (choice == UnclassifiedChoice.CategorizeAndScrape) await OpenBulkMediaDialogAsync(unclassified, preset: BulkPreset.WithMetadata);
         }
     }

@@ -60,7 +60,7 @@ internal sealed class BulkSummary
     public readonly Dictionary<string, BulkFolderStats> ByFolder = new(StringComparer.OrdinalIgnoreCase);
     public int RomsFinished;   // ROMs cuyo proceso ya ha terminado (RomsDone cuenta también las que acaban de empezar)
     public int RomsTotal, RomsDone, AlreadyComplete, NotFound, FoundByName, WithErrors, SkippedNotFile, SkippedSystems;
-    public int FilesSaved, FilesReplaced, FilesIdentical, FoldersUnavailable, MetadataUpdated, MetadataFailed, LanguagesStored;
+    public int FilesSaved, FilesReplaced, FilesIdentical, FoldersUnavailable, MetadataUpdated, MetadataFailed, LanguagesStored, MetadataFetched;
     public long BytesDownloaded;
     public string StoppedReason = "";
 }
@@ -311,7 +311,11 @@ internal sealed class BulkMediaRunner
         if (o.Metadata)
         {
             if (row.Gamelist.Length == 0 || row.GamelistPath.Length == 0) Issue(row, "Metadatos", "La ROM no tiene entrada en ningún gamelist.xml");
-            else pendingMetadata.GetOrAdd(row.Gamelist, _ => new(StringComparer.OrdinalIgnoreCase))[PathRules.Relative(row.GamelistPath)] = GamelistMetadata.From(game, regions);
+            else
+            {
+                pendingMetadata.GetOrAdd(row.Gamelist, _ => new(StringComparer.OrdinalIgnoreCase))[PathRules.Relative(row.GamelistPath)] = GamelistMetadata.From(game, regions);
+                Interlocked.Increment(ref Summary.MetadataFetched); // descargados; se escriben en el gamelist.xml de una sola vez al terminar cada sistema
+            }
         }
         var requests = new List<MediaInstallRequest>();
         var temps = new List<string>();

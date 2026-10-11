@@ -1,6 +1,6 @@
 namespace ESDERomCleaner;
 
-internal enum GamelistPlanChoice { Cancel, AddOnly, AddAndScrape }
+internal enum GamelistPlanChoice { Cancel, AddOnly, AddAndCategorize, AddAndScrape }
 
 // Tabla solo informativa: no recibe el foco, no se edita y no muestra selección.
 internal sealed class StaticGrid : DataGridView
@@ -43,7 +43,7 @@ internal sealed class GamelistPlanDialog : Form
         const int rowHeight = 20, headerHeight = 22;
         int visibleRows = Math.Min(plan.Count, 8);
         int gridHeight = headerHeight + visibleRows * rowHeight + 2;
-        const int width = 420;
+        const int width = 520;
         int hintHeight = allowScrape ? 20 : 0;
         ClientSize = new Size(width, 8 + 20 + 4 + gridHeight + 8 + 20 + hintHeight + 4 + 40);
 
@@ -74,7 +74,7 @@ internal sealed class GamelistPlanDialog : Form
 
         var question = new Label
         {
-            Text = allowScrape ? "¿Desea categorizar y descargar los medios de las ROMs de estos sistemas?" : "¿Desea añadir estas ROMs a sus gamelists?",
+            Text = allowScrape ? "¿Desea categorizar estas ROMs, o categorizar y descargar también sus medios?" : "¿Desea añadir estas ROMs a sus gamelists?",
             Location = new Point(10, 32 + gridHeight + 8), Size = new Size(width - 20, 20), AutoSize = false
         };
 
@@ -98,7 +98,8 @@ internal sealed class GamelistPlanDialog : Form
         if (allowScrape)
         {
             buttons.Controls.Add(Make("Solo añadir", GamelistPlanChoice.AddOnly, 90));
-            primary = Make("Sí, categorizar", GamelistPlanChoice.AddAndScrape, 110);
+            buttons.Controls.Add(Make("Categorizar y scrapear", GamelistPlanChoice.AddAndScrape, 140));
+            primary = Make("Categorizar", GamelistPlanChoice.AddAndCategorize, 90);
         }
         else primary = Make("Añadir ROMs", GamelistPlanChoice.AddOnly, 100);
         buttons.Controls.Add(primary);

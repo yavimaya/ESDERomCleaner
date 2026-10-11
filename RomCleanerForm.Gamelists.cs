@@ -4,6 +4,8 @@ public sealed partial class RomCleanerForm
 {
     // Sistemas que se abrirán marcados en la descarga masiva en cuanto termine el siguiente análisis.
     private List<string>? scrapeAfterScan;
+    // Sistemas que se categorizarán (solo metadatos e idiomas, sin el formulario de scrapeo) en cuanto termine el siguiente análisis.
+    private List<string>? categorizeAfterScan;
     // Se activa con «Solo añadir»: el siguiente análisis no ofrece scrapear los sistemas sin categorización.
     private bool skipUnclassifiedOffer;
 
@@ -72,6 +74,7 @@ public sealed partial class RomCleanerForm
             return false;
         }
         if (choice == GamelistPlanChoice.AddAndScrape) scrapeAfterScan = plan.Select(p => p.System).ToList();
+        else if (choice == GamelistPlanChoice.AddAndCategorize) categorizeAfterScan = plan.Select(p => p.System).ToList();
         else skipUnclassifiedOffer = true; // «Solo añadir»: el análisis que sigue no vuelve a preguntar por scrapear.
 
         int created = 0;

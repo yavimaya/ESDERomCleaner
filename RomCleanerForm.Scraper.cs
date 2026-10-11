@@ -47,3 +47,27 @@ public sealed partial class RomCleanerForm
         ShowDetails();
     }
 }
+
+public sealed partial class RomCleanerForm
+{
+    // Categorizar: descarga solo los metadatos (categoría incluida) y los idiomas de los sistemas indicados, en una ventana con la barra de
+    // progreso y lo que se está haciendo (sin el formulario de scrapeo). Al terminar se vuelve a analizar la colección.
+    private async Task CategorizeAsync(IReadOnlyCollection<string> systemNames)
+    {
+        StopVideoPlayback();
+        trace.Add("categorize_started", $"systems={string.Join(",", systemNames)}");
+        var rows = all.Where(r => systemNames.Contains(r.System, StringComparer.OrdinalIgnoreCase)).ToList();
+        bool changed; string result;
+        using (var dialog = new CategorizeDialog(rows, systemNames.ToList(), root.Text, trace, createGamelistBackups))
+        {
+            dialog.ShowDialog(this);
+            changed = dialog.MetadataChanged; result = dialog.Result;
+        }
+        status.Text = result;
+        if (!changed) return;
+        MiximageFileIndex.Clear();
+        VideoFileIndex.Clear();
+        await ScanAsync(offerUnclassified: false);
+        status.Text = result;
+    }
+}
