@@ -17,9 +17,11 @@ La interfaz está en **español e inglés** (*Opciones › Idioma*; por defecto,
 - **Explorar** la colección por sistema y categoría (género), con búsqueda (también por expresión regular), vista previa de la *miximage* y reproducción del vídeo de la ROM enfocada.
 - **Editar metadatos** de un juego (`gamelist.xml`): nombre, descripción, valoración, fecha, desarrollador, género, favoritos, etc.
 - **Scrapear con ScreenScraper**:
-  - Consulta de una ROM por hash (o por nombre), con todos sus metadatos y medios disponibles.
+  - Consulta de una ROM por hash (también dentro de `.zip`, `.7z` y `.rar`) o por nombre, con todos sus metadatos y medios disponibles.
+  - **Aproximaciones por nombre**: si ScreenScraper no reconoce la ROM, se muestran juegos parecidos con su miximage, nombre y descripción; al elegir uno puedes **descargar todo** (imágenes, vídeo y metadatos) o **elegir qué**.
   - Descarga de los medios para **compararlos** (imágenes, vídeos con sonido opcional) y elección de cuáles guardar en las carpetas de `downloaded_media` de ES-DE.
   - **Descarga masiva** para uno o varios sistemas: carpetas de medios a elegir, vídeo normalizado u original, qué hacer si ya existe el archivo, metadatos y idiomas, varias peticiones en paralelo según tu membresía, reanudable, con porcentaje total y tiempo restante, y resumen final del espacio ahorrado o añadido.
+- **RetroAchievements** (menú *Scrapeo*): coteja tus ROMs con [RetroAchievements](https://retroachievements.org/) (por hash o por nombre, incluidos discos CHD de PSX, PS2, Sega CD y Saturn con lector propio) para saber **cuáles tienen logros**. Ves los logros de cada ROM (con tu progreso, **hardcore o softcore**, fecha, rareza y detalle), tu avatar, puesto y puntos, puedes **filtrar las ROMs con logros** y usarlo en el curado (regla *Sin logros*). Hace falta tu usuario y la **clave de la Web API**; no se escribe nada en los gamelists.
 - **Curado del romset** (menú *Curado*): marca géneros y *supracategorías* editables (juegos de mesa japoneses, deportes minoritarios o mayoritarios, novelas visuales, estrategia, quiz, educativos…) y la herramienta te muestra qué ROMs saldrían como candidatas a descartar, con el motivo, el espacio que liberarías y el desglose por sistema. Puedes excluir ROMs a mano, guardar tus selecciones como **perfiles**, filtrar por **idioma** (los idiomas de cada ROM se traen de ScreenScraper) y, si te convence, eliminar las candidatas.
 - **Borrado seguro**: plan previo con todo lo que se va a tocar (ROMs, archivos accesorios, media, gamelists), comprobación de que nada ha cambiado antes de ejecutar, copia de seguridad opcional de los gamelists y actualización solo de los sistemas afectados.
 - **Clonar la estructura de ES-DE a otra carpeta o a una tarjeta SD** (botón *Clonar*): pensado para llevar la colección ya depurada a Android, donde ES-DE suele usarse con tarjeta SD. Ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd).
@@ -73,6 +75,7 @@ La interfaz está en **español e inglés** (*Opciones › Idioma*; por defecto,
 - Windows 10/11 de 64 bits.
 - **Una colección con la estructura de carpetas de ES-DE y sus `gamelist.xml`** (ver [Estructura de colección](#estructura-de-colección)). Es imprescindible: sin ella la aplicación no puede analizar nada.
 - Para scrapear: una cuenta de [ScreenScraper](https://www.screenscraper.fr/) y las **credenciales de desarrollador** (ID y contraseña) que la API exige. Las credenciales se piden desde la propia aplicación, no se incluyen en el repositorio.
+- Opcional, para los logros: una cuenta de [RetroAchievements](https://retroachievements.org/) y su **clave de la Web API** (*Ajustes › Claves*; la API no admite la contraseña).
 
 ## Estructura de colección
 
@@ -106,14 +109,15 @@ ES-DE es también un frontend para **Android**, donde las colecciones suelen viv
 1. Menú **Colecciones › Crear colección…** (nombre, carpeta y comentario) o carga una ya creada, y pulsa **Analizar colección** (si no tiene la estructura de ES-DE o los gamelists, te ofrece crearlos). Para meter ROMs nuevas: menú **Añadir ROMs** (descarga antes las bases de datos en *Añadir ROMs › Bases de datos de ROMs…*).
 2. **Scrapeo › Credenciales de ScreenScraper…** (o **Alta en ScreenScraper…** si todavía no tienes cuenta).
 3. Para una ROM concreta: clic derecho › *Scrapear con ScreenScraper…*. Para sistemas enteros: **Scrapeo › Descarga masiva de medios…**
-4. Para depurar la colección: **Curado › Reglas de curado (análisis)…**, marca lo que quieras descartar y revisa las candidatas antes de eliminar nada.
-5. Para llevar la colección a otra carpeta o a la tarjeta SD de tu dispositivo Android: **Colecciones › Clonar colección…** (ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd)).
+4. Para saber qué ROMs tienen logros: **Scrapeo › Credenciales de RetroAchievements…** y después **Scrapeo › Buscar logros de RetroAchievements…**; los verás en el panel de datos y con clic derecho › *Ver logros de RetroAchievements…*.
+5. Para depurar la colección: **Curado › Reglas de curado (análisis)…**, marca lo que quieras descartar y revisa las candidatas antes de eliminar nada.
+6. Para llevar la colección a otra carpeta o a la tarjeta SD de tu dispositivo Android: **Colecciones › Clonar colección…** (ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd)).
 
 ## Datos que guarda la aplicación
 
 Por defecto todo vive en `%LOCALAPPDATA%\ESDERomCleaner` (se puede cambiar en *Opciones › Carpeta de datos…*): opciones y preferencias (en un único `settings.json`), colecciones guardadas, la caché del análisis de cada colección (carpeta `collections`), registro de trazas, caché y copias de seguridad de medios, índice de idiomas, perfiles y reglas del curado, bases de datos de hashes (DAT) y su índice. Los temporales (lo que se extrae de los packs) van a `%TEMP%\ESDERomCleaner` y se borran solos.
 
-- Las **credenciales de ScreenScraper** se guardan cifradas con DPAPI (solo las puede leer tu usuario de Windows en ese equipo) y nunca se escriben en trazas ni en pantalla.
+- Las **credenciales de ScreenScraper y de RetroAchievements** se guardan cifradas con DPAPI (solo las puede leer tu usuario de Windows en ese equipo) y nunca se escriben en trazas ni en pantalla.
 - La aplicación **no modifica** tus gamelists salvo cuando editas metadatos, descargas metadatos o eliminas ROMs, y siempre de forma atómica y conservando el resto del archivo tal cual.
 
 ## Seguridad del borrado y de las escrituras
@@ -124,7 +128,7 @@ Por defecto todo vive en `%LOCALAPPDATA%\ESDERomCleaner` (se puede cambiar en *O
 
 ## Estado del proyecto
 
-**Versión alpha**: proyecto personal en desarrollo, con muchas partes recién escritas y sin probar a fondo. Algunas partes del acceso a la API de ScreenScraper (búsqueda por nombre, lectura de la cuenta e idiomas de las ROMs) están escritas pero pendientes de verificar con respuestas reales. Pendiente a medio plazo: un visor de medios a pantalla completa y más opciones de qué hacer con las ROMs candidatas del curado (ocultarlas en ES-DE o generar una copia depurada).
+**Versión alpha**: proyecto personal en desarrollo, con muchas partes recién escritas y sin probar a fondo. Algunas partes del acceso a la API de ScreenScraper (búsqueda por nombre y aproximaciones, lectura de la cuenta e idiomas de las ROMs) y **toda la integración con RetroAchievements** (ids de consola, hashes de algunos sistemas, progreso) están escritas pero pendientes de verificar con respuestas reales. Pendiente a medio plazo: un visor de medios a pantalla completa y más opciones de qué hacer con las ROMs candidatas del curado (ocultarlas en ES-DE o generar una copia depurada).
 
 ## Descargar
 
@@ -147,10 +151,11 @@ Todo el código está en un único proyecto (`ESDERomCleaner.csproj`). No hay pr
 
 - [ES-DE](https://es-de.org/) por el frontend cuya estructura se respeta.
 - [ScreenScraper](https://www.screenscraper.fr/) por su base de datos y su API.
+- [RetroAchievements](https://retroachievements.org/) por su API de logros, insignias y avatares.
 - [LibVLCSharp](https://github.com/videolan/libvlcsharp) y [VLC](https://www.videolan.org/) para la reproducción de vídeo.
 - [libretro-database](https://github.com/libretro/libretro-database) por mantener los DAT de No-Intro, Redump, TOSEC, MAME y FBNeo que se usan para identificar las ROMs, y los proyectos No-Intro, Redump y TOSEC que los elaboran.
 - [libretro/retroarch-assets](https://github.com/libretro/retroarch-assets) (carpeta `xmb/dot-art`, licencia [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) por los iconos en pixel art de cada sistema, incrustados en la aplicación (`Assets/SystemIcons`).
-- [SharpCompress](https://github.com/adamhathcock/sharpcompress) para leer archivos 7z y rar. [7-Zip](https://www.7-zip.org/) (7za.exe, licencia LGPL, incluido en la aplicación) para crear archivos 7z.
+- [SharpCompress](https://github.com/adamhathcock/sharpcompress) para leer archivos 7z y rar y la descompresión LZMA de los CHD. [7-Zip](https://www.7-zip.org/) (7za.exe, licencia LGPL, incluido en la aplicación) para crear archivos 7z.
 
 ## Licencia
 

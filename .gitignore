@@ -492,3 +492,6 @@ Dungeon & Guarder*.zip
 
 # Lista local de carpetas a las que se ha accedido en sesiones de Claude (no se publica)
 carpetas_accedidas.txt
+
+# Copia local de la wiki (es otro repositorio; no se sube con este)
+.wiki/
