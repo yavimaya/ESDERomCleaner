@@ -50,7 +50,7 @@ internal sealed class MediaSaveConfirmDialog : LocalizedForm
             footer.Text = $"Los {replacing} {(replacing == 1 ? "medio sustituido se moverá" : "medios sustituidos se moverán")} a una copia de seguridad; no se borra nada.\r\n{backupRoot}";
         else footer.Text = "No se sustituye ningún archivo existente.";
 
-        var ok = new Button { Text = "Guardar", AutoSize = true, DialogResult = DialogResult.OK, MinimumSize = new Size(90, 28) };
+        var ok = new Button { Text = "Scrapear", AutoSize = true, DialogResult = DialogResult.OK, MinimumSize = new Size(90, 28) };
         var cancel = new Button { Text = "Cancelar", AutoSize = true, DialogResult = DialogResult.Cancel, MinimumSize = new Size(90, 28) };
         AcceptButton = ok;
         CancelButton = cancel;

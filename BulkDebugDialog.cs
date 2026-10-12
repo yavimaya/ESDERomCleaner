@@ -13,7 +13,7 @@ internal sealed class BulkDebugLog
     {
         lock (lines)
         {
-            if (lines.Count >= MaxLines) lines.RemoveRange(0, 50_000); removed += 50_000; // el registro es solo de consulta: se descartan las líneas más antiguas
+            if (lines.Count >= MaxLines) { lines.RemoveRange(0, 50_000); removed += 50_000; } // el registro es solo de consulta: se descartan las líneas más antiguas
             lines.Add(line);
         }
     }

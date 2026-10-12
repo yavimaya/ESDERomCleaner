@@ -25,7 +25,7 @@ public sealed partial class RomCleanerForm
     // Vuelve a calcular los huecos (lista cada carpeta de medios una vez) sin bloquear la ventana.
     private async Task RefreshGapsAsync()
     {
-        var rows = all.Where(r => IsVisibleSystem(r.System)).ToList();
+        var rows = ScrapableRows().ToList();
         string rootPath = root.Text;
         int version = ++gapsVersion; // si empieza otro cálculo mientras, solo cuenta el último
         gaps = null;
@@ -84,7 +84,7 @@ public sealed partial class RomCleanerForm
 
     private async Task ScrapeMissingAsync(string? system, GapKind kind)
     {
-        var candidates = all.Where(r => IsVisibleSystem(r.System) && (system is null || r.System.Equals(system, StringComparison.OrdinalIgnoreCase))).ToList();
+        var candidates = ScrapableRows().Where(r => (system is null || r.System.Equals(system, StringComparison.OrdinalIgnoreCase))).ToList();
         string rootPath = root.Text;
         var gap = await Task.Run(() => MediaGaps.Rows(rootPath, candidates));
         var wanted = kind switch { GapKind.Metadata => gap.NoMetadata, GapKind.Image => gap.NoImage, GapKind.Video => gap.NoVideo, _ => gap.NoMedia };

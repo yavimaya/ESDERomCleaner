@@ -12,6 +12,8 @@ internal sealed class CategorizeDialog : LocalizedForm
     private readonly Label statusLabel = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
     private readonly Label summaryLabel = new() { AutoSize = false, TextAlign = ContentAlignment.TopLeft, ForeColor = SystemColors.GrayText, AutoEllipsis = true };
     private readonly ProgressBar bar = new() { Minimum = 0, Maximum = 100 };
+    // Peticiones de hoy a ScreenScraper y lÃ­mite diario; se actualiza con cada peticiÃ³n.
+    private readonly Label quotaLabel = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, ForeColor = SystemColors.GrayText, Tag = "noloc" };
     private readonly Button cancel = new() { Text = "Cancelar", Size = new Size(90, 28) };
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 500 };
     private readonly CancellationTokenSource cts = new();
@@ -34,12 +36,25 @@ internal sealed class CategorizeDialog : LocalizedForm
         bar.Location = new Point(12, 40); bar.Size = new Size(496, 20);
         summaryLabel.Location = new Point(12, 68); summaryLabel.Size = new Size(496, 36);
         cancel.Location = new Point(418, 112);
-        Controls.AddRange([statusLabel, bar, summaryLabel, cancel]);
+        quotaLabel.Location = new Point(12, 118); quotaLabel.Size = new Size(380, 20);
+        Controls.AddRange([statusLabel, bar, summaryLabel, quotaLabel, cancel]);
+        UpdateQuota();
+        ScreenScraperQuota.Changed += OnQuotaChanged;
+        FormClosed += (_, _) => ScreenScraperQuota.Changed -= OnQuotaChanged;
         CancelButton = cancel;
         cancel.Click += (_, _) => { cts.Cancel(); cancel.Enabled = false; statusLabel.Text = "Cancelando…"; };
         timer.Tick += (_, _) => RefreshProgress();
         Shown += async (_, _) => await RunAsync();
     }
+
+    private void OnQuotaChanged()
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired) { try { BeginInvoke(UpdateQuota); } catch (InvalidOperationException) { } return; }
+        UpdateQuota();
+    }
+
+    private void UpdateQuota() => quotaLabel.Text = Loc.T(ScreenScraperQuota.TodayText());
 
     private int Percent(BulkSummary s) => plannedWork > 0 ? Math.Clamp(Math.Max(0, s.RomsFinished - s.AlreadyComplete) * 100 / plannedWork, 0, 100) : 0;
 

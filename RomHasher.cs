@@ -18,6 +18,14 @@ internal static class RomHasher
             using var entryStream = entry.Open();
             return ComputeStream(entryStream, entry.Length, "contenido de " + entry.Name, progress, token);
         }
+        if (archiveContents && Path.GetExtension(path).ToLowerInvariant() is ".7z" or ".rar")
+        {
+            using var archive = SharpCompress.Archives.ArchiveFactory.OpenArchive(path);
+            var entry = archive.Entries.Where(e => !e.IsDirectory && e.Size > 0).OrderByDescending(e => e.Size).FirstOrDefault()
+                ?? throw new InvalidOperationException("El comprimido no contiene archivos.");
+            using var entryStream = entry.OpenEntryStream();
+            return ComputeStream(entryStream, entry.Size, "contenido de " + Path.GetFileName(entry.Key ?? "archivo"), progress, token);
+        }
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20, FileOptions.SequentialScan);
         return ComputeStream(file, file.Length, "archivo completo", progress, token);
     }

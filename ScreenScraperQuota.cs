@@ -59,6 +59,18 @@ internal static class ScreenScraperQuota
         return string.Create(es, $"Peticiones hoy: {s.RequestsToday:N0} / {s.MaxPerDay:N0}{pending}   ·   Fallidas hoy: {s.KoToday:N0} / {s.MaxKoPerDay:N0}   ·   Hilos: {s.MaxThreads}   ·   Velocidad máx.: {s.MaxSpeedKBps} KB/s   ·   Leído del servidor: {when}");
     }
 
+    // Solo las peticiones de hoy y el límite diario, contando también las llamadas hechas desde la última lectura del servidor
+    // (así sube con cada petición, sin esperar a la siguiente consulta de juego).
+    public static string TodayText()
+    {
+        SsQuotaSnapshot? s;
+        int calls;
+        lock (Gate) { s = snapshot; calls = callsSinceSync; }
+        var es = CultureInfo.GetCultureInfo("es-ES");
+        if (s is null) return calls == 0 ? "Peticiones hoy: sin datos" : $"Peticiones hoy: {calls.ToString("N0", es)}";
+        return $"Peticiones hoy: {(s.RequestsToday + calls).ToString("N0", es)} / {s.MaxPerDay.ToString("N0", es)}";
+    }
+
     // Los mismos datos que Describe(), uno por concepto, para mostrarlos en casillas de ancho fijo.
     public static QuotaParts Parts()
     {

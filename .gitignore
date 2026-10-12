@@ -489,3 +489,6 @@ CLAUDE.md
 
 # ROM de prueba (no subir)
 Dungeon & Guarder*.zip
+
+# Lista local de carpetas a las que se ha accedido en sesiones de Claude (no se publica)
+carpetas_accedidas.txt

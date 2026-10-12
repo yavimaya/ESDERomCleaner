@@ -123,6 +123,10 @@ public sealed partial class RomCleanerForm : LocalizedForm
 
     private bool IsVisibleSystem(string system) => showAccessory.Checked || !AccessorySystemNames.Contains(system);
 
+    // Filas que se pueden scrapear o cotejar: de sistemas visibles y cuyo archivo tiene una extensión oficial de su sistema en ES-DE
+    // (así no se consultan, por ejemplo, las pistas .pcm de MSU-1 que alguna vez se colaron en un gamelist).
+    private IEnumerable<RomRow> ScrapableRows() => all.Where(r => IsVisibleSystem(r.System) && EsDeSystemExtensions.IsGameFile(r.System, r.Path));
+
     // Rellena la lista de sistemas; si el sistema que se estaba viendo sigue disponible, se conserva sin recargar nada.
     private void RefreshSystemsList()
     {
@@ -214,6 +218,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         }
         else if (categories.SelectedItem is CategoryItem category) rows = current.Where(r => Genre(r).Equals(category.Genre, StringComparison.OrdinalIgnoreCase));
         else rows = Array.Empty<RomRow>();
+        if (raOnlyWith.Checked) rows = rows.Where(HasRaAchievements);
         var visibleRows = rows.OrderBy(r => r.RomName, StringComparer.OrdinalIgnoreCase).ToArray();
         roms.BeginUpdate(); changing = true;
         try

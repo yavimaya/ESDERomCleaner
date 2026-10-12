@@ -44,7 +44,10 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     private readonly Label candidateCaption = NewCaption();
     private readonly Button openCurrentButton = new() { Text = "Abrir", AutoSize = true, Enabled = false };
     private readonly Button openCandidateButton = new() { Text = "Abrir", AutoSize = true, Enabled = false };
-    private readonly Button saveButton = new() { Text = "Guardar cambios", AutoSize = true, MinimumSize = new Size(170, 30), Anchor = AnchorStyles.None };
+    private readonly Button markAllButton = new() { Text = "Marcar todas", AutoSize = true, MinimumSize = new Size(110, 30), Margin = new Padding(6, 0, 3, 0) };
+    private readonly Button clearButton = new() { Text = "Limpiar", AutoSize = true, MinimumSize = new Size(90, 30), Margin = new Padding(3, 0, 3, 0) };
+    private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 30) };
+    private readonly Button saveButton = new() { Text = "Scrapear", AutoSize = true, MinimumSize = new Size(170, 30), Anchor = AnchorStyles.None };
 
     public bool CollectionChanged { get; private set; }
     public bool IsSaving { get; private set; }
@@ -54,6 +57,8 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     public event Action<bool>? BusyChanged;
     // Se lanza al terminar un guardado, haya cambiado la colección o solo la caché de descargas.
     public event Action? SaveFinished;
+    // El botón «Cerrar» pide al formulario anfitrión que se cierre.
+    public event Action? CloseRequested;
 
     private void Report(string text) => StatusChanged?.Invoke(text);
 
@@ -79,13 +84,46 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         foldersGrid.CellValueChanged += (_, e) =>
         {
             if (updating || e.RowIndex < 0 || e.ColumnIndex != foldersGrid.Columns["save"]!.Index) return;
-            var state = states[e.RowIndex];
-            state.Save = state.Chosen is not null && foldersGrid.Rows[e.RowIndex].Cells["save"].Value is true;
-            UpdateRow(e.RowIndex);
+            // Con varias filas seleccionadas, marcar o desmarcar una casilla se aplica a todas ellas.
+            bool value = foldersGrid.Rows[e.RowIndex].Cells["save"].Value is true;
+            var targets = foldersGrid.SelectedRows.Cast<DataGridViewRow>().Select(r => r.Index).ToList();
+            if (!targets.Contains(e.RowIndex)) targets = [e.RowIndex];
+            SetSave(targets, value);
         };
-        // ← → recorren los candidatos de la carpeta enfocada sin salir de la lista de carpetas.
+        // Doble clic en una fila: la marca o la desmarca.
+        foldersGrid.CellDoubleClick += (_, e) =>
+        {
+            if (e.RowIndex >= 0 && e.RowIndex < states.Count) SetSave([e.RowIndex], !states[e.RowIndex].Save);
+        };
+        // Menú contextual: marcar o desmarcar las filas seleccionadas (con el botón derecho sobre una fila no seleccionada, esa fila pasa a ser la selección).
+        var menu = new ContextMenuStrip { ShowImageMargin = false };
+        var markSelected = new ToolStripMenuItem("Marcar las seleccionadas");
+        var unmarkSelected = new ToolStripMenuItem("Desmarcar las seleccionadas");
+        menu.Items.AddRange([markSelected, unmarkSelected, new ToolStripSeparator(), new ToolStripMenuItem("Marcar todas", null, (_, _) => markAllButton.PerformClick()), new ToolStripMenuItem("Limpiar", null, (_, _) => clearButton.PerformClick())]);
+        markSelected.Click += (_, _) => SetSave(SelectedIndexes(), true);
+        unmarkSelected.Click += (_, _) => SetSave(SelectedIndexes(), false);
+        menu.Opening += (_, e) =>
+        {
+            if (!foldersGrid.Enabled) { e.Cancel = true; return; }
+            markSelected.Enabled = unmarkSelected.Enabled = foldersGrid.SelectedRows.Count > 0;
+        };
+        foldersGrid.ContextMenuStrip = menu;
+        foldersGrid.CellMouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Right || e.RowIndex < 0 || foldersGrid.Rows[e.RowIndex].Selected) return;
+            foldersGrid.ClearSelection();
+            foldersGrid.Rows[e.RowIndex].Selected = true;
+        };
+        // ← → recorren los candidatos de la carpeta enfocada sin salir de la lista de carpetas; la barra espaciadora marca o desmarca las filas seleccionadas.
         foldersGrid.KeyDown += (_, e) =>
         {
+            if (e.KeyCode == Keys.Space && foldersGrid.SelectedRows.Count > 0)
+            {
+                var selected = foldersGrid.SelectedRows.Cast<DataGridViewRow>().Select(r => r.Index).ToList();
+                SetSave(selected, !selected.Any(i => states[i].Save));
+                e.Handled = true;
+                return;
+            }
             if (e.KeyCode is not (Keys.Left or Keys.Right) || candidatesList.Items.Count == 0) return;
             int next = candidatesList.SelectedIndex + (e.KeyCode == Keys.Right ? 1 : -1);
             candidatesList.SelectedIndex = Math.Clamp(next, 0, candidatesList.Items.Count - 1);
@@ -98,6 +136,9 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
             if (SelectedState()?.Chosen is SsMedia media && SsMediaCache.IsCached(game.Id, media)) OpenFile(SsMediaCache.PathFor(game.Id, media));
         };
         saveButton.Click += async (_, _) => await SaveAsync();
+        closeButton.Click += (_, _) => CloseRequested?.Invoke();
+        markAllButton.Click += (_, _) => SetSave(Enumerable.Range(0, states.Count), true);
+        clearButton.Click += (_, _) => SetSave(Enumerable.Range(0, states.Count), false);
         currentSound.CheckedChanged += (_, _) => currentPreview.Sound = currentSound.Checked;
         candidateSound.CheckedChanged += (_, _) => candidatePreview.Sound = candidateSound.Checked;
     }
@@ -107,10 +148,26 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     // La pestaña pasa a verse: se vuelve a leer la caché (el diálogo pudo descargar medios) y se retoma la vista previa.
     public void Activate()
     {
-        if (foldersGrid.Rows.Count > 0 && foldersGrid.SelectedRows.Count == 0) foldersGrid.Rows[0].Selected = true;
+        // La primera vez no queda ninguna fila enfocada ni seleccionada: el grid solo muestra algo cuando el usuario elige.
+        if (!activated) { activated = true; foldersGrid.CurrentCell = null; foldersGrid.ClearSelection(); }
         ShowSelectedFolder();
         foldersGrid.Focus();
-        if (!IsSaving) Report("Marca las carpetas que quieres guardar (ninguna viene marcada). ↑ ↓ cambian de carpeta; ← → cambian de candidato.");
+        if (!IsSaving) Report("Marca las carpetas que quieres guardar (ninguna viene marcada). Ctrl o Mayús + clic seleccionan varias filas; Espacio las marca o desmarca. ← → cambian de candidato.");
+    }
+
+    private bool activated;
+
+    private List<int> SelectedIndexes() => foldersGrid.SelectedRows.Cast<DataGridViewRow>().Select(r => r.Index).ToList();
+
+    // Marca o desmarca las filas indicadas (las que no tienen candidato no se pueden marcar).
+    private void SetSave(IEnumerable<int> indexes, bool value)
+    {
+        foreach (int i in indexes)
+        {
+            if (i < 0 || i >= states.Count) continue;
+            states[i].Save = states[i].Chosen is not null && value;
+            UpdateRow(i);
+        }
     }
 
     // La pestaña deja de verse: los vídeos se paran para que no sigan sonando.
@@ -133,9 +190,9 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         foldersGrid.AllowUserToResizeRows = false;
         foldersGrid.RowHeadersVisible = false;
         foldersGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        foldersGrid.MultiSelect = false;
+        foldersGrid.MultiSelect = true;
         foldersGrid.BackgroundColor = SystemColors.Window;
-        foldersGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "save", HeaderText = "Guardar", Width = 60 });
+        foldersGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "save", HeaderText = "Scrapear", Width = 70 });
         foreach (var (name, header, width) in new[] { ("folder", "Carpeta ES-DE", 105), ("desc", "Qué es", 150), ("chosen", "Elegido de ScreenScraper", 160), ("current", "En la colección", 170), ("action", "Acción", 150) })
             foldersGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = header, Width = width, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable });
         foldersGrid.Columns[^1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
@@ -187,9 +244,20 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
             Text = $"Juego: {game.BestName}   ·   Región de la ROM: {(romRegions.Count > 0 ? string.Join(", ", romRegions) : "?")} ({romRegionsSource}); solo medios de esa región o sin región; si no hay, de wor, eu, us o jp, por ese orden   ·   Los medios se guardan con el nombre de la ROM en ES-DE/downloaded_media/{row.System}/<carpeta>/. Lo que se sustituye pasa a una copia de seguridad."
         };
 
-        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 1, Margin = Padding.Empty };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        buttons.Controls.Add(saveButton, 0, 0);
+        // Scrapear va centrado de verdad: las columnas de los lados miden lo mismo (50 %) y la del centro se ajusta al botón.
+        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty };
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var selectionButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty, Padding = new Padding(0, 5, 0, 0) };
+        selectionButtons.Controls.Add(markAllButton);
+        selectionButtons.Controls.Add(clearButton);
+        closeButton.Anchor = AnchorStyles.Right;
+        closeButton.Margin = new Padding(3, 0, 6, 0);
+        buttons.Controls.Add(selectionButtons, 0, 0);
+        buttons.Controls.Add(saveButton, 1, 0);
+        buttons.Controls.Add(closeButton, 2, 0);
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -415,7 +483,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     {
         foldersGrid.Enabled = !busy;
         candidatesList.Enabled = !busy;
-        saveButton.Enabled = !busy;
+        saveButton.Enabled = markAllButton.Enabled = clearButton.Enabled = closeButton.Enabled = !busy;
         IsSaving = busy;
         BusyChanged?.Invoke(busy);
     }

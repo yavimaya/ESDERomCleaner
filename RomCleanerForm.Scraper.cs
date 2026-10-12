@@ -22,7 +22,7 @@ public sealed partial class RomCleanerForm
         }
         StopVideoPlayback();
         trace.Add("bulk_media_dialog_opened", root.Text);
-        using var dialog = new BulkMediaDialog(onlyRows?.ToList() ?? all.Where(r => IsVisibleSystem(r.System)).ToList(), root.Text, trace, PreferNormalizedVideo(), createGamelistBackups, preselected, preset);
+        using var dialog = new BulkMediaDialog((onlyRows?.Where(r => EsDeSystemExtensions.IsGameFile(r.System, r.Path)) ?? ScrapableRows()).ToList(), root.Text, trace, PreferNormalizedVideo(), createGamelistBackups, preselected, preset);
         dialog.ShowDialog(this);
         if (!dialog.MetadataChanged && !dialog.CollectionChanged) return;
         // Los índices de miximages y vídeos se construyen una vez por carpeta: hay que olvidarlos para ver los nuevos.
@@ -38,12 +38,14 @@ public sealed partial class RomCleanerForm
         if (roms.SelectedItem is not RomItem item) return;
         StopVideoPlayback();
         trace.Add("screenscraper_dialog_opened", $"system={item.Row.System}; rom={item.Row.RomName}");
-        using var dialog = new ScreenScraperDialog(item.Row, root.Text, trace, PreferNormalizedVideo());
+        using var dialog = new ScreenScraperDialog(item.Row, root.Text, trace, PreferNormalizedVideo(), createGamelistBackups);
         dialog.ShowDialog(this);
-        if (!dialog.CollectionMediaChanged) return;
+        if (!dialog.CollectionMediaChanged && !dialog.MetadataChanged) return;
         // Los índices de miximages y vídeos se construyen una vez por carpeta: hay que olvidarlos para ver los nuevos.
         MiximageFileIndex.Clear();
         VideoFileIndex.Clear();
+        // Si se escribieron metadatos en el gamelist.xml (juego elegido por nombre), se vuelve a analizar para verlos.
+        if (dialog.MetadataChanged) { status.Text = "Metadatos actualizados: se vuelve a analizar la colección…"; _ = ScanAsync(offerUnclassified: false); return; }
         ShowDetails();
     }
 }
@@ -56,7 +58,7 @@ public sealed partial class RomCleanerForm
     {
         StopVideoPlayback();
         trace.Add("categorize_started", $"systems={string.Join(",", systemNames)}");
-        var rows = all.Where(r => systemNames.Contains(r.System, StringComparer.OrdinalIgnoreCase) && (!onlyMissingCategory || NoCategory(r))).ToList();
+        var rows = ScrapableRows().Where(r => systemNames.Contains(r.System, StringComparer.OrdinalIgnoreCase) && (!onlyMissingCategory || NoCategory(r))).ToList();
         bool changed; string result;
         using (var dialog = new CategorizeDialog(rows, systemNames.ToList(), root.Text, trace, createGamelistBackups))
         {

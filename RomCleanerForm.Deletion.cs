@@ -273,7 +273,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
     {
         UpdateScanButton();
         UpdateActiveCollectionStats();
-        if (!sizesCalculating) SaveAnalysisCache();
+        SaveAnalysisCache(); // también mientras se calculan los tamaños: si la ventana se cierra a medias, al volver se ve el análisis nuevo y no uno viejo
         int identified = all.Count(row => row.Status == RomStatus.Ok);
         int ambiguous = all.Count(row => row.Status == RomStatus.Ambiguous);
         int systemCount = all.Where(row => row.Status == RomStatus.Ok).Select(row => row.System).Distinct(StringComparer.OrdinalIgnoreCase).Count();

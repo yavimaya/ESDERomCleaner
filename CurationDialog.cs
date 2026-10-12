@@ -48,6 +48,7 @@ internal sealed class CurationDialog : LocalizedForm
     private readonly Label summary = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font(SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont, FontStyle.Bold), AutoEllipsis = true };
     private readonly Label note = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
     private readonly RomLanguageIndex languageIndex = RomLanguageIndex.Load();
+    private readonly RaIndex raIndex = RaIndex.Load();
     private CurationLanguageSettings languageSettings = CurationLanguageSettings.Load();
     private int languageKnown;
     private readonly Button languagesButton = new() { Text = "Idiomas…", AutoSize = true, MinimumSize = new Size(110, 28) };
@@ -275,7 +276,7 @@ internal sealed class CurationDialog : LocalizedForm
     // Recalcula las reglas y qué ROMs cumple cada una (se repite al editar las supracategorías).
     private void BuildRules()
     {
-        supra = supraDefs.Select(CurationRule.FromSupra).Append(BuildLanguageRule()).ToArray();
+        supra = supraDefs.Select(CurationRule.FromSupra).Append(BuildLanguageRule()).Append(BuildAchievementsRule()).ToArray();
         languageKnown = roms.Count(r => LanguageResolver.Resolve(r, languageIndex, languageSettings.UseFilename).Languages.Count > 0);
         ruleById.Clear();
         hits.Clear();
@@ -381,6 +382,16 @@ internal sealed class CurationDialog : LocalizedForm
             if (languageSettings.OnlyTextGenres && !CurationLanguageSettings.IsTextGenre(CurationRule.EffectiveGenre(row))) return null;
             return $"idiomas: {string.Join(", ", languages.Select(LanguageCatalog.NameOf))} ({source})";
         });
+    }
+
+    // Regla integrada de RetroAchievements: ROMs de sistemas ya cotejados que no tienen ningún juego con logros.
+    private CurationRule BuildAchievementsRule()
+    {
+        int checkedSystems = roms.Select(r => r.System).Distinct(StringComparer.OrdinalIgnoreCase).Count(s => raIndex.SystemChecked(s) && RaConsoles.Of(s) is not null);
+        string description = checkedSystems > 0 ? $"sin logros en RetroAchievements (sistemas cotejados: {checkedSystems})"
+            : "sin logros en RetroAchievements (antes hay que cotejar: Scrapeo › Buscar logros de RetroAchievements…)";
+        return new CurationRule("ra-none", "Sin logros (RetroAchievements)", description, row =>
+            RaConsoles.Of(row.System) is not null && raIndex.SystemChecked(row.System) && raIndex.Match(row) is null ? "sin logros en RetroAchievements" : null);
     }
 
     private void EditLanguages()

@@ -57,6 +57,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
             throw new InvalidOperationException("Los metadatos se guardaron, pero la ROM ya no está en la lista actual. Analiza la colección cuando quieras actualizarla.");
 
         all[rowIndex] = updatedRow;
+        SaveAnalysisCache(); // la caché del análisis también debe llevar el cambio, o al reabrir la aplicación volvería a verse el dato antiguo
         current = current.Select(row => IsEditedRow(row) ? updatedRow : row).ToList();
 
         string updatedCache = CollectionScanner.WriteCache(root.Text, all);
@@ -175,6 +176,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         int selectedCount = rows.Count(r => r.Path.Length > 0 && selected.Contains(r.Path));
         // Con una ROM enfocada, el nombre de su archivo va en la primera línea.
         string file = roms.SelectedItem is RomItem focused ? $"ARCHIVO: {focused.Row.RomName}\r\n" : "";
+        if (roms.SelectedItem is RomItem withRa && raIndex.Describe(withRa.Row) is { Length: > 0 } raLine) file += raLine + "\r\n";
         details.Text = file + $"CATEGORÍA: {genre}\r\nROMs: {rows.Length:N0}\r\nESPACIO: {FormatSize(rows.Sum(r => r.Size))}\r\n\r\nSeleccionadas en esta categoría: {selectedCount:N0}\r\n\r\nEl foco de la categoría determina las ROMs mostradas a la derecha.";
     }
 }

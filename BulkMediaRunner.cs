@@ -25,7 +25,11 @@ internal sealed record BulkMediaSettings(string[] Folders, bool NormalizedVideo,
 
 internal sealed record BulkMediaOptions(
     string Root, IReadOnlyList<RomRow> Roms, IReadOnlyList<SsSystem> SsSystems, IReadOnlyList<string> LocalSystems,
-    IReadOnlyList<EsDeMediaFolder> Folders, bool NormalizedVideo, BulkOverwrite Overwrite, bool Backup, bool SearchByName, int Threads, bool Metadata, bool GamelistBackup, bool Languages);
+    IReadOnlyList<EsDeMediaFolder> Folders, bool NormalizedVideo, BulkOverwrite Overwrite, bool Backup, bool SearchByName, int Threads, bool Metadata, bool GamelistBackup, bool Languages)
+{
+    // Juego elegido a mano para una ROM (desde «Aproximaciones por nombre» del formulario de una ROM): se usa tal cual, sin buscar en ScreenScraper.
+    public Func<RomRow, SsGame?>? ForcedGame { get; init; }
+}
 
 internal sealed record BulkIssue(string System, string Rom, string Result, string Detail);
 
@@ -460,12 +464,14 @@ internal sealed class BulkMediaRunner
     // 1) por hash (lo normal); 2) si se pidió y el hash no la reconoce, por el nombre del juego dentro del sistema.
     private async Task<(SsGame? Game, string Via, string Note)> FindGameAsync(RomRow row, SsSystem ss, CancellationToken token)
     {
+        if (o.ForcedGame?.Invoke(row) is { } forced) return (forced, "elegido", "Juego elegido a mano");
         SsLookupResult? result = null;
         string hashNote = "";
         try
         {
             bool isZip = Path.GetExtension(row.Path).Equals(".zip", StringComparison.OrdinalIgnoreCase);
-            var hashes = await Task.Run(() => RomHasher.Compute(row.Path, isZip, null, token), token);
+            bool packed = isZip || Path.GetExtension(row.Path).ToLowerInvariant() is ".7z" or ".rar";
+            var hashes = await Task.Run(() => RomHasher.Compute(row.Path, packed, null, token), token);
             try { result = await WithRetry(() => client.LookupAsync(ss.Id, row.RomName, hashes, token), token); }
             catch (ScreenScraperException ex) when (ex.StatusCode == 404 && isZip)
             {

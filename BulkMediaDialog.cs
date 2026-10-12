@@ -474,6 +474,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         finally { SetRunning(false); }
 
         plannedWork = plan.RomsWithWork;
+        statusLabel.Text = "Trabajo calculado."; // sin esto se queda el texto «Calculando…» si luego no se descarga nada
         if (plan.Roms == 0)
         {
             statusLabel.Text = "Los sistemas marcados no tienen ROMs que procesar.";
@@ -501,10 +502,11 @@ internal sealed class BulkMediaDialog : LocalizedForm
             footer.Add("No hay nada pendiente.");
             using var info = new BulkConfirmDialog(rows, footer, "Aceptar", confirm: false);
             info.ShowDialog(this);
+            statusLabel.Text = "No hay nada pendiente: lo pedido ya está en destino (o en el índice de idiomas).";
             return;
         }
         using (var confirmDialog = new BulkConfirmDialog(rows, footer, "Scrapear", confirm: true))
-            if (confirmDialog.ShowDialog(this) != DialogResult.OK) return;
+            if (confirmDialog.ShowDialog(this) != DialogResult.OK) { statusLabel.Text = "Descarga cancelada: no se ha pedido nada."; return; }
 
         cts?.Dispose();
         cts = new CancellationTokenSource();

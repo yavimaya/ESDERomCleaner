@@ -3,6 +3,14 @@ namespace ESDERomCleaner;
 // Extensiones de ROM por sistema, tomadas del es_systems.xml de ES-DE para Windows (en minúsculas).
 internal static class EsDeSystemExtensions
 {
+    // ¿Es el archivo (o carpeta) una entrada válida de ese sistema? Si el sistema no se conoce, se acepta todo.
+    public static bool IsGameFile(string system, string path)
+    {
+        if (!BySystem.TryGetValue(system, out var allowed) || string.IsNullOrEmpty(path)) return true;
+        if (allowed.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)) return true;
+        return Directory.Exists(path); // las carpetas-juego (p. ej. «Juego.ps3») cuentan como juego
+    }
+
     public static readonly Dictionary<string, string[]> BySystem = new(StringComparer.OrdinalIgnoreCase)
     {
         ["3do"] = [".bin", ".chd", ".cue", ".iso", ".7z", ".zip"],
@@ -155,6 +163,7 @@ internal static class EsDeSystemExtensions
         ["sg-1000"] = [".68k", ".bin", ".bms", ".chd", ".cue", ".gen", ".gg", ".iso", ".m3u", ".md", ".mdx", ".ri", ".rom", ".sg", ".sgd", ".smd", ".sms", ".7z", ".zip"],
         ["sgb"] = [".gb", ".gbc", ".sgb", ".7z", ".zip"],
         ["snes"] = [".bin", ".bml", ".bs", ".bsx", ".dx2", ".fig", ".gd3", ".gd7", ".mgd", ".sfc", ".smc", ".st", ".swc", ".7z", ".zip"],
+        ["snes-msu1"] = [".bin", ".bml", ".bs", ".bsx", ".dx2", ".fig", ".gd3", ".gd7", ".mgd", ".sfc", ".smc", ".st", ".swc", ".7z", ".zip"],
         ["snesna"] = [".bin", ".bml", ".bs", ".bsx", ".dx2", ".fig", ".gd3", ".gd7", ".mgd", ".sfc", ".smc", ".st", ".swc", ".7z", ".zip"],
         ["solarus"] = [".solarus"],
         ["spectravideo"] = [".cas", ".col", ".dsk", ".m3u", ".mx1", ".mx2", ".ri", ".rom", ".sc", ".sg", ".7z", ".zip"],

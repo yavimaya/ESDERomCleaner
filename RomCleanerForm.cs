@@ -255,6 +255,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         WireMediaClicks();
         WireExclude();
         WireCollections();
+        WireRetroAchievements();
         addRoms.Click += async (_, _) => await OpenAddRomsAsync();
         datManager.Click += (_, _) => { using var d = new DatManagerDialog(trace, root.Text.Trim().Trim('"')); d.ShowDialog(this); if (RomDatabase.InstalledCount() > 0) _ = RomDatabase.GetIndexAsync(); };
         createGamelists.Click +=async (_, _) => await CreateGamelistsAsync(scanAfter: true, quiet: false);

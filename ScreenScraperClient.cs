@@ -188,6 +188,26 @@ internal sealed class ScreenScraperClient
         return hits;
     }
 
+    // Aproximaciones por nombre: los juegos que ScreenScraper devuelve para un texto (sin exigir coincidencia exacta), ya interpretados con sus
+    // nombres, sinopsis y medios. Si no encuentra nada (404), la lista queda vacía.
+    public async Task<List<SsGame>> SearchCandidatesAsync(int systemId, string name, CancellationToken token)
+    {
+        string body;
+        try { body = await GetStringAsync(BuildUrl("jeuRecherche.php", ("systemeid", systemId.ToString()), ("recherche", name)), token); }
+        catch (ScreenScraperException ex) when (ex.StatusCode == 404) { return new(); }
+        using var doc = ParseJson(body);
+        var games = new List<SsGame>();
+        if (!doc.RootElement.TryGetProperty("response", out var response)) return games;
+        if (response.TryGetProperty("ssuser", out var user) && user.ValueKind == JsonValueKind.Object) ScreenScraperQuota.Sync(user);
+        if (!response.TryGetProperty("jeux", out var list) || list.ValueKind != JsonValueKind.Array) return games;
+        foreach (var jeu in list.EnumerateArray())
+        {
+            if (jeu.ValueKind != JsonValueKind.Object || Str(jeu, "id").Length == 0) continue;
+            games.Add(ParseGame(jeu));
+        }
+        return games;
+    }
+
     private async Task<SsLookupResult> LookupUrlAsync(string url, CancellationToken token)
     {
         string body = await GetStringAsync(url, token);

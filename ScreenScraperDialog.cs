@@ -3,7 +3,7 @@ using System.Text;
 
 namespace ESDERomCleaner;
 
-internal sealed class ScreenScraperDialog : LocalizedForm
+internal sealed partial class ScreenScraperDialog : LocalizedForm
 {
     private static readonly string[] PreferredLanguages = ["es", "en", "fr", "de", "it", "pt"];
 
@@ -43,17 +43,19 @@ internal sealed class ScreenScraperDialog : LocalizedForm
 
     public bool CollectionMediaChanged { get; private set; }
 
-    public ScreenScraperDialog(RomRow row, string root, TraceLog trace, bool preferNormalizedVideo)
+    public ScreenScraperDialog(RomRow row, string root, TraceLog trace, bool preferNormalizedVideo, bool gamelistBackups = false)
     {
         this.row = row;
         this.root = root;
         this.preferNormalizedVideo = preferNormalizedVideo;
+        this.gamelistBackups = gamelistBackups;
         this.trace = trace;
         credentials = ScreenScraperCredentialStore.Load();
         Text = $"ScreenScraper — {row.RomName}";
         Width = 1280; Height = 780; MinimumSize = new Size(900, 560);
         StartPosition = FormStartPosition.CenterParent;
         BuildLayout();
+        InitCandidates();
         searchButton.Click += async (_, _) => await SearchAsync();
         cancelButton.Click += (_, _) => { cts?.Cancel(); selectionPanel?.CancelSave(); };
         downloadAllButton.Click += async (_, _) => await DownloadMediaAsync(AllMediaRows().Where(r => !IsCached(r)).ToList());
@@ -195,6 +197,7 @@ internal sealed class ScreenScraperDialog : LocalizedForm
         systemCombo.Enabled = !busy;
         cancelButton.Enabled = busy;
         downloadAllButton.Enabled = !busy && currentGame is not null && AllMediaRows().Any(r => !IsCached(r));
+        SetCandidatesBusy(busy);
         if (!busy) progressBar.Value = 0;
     }
 
@@ -262,9 +265,10 @@ internal sealed class ScreenScraperDialog : LocalizedForm
         try
         {
             bool isZip = Path.GetExtension(row.Path).Equals(".zip", StringComparison.OrdinalIgnoreCase);
+            bool packed = isZip || Path.GetExtension(row.Path).ToLowerInvariant() is ".7z" or ".rar";
             var progress = new Progress<double>(p => progressBar.Value = Math.Clamp((int)(p * 100), 0, 100));
             statusLabel.Text = "Calculando CRC32, MD5 y SHA1…";
-            var hashes = await Task.Run(() => RomHasher.Compute(row.Path, isZip, progress, token), token);
+            var hashes = await Task.Run(() => RomHasher.Compute(row.Path, packed, progress, token), token);
             var client = new ScreenScraperClient(credentials);
             statusLabel.Text = $"Consultando ScreenScraper (hash de {hashes.Basis})…";
             SsLookupResult result;
@@ -286,8 +290,12 @@ internal sealed class ScreenScraperDialog : LocalizedForm
             statusLabel.Text = ex.Message;
             // Sin coincidencia por hash, ScreenScraper busca por nombre dentro del sistema indicado: ahí sí importa elegir bien.
             if (ex.StatusCode == 404)
+            {
+                ShowCandidates();
                 ShowSystemChooser("ScreenScraper no reconoce esta ROM por su hash (hack, traducción, volcado raro…). Si la carpeta mezcla sistemas " +
-                    "(p. ej. MSX/MSX2, PC Engine/PC Engine CD), elige el sistema correcto y vuelve a consultar: buscará por nombre en él.");
+                    "(p. ej. MSX/MSX2, PC Engine/PC Engine CD), elige el sistema correcto y vuelve a consultar: buscará por nombre en él. " +
+                    "Mira también la pestaña «Aproximaciones por nombre».");
+            }
         }
         catch (Exception ex)
         {
@@ -309,6 +317,7 @@ internal sealed class ScreenScraperDialog : LocalizedForm
         {
             statusLabel.Text = "ScreenScraper respondió sin ningún juego asociado a esta ROM.";
             mediaSummary.Text = "";
+            ShowCandidates();
             return;
         }
         var game = result.Games[0];
@@ -353,7 +362,7 @@ internal sealed class ScreenScraperDialog : LocalizedForm
         int types = gameMedias.Select(m => m.Type).Distinct(StringComparer.OrdinalIgnoreCase).Count();
         int extra = game.Medias.Count - gameMedias.Count;
         mediaSummary.Text = $"  {gameMedias.Count} medios del juego de {types} tipos: {images} imágenes, {videos} vídeos, {pdfs} manuales/PDF, {gameMedias.Count - images - videos - pdfs} otros." + (extra > 0 ? $" (+{extra} pictogramas de categoría, editor, etc.)" : "");
-        statusLabel.Text = $"Encontrado: {game.BestName}  ·  hash de {hashes.Basis}";
+        statusLabel.Text = hashes.Basis == "elegido a mano" ? $"Juego elegido a mano: {game.BestName}" : $"Encontrado: {game.BestName}  ·  hash de {hashes.Basis}";
         ShowSelectedMedia();
     }
 
@@ -528,6 +537,7 @@ internal sealed class ScreenScraperDialog : LocalizedForm
             panel.StatusChanged += text => statusLabel.Text = text;
             panel.ProgressChanged += percent => progressBar.Value = Math.Clamp(percent, 0, 100);
             panel.BusyChanged += SetBusy;
+            panel.CloseRequested += Close;
             panel.SaveFinished += () =>
             {
                 CollectionMediaChanged |= panel.CollectionChanged;
