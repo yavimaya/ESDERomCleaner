@@ -68,27 +68,11 @@ La interfaz está en **español e inglés** (*Opciones › Idioma*; por defecto,
 
 ![Editor de metadatos](docs/img/editor-de-metadatos.png)
 
-## Descargar
-
-En la sección [**Releases**](../../releases) tienes `ESDERomCleaner-<versión>-win-x64.exe`: un único ejecutable que **no necesita instalar .NET** (lleva el motor de vídeo incluido). Descárgalo y ábrelo; la primera vez tarda unos segundos más porque se extrae a una carpeta temporal.
-
-Como el ejecutable **no está firmado digitalmente**, Windows SmartScreen avisa de «editor desconocido» la primera vez: pulsa *Más información › Ejecutar de todas formas*. Es normal en programas sin certificado de firma; puedes comprobar que el archivo es el publicado con el SHA-256 que figura en las notas de cada release.
-
-## Requisitos para compilar
+## Requisitos
 
 - Windows 10/11 de 64 bits.
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) para compilar.
-- **Una colección con la estructura de carpetas de ES-DE y sus `gamelist.xml`** (ver abajo). Es imprescindible: sin ella la aplicación no puede analizar nada.
+- **Una colección con la estructura de carpetas de ES-DE y sus `gamelist.xml`** (ver [Estructura de colección](#estructura-de-colección)). Es imprescindible: sin ella la aplicación no puede analizar nada.
 - Para scrapear: una cuenta de [ScreenScraper](https://www.screenscraper.fr/) y las **credenciales de desarrollador** (ID y contraseña) que la API exige. Las credenciales se piden desde la propia aplicación, no se incluyen en el repositorio.
-
-## Compilar y ejecutar
-
-```bash
-dotnet build          # genera bin/Debug/net10.0-windows/ESDERomCleaner.exe
-dotnet run            # abre la aplicación
-```
-
-Todo el código está en un único proyecto (`ESDERomCleaner.csproj`). No hay proyecto de pruebas. El motor de vídeo (LibVLC) se incorpora mediante paquetes NuGet.
 
 ## Estructura de colección
 
@@ -141,6 +125,23 @@ Por defecto todo vive en `%LOCALAPPDATA%\ESDERomCleaner` (se puede cambiar en *O
 ## Estado del proyecto
 
 **Versión alpha**: proyecto personal en desarrollo, con muchas partes recién escritas y sin probar a fondo. Algunas partes del acceso a la API de ScreenScraper (búsqueda por nombre, lectura de la cuenta e idiomas de las ROMs) están escritas pero pendientes de verificar con respuestas reales. Pendiente a medio plazo: un visor de medios a pantalla completa y más opciones de qué hacer con las ROMs candidatas del curado (ocultarlas en ES-DE o generar una copia depurada).
+
+## Descargar
+
+En la sección [**Releases**](../../releases) tienes `ESDERomCleaner-<versión>-win-x64.exe`: un único ejecutable que **no necesita instalar .NET** (lleva el motor de vídeo incluido). Descárgalo y ábrelo; la primera vez tarda unos segundos más porque se extrae a una carpeta temporal.
+
+Como el ejecutable **no está firmado digitalmente**, Windows SmartScreen avisa de «editor desconocido» la primera vez: pulsa *Más información › Ejecutar de todas formas*. Es normal en programas sin certificado de firma; puedes comprobar que el archivo es el publicado con el SHA-256 que figura en las notas de cada release.
+
+## Compilar desde el código
+
+Hace falta el [.NET 10 SDK](https://dotnet.microsoft.com/download).
+
+```bash
+dotnet build          # genera bin/Debug/net10.0-windows/ESDERomCleaner.exe
+dotnet run            # abre la aplicación
+```
+
+Todo el código está en un único proyecto (`ESDERomCleaner.csproj`). No hay proyecto de pruebas. El motor de vídeo (LibVLC) se incorpora mediante paquetes NuGet.
 
 ## Créditos
 
