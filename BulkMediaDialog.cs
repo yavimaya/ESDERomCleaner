@@ -7,7 +7,7 @@ namespace ESDERomCleaner;
 // Qué se marca al abrir la descarga masiva: lo último que se eligió, solo los metadatos (categorizar), o lo último que se eligió más los metadatos.
 internal enum BulkPreset { Saved, MetadataOnly, WithMetadata }
 
-internal sealed class BulkMediaDialog : Form
+internal sealed class BulkMediaDialog : LocalizedForm
 {
     private readonly IReadOnlyList<RomRow> roms;
     private readonly string root;
@@ -608,7 +608,7 @@ internal sealed class BulkMediaDialog : Form
         if (issuesGrid.Rows.Count == 0) { QuietMessage.Show(this, "Exportar incidencias", "No hay incidencias que exportar."); return; }
         using var dialog = new SaveFileDialog
         {
-            Title = "Exportar incidencias", Filter = "CSV (*.csv)|*.csv", DefaultExt = "csv",
+            Title = Loc.T("Exportar incidencias"), Filter = Loc.T("CSV (*.csv)|*.csv"), DefaultExt = "csv",
             FileName = $"incidencias_screenscraper_{DateTime.Now:yyyyMMdd_HHmm}.csv"
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;

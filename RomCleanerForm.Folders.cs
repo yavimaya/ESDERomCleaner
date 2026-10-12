@@ -105,3 +105,28 @@ public sealed partial class RomCleanerForm
         return version.Length > 0 ? "v" + version : "";
     }
 }
+
+public sealed partial class RomCleanerForm
+{
+    // Opciones › Idioma: español o inglés, con cambio inmediato (sin reiniciar). Los nombres de los idiomas no se traducen.
+    private readonly ToolStripMenuItem languageMenu = new("Idioma");
+    private readonly ToolStripMenuItem systemItem = new("Predeterminado del sistema");
+    private readonly ToolStripMenuItem spanishItem = new("Español") { Tag = "noloc", CheckOnClick = false };
+    private readonly ToolStripMenuItem englishItem = new("English") { Tag = "noloc", CheckOnClick = false };
+
+    private void WireLanguageMenu()
+    {
+        languageMenu.DropDownItems.Add(systemItem);
+        languageMenu.DropDownItems.Add(new ToolStripSeparator());
+        languageMenu.DropDownItems.Add(spanishItem);
+        languageMenu.DropDownItems.Add(englishItem);
+        void UpdateChecks() { systemItem.Checked = Loc.Setting == "system"; spanishItem.Checked = Loc.Setting == "es"; englishItem.Checked = Loc.Setting == "en"; }
+        UpdateChecks();
+        roms.Tag = "noloc"; // la lista de ROMs muestra nombres de juegos, no texto de la interfaz
+        systemItem.Click += (_, _) => { Loc.SetLanguage("system"); UpdateChecks(); trace.Add("language_changed", "system"); if (Loc.English) _ = GenreNames.EnsureAsync(trace); };
+        spanishItem.Click += (_, _) => { Loc.SetLanguage("es"); UpdateChecks(); trace.Add("language_changed", "es"); };
+        englishItem.Click += (_, _) => { Loc.SetLanguage("en"); UpdateChecks(); trace.Add("language_changed", "en"); _ = GenreNames.EnsureAsync(trace); };
+        // Con la interfaz ya en inglés al arrancar, se completa la lista de géneros si falta.
+        Shown += (_, _) => { if (Loc.English) _ = GenreNames.EnsureAsync(trace); };
+    }
+}

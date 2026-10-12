@@ -2,7 +2,7 @@ namespace ESDERomCleaner;
 
 // Añadir ROMs a la colección: se arrastran archivos al formulario, se identifican (hash o nombre con los DAT, o por extensión)
 // y se copian a la carpeta de su sistema en Roms. Las que no se pueden decidir solas van a una lista aparte.
-internal sealed class AddRomsDialog : Form
+internal sealed class AddRomsDialog : LocalizedForm
 {
     private readonly string root;
     private readonly TraceLog trace;
@@ -237,7 +237,7 @@ internal sealed class AddRomsDialog : Form
         buttons.Controls.Add(clearButton); buttons.Controls.Add(removeButton); buttons.Controls.Add(browseButton);
         // Botón de «prohibido el paso» con el número de duplicadas al lado: muestra u oculta la lista de las que ya existen.
         buttons.Controls.Add(dupCount); buttons.Controls.Add(dupButton); buttons.Controls.Add(moveFiles);
-        new ToolTip().SetToolTip(dupButton, "Mostrar u ocultar las ROMs que ya existen en la colección");
+        Loc.SetToolTip(new ToolTip(), dupButton, "Mostrar u ocultar las ROMs que ya existen en la colección");
         dupButton.Click += (_, _) => ToggleDuplicates();
         bottom.Controls.Add(status, 0, 0); bottom.Controls.Add(progress, 0, 1); bottom.Controls.Add(storageSummary, 0, 2); bottom.Controls.Add(buttons, 0, 3);
 
@@ -261,12 +261,12 @@ internal sealed class AddRomsDialog : Form
         var browseMenu = new ContextMenuStrip();
         browseMenu.Items.Add("Archivos…", null, async (_, _) =>
         {
-            using var open = new OpenFileDialog { Title = "Elige las ROMs a añadir", Multiselect = true, Filter = "Todos los archivos|*.*" };
+            using var open = new OpenFileDialog { Title = Loc.T("Elige las ROMs a añadir"), Multiselect = true, Filter = Loc.T("Todos los archivos|*.*") };
             if (open.ShowDialog(this) == DialogResult.OK) await HandleDropAsync(open.FileNames);
         });
         browseMenu.Items.Add("Carpeta…", null, async (_, _) =>
         {
-            using var folder = new FolderBrowserDialog { Description = "Elige la carpeta con las ROMs (se recorren hasta 2 niveles de subcarpetas)", ShowNewFolderButton = false };
+            using var folder = new FolderBrowserDialog { Description = Loc.T("Elige la carpeta con las ROMs (se recorren hasta 2 niveles de subcarpetas)"), ShowNewFolderButton = false };
             if (folder.ShowDialog(this) == DialogResult.OK) await HandleDropAsync([folder.SelectedPath]);
         });
         browseButton.Click += (_, _) => { if (!working) browseMenu.Show(browseButton, new Point(0, browseButton.Height)); };

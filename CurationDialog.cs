@@ -6,7 +6,7 @@ namespace ESDERomCleaner;
 // Análisis de curado: aplica a toda la colección las categorías (géneros) y supracategorías marcadas y resume cuántas ROMs
 // señalarían, para valorar si merece la pena. Es de solo lectura: no oculta, copia ni borra nada. La elección de sistemas se hace
 // en la ventana principal.
-internal sealed class CurationDialog : Form
+internal sealed class CurationDialog : LocalizedForm
 {
     private sealed record Hit(RomRow Row, CurationRule Rule, string Reason);
 
@@ -152,7 +152,7 @@ internal sealed class CurationDialog : Form
         left.Controls.Add(genresGroup, 0, 1);
 
         Configure(candidatesGrid);
-        foreach (var (name, header, width) in new[] { ("state", "Estado", 66), ("system", "Sistema", 90), ("rom", "Nombre del archivo", 220), ("game", "Nombre", 190), ("genre", "Género", 140), ("rules", "Regla(s)", 150), ("reason", "Motivo", 0), ("size", "Tamaño", 80) })
+        foreach (var (name, header, width) in new[] { ("state", "Estado", 66), ("system", "Sistema", 90), ("rom", "Nombre del archivo", 220), ("game", "Nombre", 190), ("genre", "Categoría", 140), ("rules", "Regla(s)", 150), ("reason", "Motivo", 0), ("size", "Tamaño", 80) })
             candidatesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = header, Width = width > 0 ? width : 100, ReadOnly = true });
         candidatesGrid.Columns["reason"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
         candidatesGrid.Columns["size"]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
@@ -596,7 +596,7 @@ internal sealed class CurationDialog : Form
     {
         var union = Union();
         if (union.Count == 0) { QuietMessage.Show(this, "Exportar candidatas", "No hay candidatas con lo marcado."); return; }
-        using var dialog = new SaveFileDialog { Title = "Exportar candidatas", Filter = "CSV (*.csv)|*.csv", DefaultExt = "csv", FileName = $"candidatas_curado_{DateTime.Now:yyyyMMdd_HHmm}.csv" };
+        using var dialog = new SaveFileDialog { Title = Loc.T("Exportar candidatas"), Filter = Loc.T("CSV (*.csv)|*.csv"), DefaultExt = "csv", FileName = $"candidatas_curado_{DateTime.Now:yyyyMMdd_HHmm}.csv" };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         static string Quote(string? value) => "\"" + (value ?? "").Replace("\"", "\"\"") + "\"";
         var lines = new List<string> { "Sistema;ROM;Nombre;Categoría;Tamaño (bytes);Reglas;Motivo" };

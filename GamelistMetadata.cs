@@ -9,7 +9,8 @@ namespace ESDERomCleaner;
 // Metadatos de un juego tal como los guarda ES-DE en el gamelist.xml. Un campo vacío significa «no tocar lo que ya hay».
 internal sealed record GamelistMetadata(string Name, string Desc, string Rating, string ReleaseDate, string Developer, string Publisher, string Genre, string Players)
 {
-    private static readonly string[] Languages = ["es", "en", "fr", "de", "it", "pt"];
+    // Idioma en que se descargan los textos (descripción, categoría): el de la interfaz primero, para que los gamelists que se generen a partir de ahora salgan en ese idioma.
+    private static string[] Languages => Loc.English ? ["en", "es", "fr", "de", "it", "pt"] : ["es", "en", "fr", "de", "it", "pt"];
 
     public IEnumerable<(string Field, string Value)> Fields()
     {

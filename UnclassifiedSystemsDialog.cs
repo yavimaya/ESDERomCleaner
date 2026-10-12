@@ -4,7 +4,7 @@ internal enum UnclassifiedChoice { None, Categorize, CategorizeAndScrape }
 
 // Aviso tras analizar: sistemas cuyas ROMs no tienen categoría. Tabla informativa y dos opciones:
 // «Categorizar» (solo metadatos, que traen la categoría) o «Categorizar y scrapear» (metadatos y medios).
-internal sealed class UnclassifiedSystemsDialog : Form
+internal sealed class UnclassifiedSystemsDialog : LocalizedForm
 {
     public UnclassifiedChoice Choice { get; private set; } = UnclassifiedChoice.None;
 

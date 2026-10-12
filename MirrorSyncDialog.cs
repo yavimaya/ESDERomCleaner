@@ -3,7 +3,7 @@ using System.Diagnostics;
 
 namespace ESDERomCleaner;
 
-internal sealed class MirrorSyncDialog : Form
+internal sealed class MirrorSyncDialog : LocalizedForm
 {
     private string sourcePath;
     private readonly Action<string, string> trace;
@@ -86,7 +86,7 @@ internal sealed class MirrorSyncDialog : Form
     {
         using var dialog = new FolderBrowserDialog
         {
-            Description = "Selecciona la carpeta que se sincronizará para que coincida con la carpeta de trabajo.",
+            Description = Loc.T("Selecciona la carpeta que se sincronizará para que coincida con la carpeta de trabajo."),
             UseDescriptionForTitle = true,
             ShowNewFolderButton = true
         };
@@ -102,7 +102,7 @@ internal sealed class MirrorSyncDialog : Form
     {
         using var dialog = new FolderBrowserDialog
         {
-            Description = "Selecciona la carpeta de origen que contiene Roms y ES-DE.",
+            Description = Loc.T("Selecciona la carpeta de origen que contiene Roms y ES-DE."),
             UseDescriptionForTitle = true,
             ShowNewFolderButton = false
         };

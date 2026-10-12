@@ -4,7 +4,7 @@ internal sealed record MediaSaveRow(string Folder, string Media, string Detail, 
 
 // Confirmación del guardado de medios en la colección: una tabla en lugar de un texto corrido.
 // Es un formulario propio y no un MessageBox, así que no reproduce ningún sonido del sistema.
-internal sealed class MediaSaveConfirmDialog : Form
+internal sealed class MediaSaveConfirmDialog : LocalizedForm
 {
     public MediaSaveConfirmDialog(string romName, IReadOnlyList<MediaSaveRow> rows, string backupRoot)
     {
@@ -78,6 +78,7 @@ internal static class QuietMessage
     // Pregunta con dos botones, sin icono ni sonido. Devuelve true si se pulsa el botón de aceptar.
     public static bool Confirm(IWin32Window? owner, string title, string text, string okText = "Aceptar")
     {
+        title = Loc.T(title); text = Loc.T(text); okText = Loc.T(okText);
         using var dialog = new Form
         {
             Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
@@ -86,7 +87,7 @@ internal static class QuietMessage
         };
         var label = new Label { Dock = DockStyle.Fill, Text = text, AutoSize = false, Padding = new Padding(14, 12, 14, 0) };
         var ok = new Button { Text = okText, DialogResult = DialogResult.OK, MinimumSize = new Size(110, 28), AutoSize = true };
-        var cancel = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, MinimumSize = new Size(90, 28), AutoSize = true };
+        var cancel = new Button { Text = Loc.T("Cancelar"), DialogResult = DialogResult.Cancel, MinimumSize = new Size(90, 28), AutoSize = true };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 44, Padding = new Padding(8, 6, 8, 4) };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(ok);
@@ -101,6 +102,7 @@ internal static class QuietMessage
 
     public static void Show(IWin32Window? owner, string title, string text)
     {
+        title = Loc.T(title); text = Loc.T(text);
         using var dialog = new Form
         {
             Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
@@ -108,7 +110,7 @@ internal static class QuietMessage
             Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont
         };
         var label = new Label { Dock = DockStyle.Fill, Text = text, AutoSize = false, Padding = new Padding(12, 12, 12, 0) };
-        var ok = new Button { Text = "Aceptar", DialogResult = DialogResult.OK, MinimumSize = new Size(90, 28), AutoSize = true };
+        var ok = new Button { Text = Loc.T("Aceptar"), DialogResult = DialogResult.OK, MinimumSize = new Size(90, 28), AutoSize = true };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 40, Padding = new Padding(8, 4, 8, 4) };
         buttons.Controls.Add(ok);
         dialog.Controls.Add(label);
@@ -125,6 +127,7 @@ internal static class QuietMessage
     // Pide un texto corto (p. ej. un nombre). Devuelve null si se cancela o queda vacío.
     public static string? Prompt(IWin32Window? owner, string title, string label, string initial = "", string okText = "Aceptar")
     {
+        title = Loc.T(title); label = Loc.T(label); okText = Loc.T(okText);
         using var dialog = new Form
         {
             Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
@@ -134,7 +137,7 @@ internal static class QuietMessage
         var prompt = new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.BottomLeft };
         var box = new TextBox { Text = initial, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 0, 4) };
         var ok = new Button { Text = okText, DialogResult = DialogResult.OK, AutoSize = true, MinimumSize = new Size(100, 28) };
-        var cancel = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
+        var cancel = new Button { Text = Loc.T("Cancelar"), DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(90, 28) };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(ok);

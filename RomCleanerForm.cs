@@ -9,7 +9,7 @@ using System.Xml.Linq;
 
 namespace ESDERomCleaner;
 
-public sealed partial class RomCleanerForm : Form
+public sealed partial class RomCleanerForm : LocalizedForm
 {
     private readonly TextBox root = new() { Dock = DockStyle.Fill, PlaceholderText = "Carpeta que contiene Roms y ES-DE" };
     private readonly Button browse = new() { Text = "Examinar…" }, cloneButton = new() { Text = "Clonar" }, scan = new() { Text = "Analizar colección" }, cancel = new() { Text = "Cancelar", Enabled = false }, deleteSelected = new() { Text = "ELIMINAR", Enabled = false, ForeColor = Color.DarkRed };
@@ -199,7 +199,7 @@ public sealed partial class RomCleanerForm : Form
     private void WireEvents()
     {
         backupOption.Click += (_, _) => SaveBackupPreference(backupOption.Checked);
-        browse.Click += (_, _) => { ClearSearchForContextChange(); using var d = new FolderBrowserDialog { Description = "Selecciona la carpeta con Roms y ES-DE" }; if (d.ShowDialog(this) == DialogResult.OK) root.Text = d.SelectedPath; };
+        browse.Click += (_, _) => { ClearSearchForContextChange(); using var d = new FolderBrowserDialog { Description = Loc.T("Selecciona la carpeta con Roms y ES-DE") }; if (d.ShowDialog(this) == DialogResult.OK) root.Text = d.SelectedPath; };
         cloneButton.Click += (_, _) => OpenCloneDialog();
         root.Enter += (_, _) => ClearSearchForContextChange();
         systems.Enter += (_, _) => ClearSearchForContextChange();
@@ -213,7 +213,7 @@ public sealed partial class RomCleanerForm : Form
         clearSelection.Click += (_, _) => ClearSelection();
         deleteSelected.Click += async (_, _) => await DeleteSelectedAsync();
         extensionButton.Click += (_, _) => ShowExtensions();
-        new ToolTip().SetToolTip(extensionButton, "Ver listado de extensiones y cantidad de ROMs");
+        Loc.SetToolTip(new ToolTip(), extensionButton, "Ver listado de extensiones y cantidad de ROMs");
         categories.ItemCheck += (_, e) =>
         {
             // Programmatic category synchronization also raises ItemCheck; do not queue it as a user action.
@@ -252,6 +252,7 @@ public sealed partial class RomCleanerForm : Form
         };
         bulkMedia.Click += async (_, _) => await OpenBulkMediaDialogAsync();
         WireFolderMenus();
+        WireLanguageMenu();
         addRoms.Click += async (_, _) => await OpenAddRomsAsync();
         datManager.Click += (_, _) => { using var d = new DatManagerDialog(trace, root.Text.Trim().Trim('"')); d.ShowDialog(this); if (RomDatabase.InstalledCount() > 0) _ = RomDatabase.GetIndexAsync(); };
         createGamelists.Click +=async (_, _) => await CreateGamelistsAsync(scanAfter: true, quiet: false);
@@ -317,7 +318,7 @@ public sealed partial class RomCleanerForm : Form
             TextAlign = ContentAlignment.MiddleLeft,
             Text = $"Caché: {cachePath}"
         };
-        new ToolTip().SetToolTip(cacheInfo, $"Caché: {cachePath}");
+        Loc.SetToolTip(new ToolTip(), cacheInfo, $"Caché: {cachePath}");
         var list = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, GridLines = true, HideSelection = false };
         list.Columns.Add("Extensión", 250);
         list.Columns.Add("ROMs", 120, HorizontalAlignment.Center);

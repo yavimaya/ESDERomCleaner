@@ -1,6 +1,6 @@
 namespace ESDERomCleaner;
 
-internal sealed class TraceViewerDialog : Form
+internal sealed class TraceViewerDialog : LocalizedForm
 {
     private const int MaxRecords = 2000;
     private const string AllActions = "(todas las acciones)";

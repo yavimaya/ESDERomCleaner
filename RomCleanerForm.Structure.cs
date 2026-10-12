@@ -14,7 +14,7 @@ public sealed partial class RomCleanerForm
                 "Elegir carpeta")) return false;
             using var picker = new FolderBrowserDialog
             {
-                Description = "Selecciona la carpeta de la colección de ES-DE (puedes crear una nueva).",
+                Description = Loc.T("Selecciona la carpeta de la colección de ES-DE (puedes crear una nueva)."),
                 ShowNewFolderButton = true
             };
             if (picker.ShowDialog(this) != DialogResult.OK) return false;

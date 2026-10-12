@@ -3,7 +3,7 @@ using System.Text;
 
 namespace ESDERomCleaner;
 
-internal sealed class ScreenScraperDialog : Form
+internal sealed class ScreenScraperDialog : LocalizedForm
 {
     private static readonly string[] PreferredLanguages = ["es", "en", "fr", "de", "it", "pt"];
 

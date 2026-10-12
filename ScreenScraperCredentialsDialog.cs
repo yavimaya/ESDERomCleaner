@@ -1,6 +1,6 @@
 namespace ESDERomCleaner;
 
-internal sealed class ScreenScraperCredentialsDialog : Form
+internal sealed class ScreenScraperCredentialsDialog : LocalizedForm
 {
     private readonly TextBox devId = new() { Dock = DockStyle.Fill };
     private readonly TextBox devPassword = new() { Dock = DockStyle.Fill, UseSystemPasswordChar = true };

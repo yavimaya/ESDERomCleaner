@@ -2,7 +2,7 @@ namespace ESDERomCleaner;
 
 // Categorizar: descarga solo los metadatos (que traen la categoría) y los idiomas de las ROMs de los sistemas indicados.
 // Es una ventana sencilla, solo con la barra de progreso y lo que se está haciendo, que se cierra sola al terminar.
-internal sealed class CategorizeDialog : Form
+internal sealed class CategorizeDialog : LocalizedForm
 {
     private readonly IReadOnlyList<RomRow> roms;
     private readonly IReadOnlyList<string> systems;

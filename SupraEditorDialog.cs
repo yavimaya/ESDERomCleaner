@@ -2,7 +2,7 @@ namespace ESDERomCleaner;
 
 // Editor de supracategorías: nombre, descripción, géneros que incluye y palabras del nombre. Trabaja sobre una copia; «Guardar cambios»
 // se la entrega al llamador sin cerrar la ventana.
-internal sealed class SupraEditorDialog : Form
+internal sealed class SupraEditorDialog : LocalizedForm
 {
     private sealed record GenreItem(string Name, int Count)
     {

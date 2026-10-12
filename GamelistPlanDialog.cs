@@ -29,7 +29,7 @@ internal sealed class StaticGrid : DataGridView
 }
 
 // Aviso de sistemas / ROMs nuevos detectados: tabla con lo que se va a añadir y pregunta si además se quiere scrapear.
-internal sealed class GamelistPlanDialog : Form
+internal sealed class GamelistPlanDialog : LocalizedForm
 {
     public GamelistPlanChoice Choice { get; private set; } = GamelistPlanChoice.Cancel;
 

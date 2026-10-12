@@ -1,7 +1,7 @@
 namespace ESDERomCleaner;
 
 // Elegir una carpeta de sistema de ES-DE de entre todas: primero las que ya existen en la colección, luego el resto, con un filtro por texto.
-internal sealed class FolderPickDialog : Form
+internal sealed class FolderPickDialog : LocalizedForm
 {
     private readonly TextBox filter = new() { PlaceholderText = "Filtrar…" };
     private readonly ListBox list = new() { IntegralHeight = false };

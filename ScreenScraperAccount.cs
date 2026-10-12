@@ -49,7 +49,7 @@ internal static class ScreenScraperAccount
     }
 
     // Aviso previo, sin sonido: registrar credenciales, darse de alta en ScreenScraper o dejarlo para más tarde.
-    private sealed class MissingCredentialsPrompt : Form
+    private sealed class MissingCredentialsPrompt : LocalizedForm
     {
         public MissingCredentialsPrompt()
         {

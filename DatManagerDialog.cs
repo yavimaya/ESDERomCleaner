@@ -2,7 +2,7 @@ namespace ESDERomCleaner;
 
 // Gestión de las bases de datos (DAT) con las que se identifican las ROMs: elegir qué orígenes se usan, descargar las de
 // No-Intro y Redump (libretro-database) e importar las propias (GoodTools, clrmamepro, MAME, FBNeo, emuladores…).
-internal sealed class DatManagerDialog : Form
+internal sealed class DatManagerDialog : LocalizedForm
 {
     private const int Parallel = 4;
 
@@ -146,7 +146,7 @@ internal sealed class DatManagerDialog : Form
 
     private void ImportFiles()
     {
-        using var open = new OpenFileDialog { Title = "Elige los DAT a importar", Filter = "DAT (*.dat;*.xml)|*.dat;*.xml|Todos los archivos|*.*", Multiselect = true };
+        using var open = new OpenFileDialog { Title = Loc.T("Elige los DAT a importar"), Filter = Loc.T("DAT (*.dat;*.xml)|*.dat;*.xml|Todos los archivos|*.*"), Multiselect = true };
         if (open.ShowDialog(this) != DialogResult.OK) return;
         string romRoot = root is null ? "" : Path.Combine(root, "Roms");
         var existing = Directory.Exists(romRoot)

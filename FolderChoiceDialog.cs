@@ -1,7 +1,7 @@
 namespace ESDERomCleaner;
 
 // Elegir una carpeta de trabajo: aparece la que se usa ahora, se puede escribir otra, examinar o volver a la de por defecto.
-internal sealed class FolderChoiceDialog : Form
+internal sealed class FolderChoiceDialog : LocalizedForm
 {
     private readonly TextBox box = new();
 
@@ -26,7 +26,7 @@ internal sealed class FolderChoiceDialog : Form
 
         browse.Click += (_, _) =>
         {
-            using var picker = new FolderBrowserDialog { Description = title, ShowNewFolderButton = true, UseDescriptionForTitle = true };
+            using var picker = new FolderBrowserDialog { Description = Loc.T(title), ShowNewFolderButton = true, UseDescriptionForTitle = true };
             if (Directory.Exists(Folder)) picker.InitialDirectory = Folder;
             if (picker.ShowDialog(this) == DialogResult.OK) box.Text = picker.SelectedPath;
         };

@@ -70,6 +70,41 @@ internal sealed class ScreenScraperClient
         return JsonDocument.Parse(trimmed);
     }
 
+    // Lista oficial de géneros (genresListe.php): pares «nombre en español → nombre en inglés». Se lee de forma tolerante porque el formato
+    // exacto no está comprobado: se buscan los objetos con «noms» (lista de {langue, text} o campos nom_xx) en cualquier parte de la respuesta.
+    public async Task<Dictionary<string, string>> GetGenreNamesAsync(CancellationToken token)
+    {
+        string body = await GetStringAsync(BuildUrl("genresListe.php"), token);
+        using var doc = ParseJson(body);
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        void Visit(JsonElement e)
+        {
+            if (e.ValueKind == JsonValueKind.Object)
+            {
+                if (e.TryGetProperty("noms", out var names))
+                {
+                    string es = "", en = "";
+                    if (names.ValueKind == JsonValueKind.Array)
+                        foreach (var n in names.EnumerateArray())
+                        {
+                            string lang = Str(n, "langue"), text = Str(n, "text");
+                            if (lang == "es") es = text; else if (lang == "en") en = text;
+                        }
+                    else if (names.ValueKind == JsonValueKind.Object)
+                    {
+                        es = Str(names, "nom_es"); en = Str(names, "nom_en");
+                    }
+                    if (es.Length > 0 && en.Length > 0 && !es.Equals(en, StringComparison.OrdinalIgnoreCase)) result[es] = en;
+                }
+                foreach (var p in e.EnumerateObject()) Visit(p.Value);
+            }
+            else if (e.ValueKind == JsonValueKind.Array)
+                foreach (var item in e.EnumerateArray()) Visit(item);
+        }
+        Visit(doc.RootElement);
+        return result;
+    }
+
     public async Task<List<SsSystem>> GetSystemsAsync(bool forceRefresh, CancellationToken token)
     {
         string body;

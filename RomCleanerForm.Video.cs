@@ -9,7 +9,7 @@ using System.Xml.Linq;
 
 namespace ESDERomCleaner;
 
-public sealed partial class RomCleanerForm : Form
+public sealed partial class RomCleanerForm : LocalizedForm
 {
     private static readonly string[] VideoExtensions = [".mp4", ".m4v", ".wmv", ".avi", ".mov", ".mpg", ".mpeg", ".webm", ".mkv", ".ogv"];
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<string[]>> VideoFileIndex = new(StringComparer.OrdinalIgnoreCase);

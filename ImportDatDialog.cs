@@ -1,7 +1,7 @@
 namespace ESDERomCleaner;
 
 // Datos para importar un DAT propio: nombre, origen, a qué carpetas de ES-DE corresponde y si se identifica por el nombre del archivo.
-internal sealed class ImportDatDialog : Form
+internal sealed class ImportDatDialog : LocalizedForm
 {
     private readonly TextBox nameBox = new();
     private readonly ComboBox kindBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };

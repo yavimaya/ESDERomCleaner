@@ -1,7 +1,7 @@
 namespace ESDERomCleaner;
 
 // Formulario simple para elegir cómo se guardan las ROMs al añadirlas: formato y nivel de compresión.
-internal sealed class StorageOptionsDialog : Form
+internal sealed class StorageOptionsDialog : LocalizedForm
 {
     private readonly ComboBox formatBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ComboBox levelBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };

@@ -9,7 +9,7 @@ using System.Xml.Linq;
 
 namespace ESDERomCleaner;
 
-public sealed partial class RomCleanerForm : Form
+public sealed partial class RomCleanerForm : LocalizedForm
 {
     private async Task ScanAsync(bool offerUnclassified = true)
     {

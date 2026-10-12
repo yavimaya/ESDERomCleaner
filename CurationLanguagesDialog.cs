@@ -1,7 +1,7 @@
 namespace ESDERomCleaner;
 
 // Elige los idiomas que entiende el usuario: las ROMs que no estén en ninguno de ellos son candidatas en el curado.
-internal sealed class CurationLanguagesDialog : Form
+internal sealed class CurationLanguagesDialog : LocalizedForm
 {
     private readonly CheckedListBox list = new() { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false };
     private readonly CheckBox onlyTextGenres = new()

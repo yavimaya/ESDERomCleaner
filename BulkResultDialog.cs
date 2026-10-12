@@ -1,7 +1,7 @@
 namespace ESDERomCleaner;
 
 // Resumen final de una descarga masiva: contadores y, por cada tipo de medio, el espacio que ha ganado o perdido la colección.
-internal sealed class BulkResultDialog : Form
+internal sealed class BulkResultDialog : LocalizedForm
 {
     public BulkResultDialog(string headline, string counters, BulkSummary summary)
     {

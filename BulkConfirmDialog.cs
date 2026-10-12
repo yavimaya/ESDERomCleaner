@@ -1,7 +1,7 @@
 namespace ESDERomCleaner;
 
 // Resumen previo a la descarga masiva: tabla con los sistemas a scrapear y las líneas sobre sobrescritura y búsqueda por nombre.
-internal sealed class BulkConfirmDialog : Form
+internal sealed class BulkConfirmDialog : LocalizedForm
 {
     public BulkConfirmDialog(IReadOnlyList<(string System, int Roms)> systems, IReadOnlyList<string> footer, string okText, bool confirm)
     {

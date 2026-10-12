@@ -24,6 +24,7 @@ La interfaz, los mensajes y los comentarios del código están en **español**.
 - **Borrado seguro**: plan previo con todo lo que se va a tocar (ROMs, archivos accesorios, media, gamelists), comprobación de que nada ha cambiado antes de ejecutar, copia de seguridad opcional de los gamelists y actualización solo de los sistemas afectados.
 - **Clonar la estructura de ES-DE a otra carpeta o a una tarjeta SD** (botón *Clonar*): pensado para llevar la colección ya depurada a Android, donde ES-DE suele usarse con tarjeta SD. Ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd).
 - **Trazabilidad**: cada acción relevante queda anotada en un registro que se puede consultar desde la propia aplicación.
+- **Interfaz en español e inglés** (*Opciones › Idioma*): «Predeterminado del sistema» (por defecto: el idioma de Windows si es español y, si no, inglés), Español o English, con cambio inmediato. En inglés, los metadatos que se descarguen a partir de ese momento (descripción y categoría) llegan en inglés; los gamelists que ya tienes no se tocan.
 - **Carpetas de trabajo configurables** (menú *Opciones*): la carpeta de datos de la aplicación y la carpeta de temporales se pueden cambiar; si eliges una vacía, la aplicación crea en ella los archivos mínimos de trabajo.
 
 ## Capturas
