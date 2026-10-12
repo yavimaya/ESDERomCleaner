@@ -12,11 +12,13 @@ namespace ESDERomCleaner;
 public sealed partial class RomCleanerForm : LocalizedForm
 {
     private readonly TextBox root = new() { Dock = DockStyle.Fill, PlaceholderText = "Carpeta que contiene Roms y ES-DE" };
-    private readonly Button browse = new() { Text = "Examinar…" }, cloneButton = new() { Text = "Clonar" }, scan = new() { Text = "Analizar colección" }, cancel = new() { Text = "Cancelar", Enabled = false }, deleteSelected = new() { Text = "ELIMINAR", Enabled = false, ForeColor = Color.DarkRed };
+    private readonly Button browse = new() { Text = "Examinar…" }, cloneButton = new() { Text = "Clonar" }, scan = new() { Text = "Analizar colección" }, cancel = new() { Text = "Cancelar", Enabled = false }, deleteSelected = new() { Text = "Eliminar\r\nSeleccionadas", Enabled = false, ForeColor = Color.DarkRed };
     private readonly ComboBox systems = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
     private readonly TextBox search = new() { Width = 190, PlaceholderText = "Buscar (3 caracteres mínimo)" };
-    private readonly CheckBox regex = new() { Text = "Regex" };
-    private readonly Button selectAll = new() { Text = "Seleccionar visibles", AutoSize = true };
+    // Ámbito de la búsqueda: el sistema seleccionado (su nombre sale en el botón) o todos. El texto se interpreta siempre como expresión regular.
+    private readonly RadioButton searchInSystem = new() { Text = "Este sistema", Checked = true, Tag = "noloc" };
+    private readonly RadioButton searchInAll = new() { Text = "Todos" };
+    private readonly Button selectAll = new() { Text = "Seleccionar", AutoSize = true };
     private readonly Button deselectAll = new() { Text = "Deseleccionar", AutoSize = true };
     private readonly Button clearSelection = new() { Text = "Vaciar selección", AutoSize = true, Enabled = false };
     private readonly ManualDoubleClickCheckedListBox categories = new() { Dock = DockStyle.Fill, CheckOnClick = false, SelectionMode = SelectionMode.One };
@@ -33,18 +35,18 @@ public sealed partial class RomCleanerForm : LocalizedForm
     private readonly ToolStripMenuItem datManager = new("Bases de datos de ROMs…") { ToolTipText = "Descarga y actualiza los DAT de No-Intro y Redump con los que se identifican las ROMs." };
     private readonly ToolStripMenuItem createGamelists =new("Crear gamelists desde las ROMs…") { ToolTipText = "Crea los gamelist.xml que faltan y añade a los existentes las ROMs que no figuran, sin modificar lo que ya tienen." };
     private readonly ToolStripMenuItem bulkMedia =new("Descarga masiva de medios…");
-    private readonly System.Windows.Forms.Timer videoPreviewTimer = new() { Interval = 3000 };
+    private readonly System.Windows.Forms.Timer videoPreviewTimer = new() { Interval = 4000 };
     private readonly System.Windows.Forms.Timer videoMonitorTimer = new() { Interval = 250 };
     private LibVLC? libVlc;
     private MediaPlayer? mediaPlayer;
     private Media? currentVideoMedia;
     private RomRow? pendingVideoRow;
     private int pendingVideoVersion;
-    private readonly GroupBox miximageGroup = new() { Text = "Miximage de la ROM enfocada", Dock = DockStyle.Fill };
+    private readonly GroupBox miximageGroup = new() { Text = "Imagen de la ROM enfocada", Dock = DockStyle.Fill };
     private int previewVersion;
     private readonly TextBox details = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, WordWrap = false, Font = new Font("Consolas", 9F) };
     private readonly TextBox description = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, WordWrap = true };
-    private readonly Label systemSummary = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, Text = "Selecciona un sistema tras analizar." };
+    private readonly Label systemSummary = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleCenter, Text = "Selecciona un sistema tras analizar." };
     private readonly Label status = new() { AutoSize = true, Text = "Elige la carpeta raíz y analiza la colección." }, selectionLabel = new() { AutoSize = true, Text = "Seleccionadas: 0" };
     private readonly Label liveCounters = new() { Dock = DockStyle.Fill, AutoEllipsis = true, Text = "Sistemas: 0 | ROMs: 0 | Ambiguas: 0 | Ficheros: 0" };
     private readonly NotebookButton extensionButton = new();
@@ -56,6 +58,10 @@ public sealed partial class RomCleanerForm : LocalizedForm
     private Dictionary<string, int> systemFileCounts = new(StringComparer.OrdinalIgnoreCase);
     private int gamelistCount;
     private long mediaBytes;
+    // Huecos (sin metadatos, sin miximage, sin vídeo) por sistema: el texto de cada línea abre el menú para scrapear lo que falta.
+    private Dictionary<string, GapCount>? gaps;
+    private readonly GapSummary systemGaps = new(center: true) { Dock = DockStyle.Fill };
+    private readonly GapSummary collectionGaps = new(center: true) { Dock = DockStyle.Fill };
     private bool sizesCalculating;
     private string cachePath = "—";
     private CancellationTokenSource? cts;
@@ -93,24 +99,15 @@ public sealed partial class RomCleanerForm : LocalizedForm
         catch { return defaults; }
     }
 
+    // Cada opción es una clave de settings.json: así no se pisan el resto de preferencias de la aplicación.
     private static void WriteOptions(AppOptions options)
     {
-        string? temporary = null;
-        try
-        {
-            string path = OptionsPath;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            temporary = path + ".tmp_" + Guid.NewGuid().ToString("N");
-            var json = JsonSerializer.Serialize(options, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(temporary, json, new UTF8Encoding(false));
-            File.Move(temporary, path, true);
-        }
-        finally
-        {
-            if (temporary is not null && File.Exists(temporary)) try { File.Delete(temporary); } catch { }
-        }
+        AppSettings.Set(nameof(AppOptions.CreateGamelistBackups), options.CreateGamelistBackups);
+        AppSettings.Set(nameof(AppOptions.ShowVideos), options.ShowVideos);
+        AppSettings.Set(nameof(AppOptions.VideoSound), options.VideoSound);
+        AppSettings.Set(nameof(AppOptions.ShowAccessorySystems), options.ShowAccessorySystems);
+        AppSettings.Set(nameof(AppOptions.RootPath), options.RootPath);
     }
-
     private void SaveBackupPreference(bool enabled)
     {
         try
@@ -200,7 +197,6 @@ public sealed partial class RomCleanerForm : LocalizedForm
     {
         backupOption.Click += (_, _) => SaveBackupPreference(backupOption.Checked);
         browse.Click += (_, _) => { ClearSearchForContextChange(); using var d = new FolderBrowserDialog { Description = Loc.T("Selecciona la carpeta con Roms y ES-DE") }; if (d.ShowDialog(this) == DialogResult.OK) root.Text = d.SelectedPath; };
-        cloneButton.Click += (_, _) => OpenCloneDialog();
         root.Enter += (_, _) => ClearSearchForContextChange();
         systems.Enter += (_, _) => ClearSearchForContextChange();
         systems.DropDown += (_, _) => ClearSearchForContextChange();
@@ -231,9 +227,9 @@ public sealed partial class RomCleanerForm : LocalizedForm
             BeginInvoke(new Action(() => ApplyRomCheck(path, isChecked)));
         };
         roms.DoubleClick += (_, _) => ToggleFocused(); roms.SelectedIndexChanged += (_, _) => { if (!changing) ShowDetails(); };
-        search.TextChanged += (_, _) => RefreshList(); regex.CheckedChanged += (_, _) => RefreshList();
+        search.TextChanged += (_, _) => RefreshList(); searchInAll.CheckedChanged += (_, _) => RefreshList();
         roms.MouseDown += (_, e) => { if (e.Button == MouseButtons.Right) { int i = roms.IndexFromPoint(e.Location); if (i >= 0) roms.SelectedIndex = i; } };
-        roms.ContextMenuStrip = new ContextMenuStrip(); roms.ContextMenuStrip.Items.Add(selectContext);
+        roms.ContextMenuStrip = new ContextMenuStrip { ShowImageMargin = false }; roms.ContextMenuStrip.Items.Add(selectContext);
         roms.ContextMenuStrip.Items.Add("Editar metadatos…", null, (_, _) => EditMetadata());
         roms.ContextMenuStrip.Items.Add("Scrapear con ScreenScraper…", null, (_, _) => OpenScraperDialog());
         roms.ContextMenuStrip.Opening += (_, e) => { if (roms.SelectedItem is not RomItem item) e.Cancel = true; else selectContext.Text = selected.Contains(item.Row.Path) ? "Quitar de selección" : "Añadir a selección"; };
@@ -246,13 +242,19 @@ public sealed partial class RomCleanerForm : LocalizedForm
             {
                 videoPreviewTimer.Stop();
                 StopVideoPlayback();
-                miximageGroup.Text = pendingVideoRow is null ? "Miximage de la ROM enfocada" : $"Miximage de {pendingVideoRow.GameName}";
+                miximageGroup.Text = pendingVideoRow is null ? "Imagen de la ROM enfocada" : $"Imagen de {pendingVideoRow.GameName}";
             }
             else if (pendingVideoRow is not null) ScheduleVideoPreview(pendingVideoRow, pendingVideoVersion);
         };
         bulkMedia.Click += async (_, _) => await OpenBulkMediaDialogAsync();
         WireFolderMenus();
         WireLanguageMenu();
+        WireGaps();
+        WireImageMenu();
+        WireHelp();
+        WireMediaClicks();
+        WireExclude();
+        WireCollections();
         addRoms.Click += async (_, _) => await OpenAddRomsAsync();
         datManager.Click += (_, _) => { using var d = new DatManagerDialog(trace, root.Text.Trim().Trim('"')); d.ShowDialog(this); if (RomDatabase.InstalledCount() > 0) _ = RomDatabase.GetIndexAsync(); };
         createGamelists.Click +=async (_, _) => await CreateGamelistsAsync(scanAfter: true, quiet: false);
@@ -285,20 +287,19 @@ public sealed partial class RomCleanerForm : LocalizedForm
             .ThenBy(item => item.Extension, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        using var dialog = new Form
+        using var dialog = new LocalizedForm
         {
             Text = "Extensiones y datos de colección",
             StartPosition = FormStartPosition.CenterParent,
-            ClientSize = new Size(460, 500),
-            MinimumSize = new Size(380, 340),
+            ClientSize = new Size(720, 540),
+            MinimumSize = new Size(560, 380),
             ShowInTaskbar = false
         };
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(10), ColumnCount = 1, RowCount = 5 };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(6), ColumnCount = 1, RowCount = 4 };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         var summary = new Label
         {
             Dock = DockStyle.Fill,
@@ -331,8 +332,46 @@ public sealed partial class RomCleanerForm : LocalizedForm
         layout.Controls.Add(gamelists, 0, 1);
         layout.Controls.Add(cacheInfo, 0, 2);
         layout.Controls.Add(list, 0, 3);
-        layout.Controls.Add(buttons, 0, 4);
-        dialog.Controls.Add(layout);
+        // Segunda pestaña: por sistema, qué extensiones hay en sus ROMs y cuáles reconoce su systeminfo.txt (o la lista oficial de ES-DE si no hay).
+        string rootPath = root.Text.Trim().Trim('"');
+        var systemList = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, GridLines = true, HideSelection = false };
+        systemList.Columns.Add(Loc.T("Sistema"), 120);
+        systemList.Columns.Add(Loc.T("Encontradas"), 210);
+        systemList.Columns.Add(Loc.T("Reconocidas (systeminfo.txt)"), 170);
+        systemList.Columns.Add(Loc.T("No reconocidas"), 150);
+        foreach (var group in all.Where(row => row.Status == RomStatus.Ok).GroupBy(row => row.System, StringComparer.OrdinalIgnoreCase).OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var found = group.GroupBy(row => Path.GetExtension(row.Path).ToLowerInvariant(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => (Extension: g.Key.Length == 0 ? "(sin extensión)" : g.Key, Count: g.Count()))
+                .OrderByDescending(x => x.Count).ThenBy(x => x.Extension, StringComparer.OrdinalIgnoreCase).ToList();
+            var allowed = SystemFormats.AllowedExtensions(rootPath, group.Key);
+            string Names(IEnumerable<(string Extension, int Count)> items) => string.Join(", ", items.Select(x => x.Extension));
+            var recognized = allowed is null ? [] : found.Where(x => allowed.Contains(x.Extension)).ToList();
+            var unrecognized = allowed is null ? [] : found.Where(x => !allowed.Contains(x.Extension)).ToList();
+            var item = new ListViewItem(new[]
+            {
+                group.Key,
+                string.Join(", ", found.Select(x => $"{x.Extension} ({x.Count:N0})")),
+                allowed is null ? Loc.T("(sin lista)") : recognized.Count == 0 ? Loc.T("ninguna") : Names(recognized),
+                allowed is null ? "" : unrecognized.Count == 0 ? "—" : string.Join(", ", unrecognized.Select(x => $"{x.Extension} ({x.Count:N0})"))
+            });
+            if (unrecognized.Count > 0) { item.ForeColor = Color.Firebrick; item.Font = new Font(systemList.Font, FontStyle.Bold); }
+            systemList.Items.Add(item);
+        }
+
+        var tabs = new TabControl { Dock = DockStyle.Fill };
+        var pageExtensions = new TabPage("Extensiones") { Padding = new Padding(4) };
+        pageExtensions.Controls.Add(layout);
+        var pageSystems = new TabPage("Por sistema") { Padding = new Padding(4) };
+        pageSystems.Controls.Add(systemList);
+        tabs.TabPages.Add(pageExtensions);
+        tabs.TabPages.Add(pageSystems);
+        var outer = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(10), ColumnCount = 1, RowCount = 2 };
+        outer.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        outer.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        outer.Controls.Add(tabs, 0, 0);
+        outer.Controls.Add(buttons, 0, 1);
+        dialog.Controls.Add(outer);
         dialog.AcceptButton = close;
         trace.Add("extensions_dialog_opened", $"extensions={counts.Length}; roms={counts.Sum(item => item.Count)}; gamelists={gamelistCount}; cache={cachePath}");
         dialog.ShowDialog(this);
@@ -344,5 +383,8 @@ public sealed partial class RomCleanerForm : LocalizedForm
     }
 
     private sealed record CategoryItem(string Genre, int RomCount) { public override string ToString() => $"{Genre} [{RomCount:N0}]"; }
-    private sealed record RomItem(RomRow Row) { public override string ToString() => Row.Display; }
+    private sealed record RomItem(RomRow Row, bool ShowSystem = false, string? FileHint = null)
+    {
+        public override string ToString() => (ShowSystem ? $"[{Row.System}] {Row.Display}" : Row.Display) + (FileHint is null ? "" : $" ({FileHint})");
+    }
 }

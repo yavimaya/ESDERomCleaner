@@ -94,13 +94,14 @@ public sealed partial class RomCleanerForm : LocalizedForm
     private async void ShowDetails()
     {
         StopVideoPlayback();
+        ResetRomMedia();
         if (roms.SelectedItem is not RomItem item)
         {
             pendingVideoRow = null;
             previewVersion++;
             preview.Image?.Dispose();
             preview.Image = null;
-            miximageGroup.Text = "Miximage de la ROM enfocada";
+            miximageGroup.Text = "Imagen de la ROM enfocada";
             description.Text = "Selecciona una ROM para ver su descripción.";
             return;
         }
@@ -116,10 +117,10 @@ public sealed partial class RomCleanerForm : LocalizedForm
         preview.Visible = true;
         preview.Image?.Dispose();
         preview.Image = null;
-        miximageGroup.Text = $"Miximage de {row.GameName}";
+        miximageGroup.Text = $"Imagen de {row.GameName}";
         try
         {
-            string? imagePath = await Task.Run(() => FindMiximage(root.Text, row));
+            string? imagePath = await Task.Run(() => FindImage(root.Text, row, ImageSettings.Folder));
             if (version != previewVersion) return;
             if (!string.IsNullOrEmpty(imagePath))
             {
@@ -134,9 +135,9 @@ public sealed partial class RomCleanerForm : LocalizedForm
         }
     }
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<string[]>> MiximageFileIndex = new(StringComparer.OrdinalIgnoreCase);
-    private static string? FindMiximage(string rootPath, RomRow row)
+    private static string? FindImage(string rootPath, RomRow row, string folder)
     {
-        string dir = Path.Combine(rootPath, "ES-DE", "downloaded_media", row.System, "miximages");
+        string dir = Path.Combine(rootPath, "ES-DE", "downloaded_media", row.System, folder);
         if (!Directory.Exists(dir)) return null;
         string[] exts = [".png", ".jpg", ".jpeg", ".webp"];
         var stems = new List<string>();

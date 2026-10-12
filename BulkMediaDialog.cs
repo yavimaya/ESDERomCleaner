@@ -5,7 +5,7 @@ namespace ESDERomCleaner;
 
 // Descarga masiva de medios de ScreenScraper para uno o varios sistemas de la colección.
 // Qué se marca al abrir la descarga masiva: lo último que se eligió, solo los metadatos (categorizar), o lo último que se eligió más los metadatos.
-internal enum BulkPreset { Saved, MetadataOnly, WithMetadata }
+internal enum BulkPreset { Saved, MetadataOnly, WithMetadata, MediaOnly, ImageOnly, VideoOnly }
 
 internal sealed class BulkMediaDialog : LocalizedForm
 {
@@ -34,8 +34,11 @@ internal sealed class BulkMediaDialog : LocalizedForm
     private readonly CheckBox allMediaCheck = new() { Text = "Todos", AutoSize = true, Margin = new Padding(6, 3, 3, 3) };
     private readonly RadioButton normalizedRadio = new() { Text = "Vídeo normalizado (más ligero, mejor para Android)", AutoSize = true, Margin = new Padding(26, 0, 3, 0) };
     private readonly RadioButton originalRadio = new() { Text = "Vídeo original (el de mayor calidad y tamaño)", AutoSize = true, Margin = new Padding(26, 0, 3, 0) };
-    private readonly CheckBox overwriteCheck = new() { Text = "Sobrescribir si en destino ya existe un archivo de esa ROM en la carpeta", AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 3, 3, 3) };
+    private readonly CheckBox overwriteCheck = new() { Text = "Sobrescribir si ya existe: archivos de medios en destino y metadatos de juegos que ya los tienen", AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 3, 3, 3) };
     private readonly CheckBox backupCheck = new() { Text = "Guardar copia de seguridad de lo sustituido", AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(26, 3, 3, 3) };
+    private readonly CheckBox onlyNoMetadataCheck = new() { Text = "Solo las ROMs sin categoría", AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 3, 3, 3) };
+    private readonly CheckBox onlyNoMediaCheck = new() { Text = "Solo las ROMs que no tienen imagen o vídeo (si marcas las dos, las que les falte algo)", AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 3, 3, 3) };
+    private GapRows? gapRows;
     private readonly CheckBox searchNameCheck = new() { Text = "Si no se reconoce por hash, buscar por el nombre exacto del juego en su sistema", AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 3, 3, 3) };
     private readonly RadioButton overwriteAlwaysRadio = new() { Text = "Siempre", AutoSize = true, Margin = new Padding(26, 0, 3, 0) };
     private readonly RadioButton overwriteSizeRadio = new() { Text = "Solo si el tamaño es distinto del actual", AutoSize = true, Margin = new Padding(26, 0, 3, 0) };
@@ -44,6 +47,9 @@ internal sealed class BulkMediaDialog : LocalizedForm
     private readonly Button startButton = new() { Text = "Scrapear", AutoSize = true, MinimumSize = new Size(130, 30) };
     private readonly Button cancelButton = new() { Text = "Cancelar", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
     private readonly Button viewSummaryButton = new() { Text = "Ver resumen", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
+    private readonly BulkDebugLog debugLog = new();
+    private BulkDebugDialog? debugWindow;
+    private readonly Button debugButton = new() { Text = "Registro…", AutoSize = true, MinimumSize = new Size(90, 30) };
     private readonly Button exportButton = new() { Text = "Exportar incidencias…", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
     private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 30), DialogResult = DialogResult.Cancel };
     private readonly Label summaryLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
@@ -75,6 +81,9 @@ internal sealed class BulkMediaDialog : LocalizedForm
         ApplySettings(BulkMediaSettings.Load(defaultNormalizedVideo));
         if (preset == BulkPreset.MetadataOnly) foreach (var pair in folderChecks) pair.Value.Checked = pair.Key == "metadata";
         else if (preset == BulkPreset.WithMetadata) folderChecks["metadata"].Checked = true;
+        else if (preset == BulkPreset.ImageOnly) foreach (var pair in folderChecks) pair.Value.Checked = pair.Key == ImageSettings.Folder;
+        else if (preset == BulkPreset.VideoOnly) foreach (var pair in folderChecks) pair.Value.Checked = pair.Key == "videos";
+        else if (preset == BulkPreset.MediaOnly) foreach (var pair in folderChecks) pair.Value.Checked = pair.Key == ImageSettings.Folder || pair.Key == "videos";
         FillSystems();
 
         // Doble clic en cualquier parte de la fila (menos en su casilla, que ya responde a cada clic) marca o desmarca el sistema.
@@ -104,6 +113,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         startButton.Click += async (_, _) => await StartAsync();
         cancelButton.Click += (_, _) => { cts?.Cancel(); statusLabel.Text = "Cancelando…"; };
         exportButton.Click += (_, _) => ExportIssues();
+        debugButton.Click += (_, _) => OpenDebugWindow();
         viewSummaryButton.Click += (_, _) => ShowResult();
         Shown += async (_, _) =>
         {
@@ -210,6 +220,10 @@ internal sealed class BulkMediaDialog : LocalizedForm
         overwriteRow.Controls.Add(overwriteSizeRadio);
         optionsFlow.Controls.Add(overwriteRow);
         optionsFlow.Controls.Add(backupCheck);
+        optionsFlow.Controls.Add(onlyNoMetadataCheck);
+        optionsFlow.Controls.Add(onlyNoMediaCheck);
+        onlyNoMetadataCheck.CheckedChanged += (_, _) => RefreshRomFilter();
+        onlyNoMediaCheck.CheckedChanged += (_, _) => RefreshRomFilter();
         optionsFlow.Controls.Add(searchNameCheck);
         optionsFlow.Controls.Add(threadsInfo);
         var optionsGroup = new GroupBox { Text = "Opciones", Dock = DockStyle.Fill };
@@ -247,13 +261,14 @@ internal sealed class BulkMediaDialog : LocalizedForm
         issuesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "rom", HeaderText = "ROM", Width = 330 });
         issuesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "result", HeaderText = "Resultado", Width = 150 });
         issuesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "detail", HeaderText = "Detalle", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
-        var issuesGroup = new GroupBox { Text = "Incidencias (ROMs no encontradas, encontradas por nombre y errores)", Dock = DockStyle.Fill };
+        var issuesGroup = new GroupBox { Text = "Incidencias (ROMs no encontradas, encontradas por nombre, medios no disponibles y errores)", Dock = DockStyle.Fill };
         issuesGroup.Controls.Add(issuesGrid);
 
         // ---- Botones
         var centerButtons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, Margin = Padding.Empty };
         centerButtons.Controls.Add(startButton);
         centerButtons.Controls.Add(cancelButton);
+        centerButtons.Controls.Add(debugButton);
         centerButtons.Controls.Add(exportButton);
         centerButtons.Controls.Add(viewSummaryButton);
         centerButtons.Controls.Add(closeButton);
@@ -316,13 +331,37 @@ internal sealed class BulkMediaDialog : LocalizedForm
 
     // ---- Sistemas
 
+    // ROMs a las que se aplica la descarga: todas, o solo las que no tienen metadatos y/o las que no tienen imagen o vídeo (si se marcan las dos, las que les falte alguna cosa).
+    private IReadOnlyList<RomRow> ActiveRoms
+    {
+        get
+        {
+            if (!onlyNoMetadataCheck.Checked && !onlyNoMediaCheck.Checked) return roms;
+            gapRows ??= MediaGaps.Rows(root, roms);
+            var gap = gapRows;
+            return roms.Where(r => (onlyNoMetadataCheck.Checked && gap.NoMetadata.Contains(r.Path)) || (onlyNoMediaCheck.Checked && gap.NoMedia.Contains(r.Path))).ToList();
+        }
+    }
+
+    // Al cambiar el filtro se recalcula la lista de sistemas conservando los que estaban marcados.
+    private void RefreshRomFilter()
+    {
+        if (updating) return;
+        foreach (DataGridViewRow row in systemsGrid.Rows)
+        {
+            string system = (string)row.Cells["system"].Value!;
+            if (row.Cells["use"].Value is true) preselectedSystems.Add(system); else preselectedSystems.Remove(system);
+        }
+        FillSystems();
+    }
+
     private void FillSystems()
     {
         updating = true;
         try
         {
             systemsGrid.Rows.Clear();
-            foreach (var group in roms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0)
+            foreach (var group in ActiveRoms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0)
                                       .GroupBy(r => r.System, StringComparer.OrdinalIgnoreCase)
                                       .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
                 systemsGrid.Rows.Add(preselectedSystems.Contains(group.Key), group.Key, "", group.Count());
@@ -411,7 +450,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
     private BulkMediaOptions BuildOptions(List<string> systems)
     {
         var folders = EsDeMediaInstaller.Folders.Where(f => folderChecks[f.Folder].Checked).ToList();
-        return new BulkMediaOptions(root, roms, ssSystems, systems, folders, normalizedRadio.Checked, OverwriteMode(), OverwriteMode() != BulkOverwrite.No && backupCheck.Checked, searchNameCheck.Checked, Threads(), folderChecks["metadata"].Checked, gamelistBackups, folderChecks["languages"].Checked);
+        return new BulkMediaOptions(root, ActiveRoms, ssSystems, systems, folders, normalizedRadio.Checked, OverwriteMode(), OverwriteMode() != BulkOverwrite.No && backupCheck.Checked, searchNameCheck.Checked, Threads(), folderChecks["metadata"].Checked, gamelistBackups, folderChecks["languages"].Checked);
     }
 
     private async Task StartAsync()
@@ -440,7 +479,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
             statusLabel.Text = "Los sistemas marcados no tienen ROMs que procesar.";
             return;
         }
-        var counts = roms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0)
+        var counts = ActiveRoms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0)
             .GroupBy(r => r.System, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
         var rows = systems.Select(s => (s, counts.GetValueOrDefault(s))).ToList();
@@ -483,7 +522,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
             gridRow.Cells["rom"].ToolTipText = i.Rom;
             UpdateExportButton();
         });
-        var runner = new BulkMediaRunner(options, credentials, trace, status, issues);
+        var runner = new BulkMediaRunner(options, credentials, trace, status, issues) { Debug = debugLog.Add };
         activeRunner = runner;
         uiTimer.Start();
         try { await runner.RunAsync(cts.Token); }
@@ -592,7 +631,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         selectAllButton.Enabled = selectNoneButton.Enabled = !locked;
         foreach (var check in folderChecks.Values) check.Enabled = !locked;
         allMediaCheck.Enabled = !locked;
-        overwriteCheck.Enabled = searchNameCheck.Enabled = !locked;
+        overwriteCheck.Enabled = searchNameCheck.Enabled = onlyNoMetadataCheck.Enabled = onlyNoMediaCheck.Enabled = !locked;
         startButton.Enabled = closeButton.Enabled = !locked; UpdateExportButton();
         viewSummaryButton.Enabled = !locked && lastResult is not null;
         cancelButton.Enabled = running;
@@ -601,6 +640,15 @@ internal sealed class BulkMediaDialog : LocalizedForm
     }
 
     // «Exportar incidencias» solo está disponible cuando hay alguna en la lista.
+    // Ventana (no modal) con el registro de depuración en directo; si ya está abierta, se trae al frente.
+    private void OpenDebugWindow()
+    {
+        if (debugWindow is { IsDisposed: false }) { debugWindow.Activate(); return; }
+        debugWindow = new BulkDebugDialog(debugLog);
+        debugWindow.FormClosed += (_, _) => debugWindow = null;
+        debugWindow.Show(this);
+    }
+
     private void UpdateExportButton() => exportButton.Enabled = issuesGrid.Rows.Count > 0;
 
     private void ExportIssues()

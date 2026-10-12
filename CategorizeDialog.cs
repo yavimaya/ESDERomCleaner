@@ -17,6 +17,7 @@ internal sealed class CategorizeDialog : LocalizedForm
     private readonly CancellationTokenSource cts = new();
     private BulkMediaRunner? runner;
     private int plannedWork;
+    private readonly List<BulkIssue> issueList = [];
 
     public bool MetadataChanged { get; private set; }
     public string Result { get; private set; } = "";
@@ -86,7 +87,7 @@ internal sealed class CategorizeDialog : LocalizedForm
 
             bar.Style = ProgressBarStyle.Blocks;
             var status = new Progress<BulkStatus>(s => statusLabel.Text = s.Text);
-            runner = new BulkMediaRunner(options, credentials, trace, status, null);
+            runner = new BulkMediaRunner(options, credentials, trace, status, new Progress<BulkIssue>(i => { lock (issueList) issueList.Add(i); }));
             timer.Start();
             await runner.RunAsync(cts.Token);
             MetadataChanged = runner.MetadataChanged;
@@ -94,6 +95,15 @@ internal sealed class CategorizeDialog : LocalizedForm
             Result = summary.StoppedReason.Length > 0 ? summary.StoppedReason
                 : $"Categorizadas {summary.MetadataUpdated:N0} ROM(s)" +
                   (summary.NotFound > 0 ? $"; {summary.NotFound:N0} no encontradas" : "") + (summary.MetadataFailed > 0 ? $"; {summary.MetadataFailed:N0} fallidas" : "") + ".";
+            // Si alguna ROM no se ha encontrado en ScreenScraper, se muestra el resumen de lo hecho; si se han encontrado todas, no.
+            if (summary.StoppedReason.Length == 0 && (summary.NotFound > 0 || !summary.NoGenre.IsEmpty) && !cts.IsCancellationRequested)
+            {
+                await Task.Delay(300); // deja que lleguen las últimas incidencias
+                string[] missing;
+                lock (issueList) missing = issueList.Select(i => $"{i.System}: {i.Rom}").Concat(summary.NoGenre).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+                using var report = new CategorizeSummaryDialog(Math.Max(0, summary.MetadataUpdated - summary.NoGenre.Count), summary.NoGenre.Count, summary.NotFound, summary.MetadataFailed, missing);
+                report.ShowDialog(this);
+            }
         }
         catch (OperationCanceledException) { MetadataChanged |= runner?.MetadataChanged ?? false; Result = "Categorización cancelada."; }
         catch (Exception ex) { trace.Add("categorize_error", ex.ToString()); Result = "No se pudo categorizar: " + ex.Message; QuietMessage.Show(this, "Categorizar", Result); }
@@ -102,5 +112,35 @@ internal sealed class CategorizeDialog : LocalizedForm
             timer.Stop();
             if (!IsDisposed) { DialogResult = DialogResult.OK; Close(); }
         }
+    }
+}
+
+// Resumen de la categorización cuando a alguna ROM no se le encontró categoría en ScreenScraper: qué se hizo y cuáles siguen sin ella.
+internal sealed class CategorizeSummaryDialog : LocalizedForm
+{
+    public CategorizeSummaryDialog(int categorized, int noGenre, int notFound, int failed, string[] missing)
+    {
+        Text = "Categorizar";
+        FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
+        StartPosition = FormStartPosition.CenterParent;
+        Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
+        ClientSize = new Size(520, 320);
+        var lines = new List<string> { $"Categorizadas: {categorized:N0}" };
+        if (noGenre > 0) lines.Add($"Sin categoría en ScreenScraper: {noGenre:N0}");
+        if (notFound > 0) lines.Add($"No encontradas en ScreenScraper: {notFound:N0}");
+        if (failed > 0) lines.Add($"Fallidas: {failed:N0}");
+        var summary = new Label { Location = new Point(12, 12), Size = new Size(496, 22 * lines.Count), AutoSize = false, Text = string.Join("\r\n", lines) };
+        var caption = new Label { Text = "ROMs que siguen sin categoría:", Location = new Point(12, 20 + 22 * lines.Count), Size = new Size(496, 22) };
+        int top = 44 + 22 * lines.Count;
+        // Los nombres de las ROMs no se traducen (Tag «noloc»).
+        var list = new TextBox
+        {
+            Location = new Point(12, top), Size = new Size(496, 320 - top - 52), Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Tag = "noloc",
+            BackColor = SystemColors.Window,
+            Text = missing.Length == 0 ? "" : string.Join("\r\n", missing.Take(200)) + (missing.Length > 200 ? $"\r\n… (+{missing.Length - 200:N0})" : "")
+        };
+        var ok = new Button { Text = "Aceptar", Size = new Size(90, 28), Location = new Point(418, 320 - 40), DialogResult = DialogResult.OK };
+        AcceptButton = ok; CancelButton = ok;
+        Controls.AddRange([summary, caption, list, ok]);
     }
 }

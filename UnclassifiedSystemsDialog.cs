@@ -19,7 +19,7 @@ internal sealed class UnclassifiedSystemsDialog : LocalizedForm
         int gridHeight = headerHeight + visibleRows * rowHeight + 2;
         ClientSize = new Size(width, 8 + 20 + 4 + gridHeight + 8 + 20 + 20 + 4 + 40);
 
-        var header = new Label { Text = "Sistemas sin categorización:", Location = new Point(10, 8), Size = new Size(width - 20, 20), AutoSize = false };
+        var header = new Label { Text = $"Sistemas con ROMs sin categoría: {systems.Count:N0} sistemas · {systems.Sum(s => s.Roms):N0} ROMs", Location = new Point(10, 8), Size = new Size(width - 20, 20), AutoSize = false };
         var grid = new StaticGrid
         {
             Location = new Point(10, 32), Size = new Size(width - 20, gridHeight),
@@ -27,12 +27,12 @@ internal sealed class UnclassifiedSystemsDialog : LocalizedForm
         };
         grid.ApplyInfoStyle(rowHeight, headerHeight);
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sistema", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, SortMode = DataGridViewColumnSortMode.NotSortable });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ROMs", Width = 90, SortMode = DataGridViewColumnSortMode.NotSortable, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter }, HeaderCell = { Style = { Alignment = DataGridViewContentAlignment.MiddleCenter } } });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ROMs sin categoría", Width = 130, SortMode = DataGridViewColumnSortMode.NotSortable, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter }, HeaderCell = { Style = { Alignment = DataGridViewContentAlignment.MiddleCenter } } });
         foreach (var (system, roms) in systems) grid.Rows.Add(system, roms.ToString("N0"));
         grid.ClearSelection();
 
         int y = 32 + gridHeight + 8;
-        var question = new Label { Text = "¿Desea categorizar estos sistemas, o categorizar y descargar también sus medios?", Location = new Point(10, y), Size = new Size(width - 20, 20), AutoSize = false };
+        var question = new Label { Text = "¿Desea categorizar esas ROMs, o categorizar y descargar también sus medios?", Location = new Point(10, y), Size = new Size(width - 20, 20), AutoSize = false };
         var hint = new Label { Text = "Puede hacerlo más adelante desde el menú de Scrapeo.", ForeColor = SystemColors.GrayText, Location = new Point(10, y + 20), Size = new Size(width - 20, 20), AutoSize = false };
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 40, Padding = new Padding(6, 8, 6, 2) };

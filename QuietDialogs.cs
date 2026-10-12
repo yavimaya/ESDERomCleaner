@@ -95,8 +95,11 @@ internal static class QuietMessage
         dialog.Controls.Add(buttons);
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
-        var size = TextRenderer.MeasureText(text, dialog.Font, new Size(672, 0), TextFormatFlags.WordBreak);
-        dialog.ClientSize = new Size(700, Math.Clamp(size.Height + 12 + 44 + 20, 120, 640));
+        // Ancho ajustado a la línea más larga (hasta 700) y alto al texto resultante.
+        int width = Math.Clamp(TextRenderer.MeasureText(text, dialog.Font, new Size(672, 0), TextFormatFlags.WordBreak).Width + 28 + 8, 400, 700);
+        var size = TextRenderer.MeasureText(text, dialog.Font, new Size(width - 28, 0), TextFormatFlags.WordBreak);
+        dialog.ClientSize = new Size(width, Math.Clamp(size.Height + 12 + 44 + 20, 120, 640));
+        CollectionTitle.Attach(dialog);
         return dialog.ShowDialog(owner) == DialogResult.OK;
     }
 
@@ -119,8 +122,10 @@ internal static class QuietMessage
         dialog.CancelButton = ok;
 
         // Alto ajustado al texto.
-        var size = TextRenderer.MeasureText(text, dialog.Font, new Size(496, 0), TextFormatFlags.WordBreak);
-        dialog.ClientSize = new Size(520, Math.Clamp(size.Height + 12 + 40 + 16, 100, 520));
+        int width = Math.Clamp(TextRenderer.MeasureText(text, dialog.Font, new Size(496, 0), TextFormatFlags.WordBreak).Width + 24 + 8, 320, 520);
+        var size = TextRenderer.MeasureText(text, dialog.Font, new Size(width - 24, 0), TextFormatFlags.WordBreak);
+        dialog.ClientSize = new Size(width, Math.Clamp(size.Height + 12 + 40 + 16, 100, 520));
+        CollectionTitle.Attach(dialog);
         dialog.ShowDialog(owner);
     }
 
@@ -153,6 +158,7 @@ internal static class QuietMessage
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
         dialog.Shown += (_, _) => { box.Focus(); box.SelectAll(); };
+        CollectionTitle.Attach(dialog);
         if (dialog.ShowDialog(owner) != DialogResult.OK) return null;
         string text = box.Text.Trim();
         return text.Length == 0 ? null : text;

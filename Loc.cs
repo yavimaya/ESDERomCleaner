@@ -30,7 +30,6 @@ internal static class Loc
     private static readonly List<(WeakReference<ToolTip> Tip, WeakReference<Control> Control, string Spanish)> Tips = [];
     private static bool suppress;
 
-    private static string LanguageFile => Path.Combine(AppPaths.Data, "language.txt");
 
     public static string Language { get; private set; } = "es";
     public static bool English => Language == "en";
@@ -48,12 +47,8 @@ internal static class Loc
         }
         Templates.Sort((a, b) => b.Literal.CompareTo(a.Literal));
         // Sin elección guardada se usa el idioma del sistema operativo (español) y, si no es español, inglés.
-        try
-        {
-            string saved = File.ReadAllText(LanguageFile).Trim();
-            if (saved is "en" or "es" or "system") Setting = saved;
-        }
-        catch { /* sin archivo: idioma del sistema */ }
+        string saved = AppSettings.Get("Language", "system");
+        if (saved is "en" or "es" or "system") Setting = saved;
         Language = Resolve(Setting);
         try { Extra = new Dictionary<string, string>(GenreNames.LoadCache(), StringComparer.OrdinalIgnoreCase); } catch { }
     }
@@ -101,7 +96,7 @@ internal static class Loc
     {
         if (code is not ("en" or "es" or "system") || code == Setting) return;
         Setting = code;
-        try { Directory.CreateDirectory(AppPaths.Data); File.WriteAllText(LanguageFile, code); } catch { }
+        AppSettings.Set("Language", code);
         string effective = Resolve(code);
         if (effective == Language) return;
         Language = effective;
@@ -390,6 +385,7 @@ public class LocalizedForm : Form
     protected override void OnLoad(EventArgs e)
     {
         Loc.Attach(this);
+        CollectionTitle.Attach(this); // el nombre de la colección actual aparece en el título de todos los formularios
         base.OnLoad(e);
     }
 }

@@ -125,6 +125,47 @@ internal static class GamelistMetadataWriter
         return updated;
     }
 
+    // Pone los mismos campos (p. ej. nogamecount y nomultiscrape = true) en los juegos con esas rutas relativas. Mismo cuidado que Apply: raíz sintética,
+    // formato intacto, escritura atómica y comprobación del resultado. Devuelve cuántos juegos cambió.
+    public static int SetFields(string gamelistPath, IEnumerable<string> relativePaths, IReadOnlyDictionary<string, string> fields, bool backup, List<string> errors)
+    {
+        string directory = Path.GetDirectoryName(Path.GetFullPath(gamelistPath))!;
+        if (DeletionService.HasReparsePointInPath(gamelistPath, directory))
+            throw new InvalidOperationException("El gamelist.xml es un enlace simbólico o unión; no se modifica.");
+
+        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+        var doc = Load(File.ReadAllText(gamelistPath), settings, out string declaration);
+        var games = doc.Descendants()
+            .Where(g => g.Name.LocalName == "game")
+            .GroupBy(g => PathRules.Relative(g.Elements().FirstOrDefault(e => e.Name.LocalName == "path")?.Value))
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        int updated = 0;
+        foreach (string relative in relativePaths.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!games.TryGetValue(relative, out var matches) || matches.Count != 1)
+            {
+                errors.Add($"{relative}: {(matches?.Count ?? 0)} entradas en el gamelist (se necesita exactamente una)");
+                continue;
+            }
+            foreach (var (field, value) in fields) SetField(matches[0], field, value);
+            updated++;
+        }
+        if (updated == 0) return 0;
+
+        string xml = Serialize(doc, declaration);
+        _ = Load(xml, settings, out _);
+        if (backup) File.Copy(gamelistPath, gamelistPath + ".bak_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N"), overwrite: false);
+        string temp = Path.Combine(directory, ".gamelist_" + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            File.WriteAllText(temp, xml, new UTF8Encoding(false));
+            File.Move(temp, gamelistPath, overwrite: true);
+        }
+        finally { if (File.Exists(temp)) try { File.Delete(temp); } catch { } }
+        return updated;
+    }
+
     private static void SetField(XElement game, string field, string value)
     {
         var existing = game.Elements().FirstOrDefault(e => e.Name.LocalName == field);

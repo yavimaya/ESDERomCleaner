@@ -8,7 +8,7 @@ Herramienta de escritorio para Windows que ayuda a **mantener y "curar" una cole
 
 La herramienta trabaja sobre una colección con la **estructura de carpetas de ES-DE** (`Roms`, `ES-DE\gamelists`, `ES-DE\downloaded_media`). Si no la tienes, la propia aplicación puede **crearla completa** y **generar los `gamelist.xml`** a partir de tus ROMs (ver [Estructura de colección](#estructura-de-colección)). Hay más documentación en la [wiki](../../wiki).
 
-La interfaz, los mensajes y los comentarios del código están en **español**.
+La interfaz está en **español e inglés** (*Opciones › Idioma*; por defecto, el idioma de Windows). Los comentarios del código están en español.
 
 ## Qué puedes hacer
 
@@ -25,13 +25,28 @@ La interfaz, los mensajes y los comentarios del código están en **español**.
 - **Clonar la estructura de ES-DE a otra carpeta o a una tarjeta SD** (botón *Clonar*): pensado para llevar la colección ya depurada a Android, donde ES-DE suele usarse con tarjeta SD. Ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd).
 - **Trazabilidad**: cada acción relevante queda anotada en un registro que se puede consultar desde la propia aplicación.
 - **Interfaz en español e inglés** (*Opciones › Idioma*): «Predeterminado del sistema» (por defecto: el idioma de Windows si es español y, si no, inglés), Español o English, con cambio inmediato. En inglés, los metadatos que se descarguen a partir de ese momento (descripción y categoría) llegan en inglés; los gamelists que ya tienes no se tocan.
+- **Colecciones** (menú *Colecciones*): crea una colección con un nombre, su carpeta y un comentario; cárgala cuando quieras desde el menú, que muestra los sistemas, ROMs y tamaño de cada una. Cada colección guarda su propio análisis, así que al volver a ella se ve al instante (con *Re-analizar colección* lo actualizas). Desde el mismo menú: **clonar**, **editar** y **eliminar** colecciones (eliminar solo la quita de la lista) y ver su **resumen**, con una tarjeta que puedes copiar al portapapeles para compartir.
+- **Búsqueda** de ROMs en el sistema seleccionado o en todos (admite expresiones regulares); si el texto solo está en el nombre del archivo, este se muestra entre paréntesis.
+- **Huecos de la colección**: por sistema y en total, cuántos juegos no tienen categoría, imagen o vídeo (la *imagen por defecto* se elige en *Opciones*), con acceso directo a scrapear justo los que faltan.
+- **Excluir seleccionados**: marca ROMs como excluidas del contador y del multiscrapeo de ES-DE (`nogamecount` y `nomultiscrape`), desde la ventana principal o desde el curado, donde además se puede eliminar a partir del menú contextual.
+- **Visor de medios**: un clic sobre la imagen o el vídeo pasa al siguiente medio de la ROM y un doble clic lo abre en una ventana grande.
+- **Registro de la descarga masiva** (botón *Registro…*): todo lo que hace el proceso en directo, ROM a ROM, filtrable con expresiones regulares.
+- Menú **Ayuda**: enlace al repositorio y ventana *Acerca de* con los terceros que usa la aplicación y sus licencias.
 - **Carpetas de trabajo configurables** (menú *Opciones*): la carpeta de datos de la aplicación y la carpeta de temporales se pueden cambiar; si eliges una vacía, la aplicación crea en ella los archivos mínimos de trabajo.
 
 ## Capturas
 
-**Ventana principal.** Sistemas, géneros, ROMs de cada género, miximage y descripción de la ROM enfocada.
+**Ventana principal.** El panel del sistema (con su icono y los huecos de la colección), las ROMs, la imagen o el vídeo de la ROM enfocada y, en el título, la colección cargada.
 
 ![Ventana principal](docs/img/ventana-principal.png)
+
+**Menú Colecciones.** Crear, guardar, editar, clonar y resumir colecciones; cada una muestra sus sistemas, ROMs y tamaño.
+
+![Menú Colecciones](docs/img/menu-colecciones.png)
+
+**Resumen de la colección.** La tarjeta se puede copiar al portapapeles para compartirla.
+
+![Resumen de la colección](docs/img/resumen-coleccion.png)
 
 **Scrapeo de una ROM.** Compara el medio que ya tienes con el que ofrece ScreenScraper (imagen o vídeo, con sonido opcional) y elige qué guardar en cada carpeta de ES-DE.
 
@@ -40,6 +55,10 @@ La interfaz, los mensajes y los comentarios del código están en **español**.
 **Descarga masiva.** Varios sistemas a la vez, con el porcentaje total en el título, el tiempo restante estimado y la lista de incidencias.
 
 ![Descarga masiva de medios](docs/img/descarga-masiva.png)
+
+**Registro de la descarga masiva.** Todo lo que hace el proceso, ROM a ROM y carpeta a carpeta, con filtro (por ejemplo guardados [1-9] para ver solo lo descargado).
+
+![Registro de la descarga masiva](docs/img/registro-descarga.png)
 
 **Curado del romset.** Marca géneros y supracategorías para ver qué ROMs saldrían como candidatas a descartar, con el espacio que liberarías; las excluidas a mano aparecen tachadas.
 
@@ -83,31 +102,32 @@ ES-DE/downloaded_media/<sistema>/<tipo>/...     imágenes, vídeos, manuales…
 
 La carpeta raíz debe contener `Roms` y `ES-DE\gamelists`. Si falta algo (o no has elegido carpeta), la aplicación te lo explica y **te ofrece crear la estructura completa** de ES-DE, vacía. Después, al analizar, si hay ROMs que no figuran en ningún `gamelist.xml` te ofrece **crearlos o ampliarlos** con las ROMs que falten (solo con su ruta y nombre; el resto se rellena con el scrapeo).
 
-La aplicación recuerda la última carpeta raíz que analizó con éxito.
+Al arrancar no hay ninguna colección cargada: elige o crea una en el menú **Colecciones**. La carpeta de una colección se elige al crearla y no se puede cambiar después.
 
 ## Clonar a otra carpeta o a una tarjeta SD
 
-ES-DE es también un frontend para **Android**, donde las colecciones suelen vivir en una **tarjeta SD**. Por eso la aplicación incluye el botón **Clonar** (junto a la ruta raíz), que copia **toda la estructura de ES-DE** (`Roms`, `ES-DE\gamelists` y `ES-DE\downloaded_media`) a otra carpeta o a una unidad, por ejemplo la SD.
+ES-DE es también un frontend para **Android**, donde las colecciones suelen vivir en una **tarjeta SD**. Por eso la aplicación incluye **Colecciones › Clonar colección…**, que copia **toda la estructura de ES-DE** (`Roms`, `ES-DE\gamelists` y `ES-DE\downloaded_media`) a otra carpeta o a una unidad, por ejemplo la SD.
 
-![Clonar a una unidad externa](docs/img/clonar-a-sd.png)
+![Clonar colección](docs/img/clonar-coleccion.png)
 
 - El flujo pensado: depuras la colección (curado, medios con vídeo normalizado, que ocupan menos) y luego la clonas a la SD ya con el tamaño final.
 - Usa `robocopy /MIR` (con tolerancia de marcas de tiempo para tarjetas FAT32/exFAT), así que las siguientes veces solo copia lo que ha cambiado.
+- Si el destino es una **tarjeta SD**, marca la casilla correspondiente (un solo hilo de Robocopy); en cualquier otro medio se usan 4 hilos. El botón **Parar** detiene la copia en curso.
 - **El destino queda como un espejo exacto del origen: lo que haya en el destino y no esté en el origen se elimina.** Elige una carpeta de destino vacía o dedicada a la colección. La aplicación te pide confirmación antes de empezar.
 - Comprueba que origen y destino no se solapan, y muestra un resumen de lo copiado.
 
 
 ## Cómo se usa
 
-1. Indica la carpeta raíz y pulsa **Analizar colección** (si no tiene la estructura de ES-DE o los gamelists, te ofrece crearlos). Para meter ROMs nuevas: menú **Añadir ROMs** (descarga antes las bases de datos en *Añadir ROMs › Bases de datos de ROMs…*).
+1. Menú **Colecciones › Crear colección…** (nombre, carpeta y comentario) o carga una ya creada, y pulsa **Analizar colección** (si no tiene la estructura de ES-DE o los gamelists, te ofrece crearlos). Para meter ROMs nuevas: menú **Añadir ROMs** (descarga antes las bases de datos en *Añadir ROMs › Bases de datos de ROMs…*).
 2. **Scrapeo › Credenciales de ScreenScraper…** (o **Alta en ScreenScraper…** si todavía no tienes cuenta).
 3. Para una ROM concreta: clic derecho › *Scrapear con ScreenScraper…*. Para sistemas enteros: **Scrapeo › Descarga masiva de medios…**
 4. Para depurar la colección: **Curado › Reglas de curado (análisis)…**, marca lo que quieras descartar y revisa las candidatas antes de eliminar nada.
-5. Para llevar la colección a otra carpeta o a la tarjeta SD de tu dispositivo Android: botón **Clonar** (ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd)).
+5. Para llevar la colección a otra carpeta o a la tarjeta SD de tu dispositivo Android: **Colecciones › Clonar colección…** (ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd)).
 
 ## Datos que guarda la aplicación
 
-Por defecto todo vive en `%LOCALAPPDATA%\ESDERomCleaner` (se puede cambiar en *Opciones › Carpeta de datos…*): opciones, caché del análisis, registro de trazas, caché y copias de seguridad de medios, índice de idiomas, perfiles y reglas del curado, bases de datos de hashes (DAT) y su índice. Los temporales (lo que se extrae de los packs) van a `%TEMP%\ESDERomCleaner` y se borran solos.
+Por defecto todo vive en `%LOCALAPPDATA%\ESDERomCleaner` (se puede cambiar en *Opciones › Carpeta de datos…*): opciones y preferencias (en un único `settings.json`), colecciones guardadas, la caché del análisis de cada colección (carpeta `collections`), registro de trazas, caché y copias de seguridad de medios, índice de idiomas, perfiles y reglas del curado, bases de datos de hashes (DAT) y su índice. Los temporales (lo que se extrae de los packs) van a `%TEMP%\ESDERomCleaner` y se borran solos.
 
 - Las **credenciales de ScreenScraper** se guardan cifradas con DPAPI (solo las puede leer tu usuario de Windows en ese equipo) y nunca se escriben en trazas ni en pantalla.
 - La aplicación **no modifica** tus gamelists salvo cuando editas metadatos, descargas metadatos o eliminas ROMs, y siempre de forma atómica y conservando el resto del archivo tal cual.
@@ -128,6 +148,7 @@ Por defecto todo vive en `%LOCALAPPDATA%\ESDERomCleaner` (se puede cambiar en *O
 - [ScreenScraper](https://www.screenscraper.fr/) por su base de datos y su API.
 - [LibVLCSharp](https://github.com/videolan/libvlcsharp) y [VLC](https://www.videolan.org/) para la reproducción de vídeo.
 - [libretro-database](https://github.com/libretro/libretro-database) por mantener los DAT de No-Intro, Redump, TOSEC, MAME y FBNeo que se usan para identificar las ROMs, y los proyectos No-Intro, Redump y TOSEC que los elaboran.
+- [libretro/retroarch-assets](https://github.com/libretro/retroarch-assets) (carpeta `xmb/dot-art`, licencia [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) por los iconos en pixel art de cada sistema, incrustados en la aplicación (`Assets/SystemIcons`).
 - [SharpCompress](https://github.com/adamhathcock/sharpcompress) para leer archivos 7z y rar. [7-Zip](https://www.7-zip.org/) (7za.exe, licencia LGPL, incluido en la aplicación) para crear archivos 7z.
 
 ## Licencia

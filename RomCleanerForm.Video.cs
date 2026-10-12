@@ -20,7 +20,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         pendingVideoRow = row;
         pendingVideoVersion = version;
         videoPreviewTimer.Stop();
-        videoPreviewTimer.Interval = 3000;
+        videoPreviewTimer.Interval = 4000;
         videoPreviewTimer.Start();
     }
 
@@ -45,6 +45,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
             preview.Visible = false;
             miximageGroup.Text = $"Vídeo de {row.GameName}";
             if (!mediaPlayer.Play(currentVideoMedia)) throw new InvalidOperationException("LibVLC no pudo iniciar la reproducción de este vídeo.");
+            VideoVolume.Apply(mediaPlayer, () => videoSound.Checked && !mainMuted, text => trace.Add("video_audio", text));
             trace.Add("video_started", $"system={row.System}; rom={row.RomName}; path={path}");
             videoMonitorTimer.Start();
         }
@@ -84,6 +85,9 @@ public sealed partial class RomCleanerForm : LocalizedForm
         if (mediaPlayer is not null) return;
         if (libVlc is null) throw new InvalidOperationException("No se pudo iniciar el motor de vídeo (LibVLC).");
         mediaPlayer = new MediaPlayer(libVlc);
+        // VLC no debe gestionar el ratón ni el teclado en su ventana: un doble clic suyo pasa a pantalla completa y bloquea la aplicación.
+        mediaPlayer.EnableMouseInput = false;
+        mediaPlayer.EnableKeyInput = false;
         mediaPlayer.Scale = 0;
         mediaPlayer.AspectRatio = null;
         videoView.MediaPlayer = mediaPlayer;
@@ -103,9 +107,15 @@ public sealed partial class RomCleanerForm : LocalizedForm
         videoView.Visible = false;
         preview.Visible = true;
         preview.BringToFront();
+        // Tras el vídeo se vuelve a la imagen por defecto de la ROM.
+        if (romMedia is { Count: > 0 } mediaList && pendingVideoRow is { } endedRow)
+        {
+            mediaIndex = mediaList[0].IsDefault ? 0 : -1;
+            if (mediaIndex == 0) _ = ShowImageItemAsync(endedRow, mediaList[0]);
+        }
         if (showVideos.Checked && pendingVideoRow is not null)
             ScheduleVideoPreview(pendingVideoRow, pendingVideoVersion);
-        else miximageGroup.Text = "Miximage de la ROM enfocada";
+        else miximageGroup.Text = "Imagen de la ROM enfocada";
     }
 
     private void CheckVideoPlayback()

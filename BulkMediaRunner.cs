@@ -14,32 +14,13 @@ internal sealed record BulkMediaSettings(string[] Folders, bool NormalizedVideo,
         ["covers", "backcovers", "3dboxes", "physicalmedia", "screenshots", "titlescreens", "marquees", "miximages", "videos"],
         normalizedVideo, BulkOverwrite.No, true, false, []);
 
-    private static string StorePath => Path.Combine(AppPaths.Data, "bulk_media.json");
-
     public static BulkMediaSettings Load(bool defaultNormalizedVideo)
     {
-        try
-        {
-            if (!File.Exists(StorePath)) return Default(defaultNormalizedVideo);
-            var loaded = JsonSerializer.Deserialize<BulkMediaSettings>(File.ReadAllText(StorePath));
-            return loaded is null ? Default(defaultNormalizedVideo) : loaded with { Folders = loaded.Folders ?? [], Systems = loaded.Systems ?? [] };
-        }
-        catch { return Default(defaultNormalizedVideo); }
+        var loaded = AppSettings.Get<BulkMediaSettings?>("BulkMedia", null);
+        return loaded is null ? Default(defaultNormalizedVideo) : loaded with { Folders = loaded.Folders ?? [], Systems = loaded.Systems ?? [] };
     }
 
-    public void Save()
-    {
-        string? temp = null;
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(StorePath)!);
-            temp = StorePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
-            File.Move(temp, StorePath, overwrite: true);
-        }
-        catch { }
-        finally { if (temp is not null && File.Exists(temp)) try { File.Delete(temp); } catch { } }
-    }
+    public void Save() => AppSettings.Set("BulkMedia", this);
 }
 
 internal sealed record BulkMediaOptions(
@@ -63,6 +44,8 @@ internal sealed class BulkSummary
     public int FilesSaved, FilesReplaced, FilesIdentical, FoldersUnavailable, MetadataUpdated, MetadataFailed, LanguagesStored, MetadataFetched;
     public long BytesDownloaded;
     public string StoppedReason = "";
+    // ROMs (sistema: nombre) cuyos metadatos llegaron de ScreenScraper sin categoría.
+    public readonly System.Collections.Concurrent.ConcurrentBag<string> NoGenre = new();
 }
 
 internal sealed record BulkStatus(string Text, BulkSummary Summary);
@@ -136,6 +119,13 @@ internal sealed class BulkMediaRunner
         o.Roms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0 && r.System.Equals(system, StringComparison.OrdinalIgnoreCase))
               .OrderBy(r => r.Path, StringComparer.OrdinalIgnoreCase);
 
+    // «Tiene metadatos»: el juego ya trae descripción o categoría en su gamelist.xml (una entrada recién creada solo trae ruta y nombre).
+    private static bool HasMetadata(RomRow row) =>
+        !string.IsNullOrWhiteSpace(row.Description) || (!string.IsNullOrWhiteSpace(row.Genre) && row.Genre != "Sin categoría");
+
+    // Metadatos que hay que pedir para esta ROM: siempre si se sobrescribe; con «no sobrescribir», solo los juegos que todavía no tienen.
+    private static bool NeedsMetadata(BulkMediaOptions o, RomRow row) => o.Metadata && (o.Overwrite != BulkOverwrite.No || !HasMetadata(row));
+
     // Cuenta, sin tocar nada, cuánto trabajo habría: ROMs de los sistemas elegidos y cuántas ya lo tienen todo en destino.
     public static BulkPlan Plan(BulkMediaOptions o)
     {
@@ -156,11 +146,16 @@ internal sealed class BulkMediaRunner
                     catch { pending++; }
                 }
                 bool needLanguages = languageIndex is not null && (o.Overwrite != BulkOverwrite.No || !languageIndex.Has(RomKey.Of(row)));
-                if (pending > 0 || o.Metadata || needLanguages) { withWork++; targets += pending; }
+                if (pending > 0 || NeedsMetadata(o, row) || needLanguages) { withWork++; targets += pending; }
             }
         }
         return new BulkPlan(o.LocalSystems.Count, unresolved, roms, withWork, roms - withWork, targets);
     }
+
+    // Registro de depuración (lo muestra la ventana «Registro» de la descarga masiva): qué se decide y por qué, ROM a ROM y carpeta a carpeta.
+    public Action<string>? Debug { get; set; }
+
+    private void Dbg(string text) => Debug?.Invoke($"{DateTime.Now:HH:mm:ss.fff} [{Environment.CurrentManagedThreadId,2}] {text}");
 
     private void Report(string text)
     {
@@ -185,6 +180,13 @@ internal sealed class BulkMediaRunner
         var systems = o.LocalSystems.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
         Summary.RomsTotal = systems.Sum(s => RomsOf(o, s).Count());
         int threads = Math.Max(1, o.Threads);
+        Dbg($"=== INICIO === sistemas={systems.Count}; ROMs={Summary.RomsTotal}; hilos={threads}");
+        Dbg($"Carpetas pedidas: {string.Join(", ", o.Folders.Select(f => f.Folder))}; metadatos={o.Metadata}; idiomas={o.Languages}");
+        Dbg("Sobrescribir archivos de medios: " + (o.Overwrite == BulkOverwrite.No ? "NO (solo se descarga lo que falta en destino)" : o.Overwrite == BulkOverwrite.Always ? "SIEMPRE" : "solo si el tamaño cambia")
+            + $"; copia de seguridad={o.Backup}; buscar por nombre={o.SearchByName}; vídeo normalizado={o.NormalizedVideo}");
+        if (o.Metadata) Dbg(o.Overwrite == BulkOverwrite.No
+            ? "METADATOS: solo se piden y escriben para los juegos que aún no tienen (sin descripción ni categoría); los que ya tienen se respetan."
+            : "METADATOS: se piden y reescriben en el gamelist.xml de todos los juegos (nombre, descripción, género…).");
         trace.Add("bulk_media_started", $"systems={string.Join(",", systems)}; folders={string.Join(",", o.Folders.Select(f => f.Folder))}; normalized={o.NormalizedVideo}; overwrite={o.Overwrite}; backup={o.Backup}; by_name={o.SearchByName}; threads={threads}; roms={Summary.RomsTotal}");
 
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(userToken);
@@ -197,6 +199,7 @@ internal sealed class BulkMediaRunner
             if (ss is null)
             {
                 Summary.SkippedSystems++;
+                Dbg($"Sistema «{system}»: no reconocido en ScreenScraper, se omiten {rows.Count} ROMs");
                 Summary.RomsDone += rows.Count;
                 issues?.Report(new BulkIssue(system, "(todo el sistema)", "Sistema no reconocido", $"No se pudo deducir el sistema de ScreenScraper a partir de la carpeta «{system}»; se omiten {rows.Count} ROMs."));
                 continue;
@@ -246,6 +249,7 @@ internal sealed class BulkMediaRunner
                 $"not_found={Summary.NotFound}; by_name={Summary.FoundByName}; errors={Summary.WithErrors}; unavailable={Summary.FoldersUnavailable}; bytes={Summary.BytesDownloaded}" +
                 $"; space={string.Join(",", Summary.ByFolder.Select(p => $"{p.Key}:{p.Value.BytesAfter - p.Value.BytesBefore}"))}" +
                 (Summary.StoppedReason.Length > 0 ? $"; stopped={Summary.StoppedReason}" : ""));
+            Dbg($"=== FIN === ROMs {Summary.RomsFinished}/{Summary.RomsTotal}; guardados={Summary.FilesSaved}; sustituidos={Summary.FilesReplaced}; idénticos={Summary.FilesIdentical}; ya completas={Summary.AlreadyComplete}; no encontradas={Summary.NotFound}; sin medio={Summary.FoldersUnavailable}" + (Summary.StoppedReason.Length > 0 ? $"; detenida: {Summary.StoppedReason}" : ""));
             Report(Summary.StoppedReason.Length > 0 ? Summary.StoppedReason : "Descarga terminada.");
         }
     }
@@ -273,6 +277,7 @@ internal sealed class BulkMediaRunner
         int updated = 0;
         try { updated = GamelistMetadataWriter.Apply(gamelist, entries, o.GamelistBackup, errors); }
         catch (Exception ex) { errors.Add(ex.Message); }
+        Dbg($"Gamelist de «{system}»: metadatos escritos en {updated} juego(s), {entries.Count - updated} fallidos (copia de seguridad: {o.GamelistBackup})");
         Interlocked.Add(ref Summary.MetadataUpdated, updated);
         Interlocked.Add(ref Summary.MetadataFailed, entries.Count - updated);
         if (updated > 0) MetadataChanged = true;
@@ -283,19 +288,31 @@ internal sealed class BulkMediaRunner
 
     private async Task ProcessCoreAsync(RomRow row, SsSystem ss, CancellationToken token)
     {
-        if (!File.Exists(row.Path)) { Interlocked.Increment(ref Summary.SkippedNotFile); return; }
+        string id = $"{row.System}: {row.RomName}";
+        if (!File.Exists(row.Path)) { Interlocked.Increment(ref Summary.SkippedNotFile); Dbg($"{id}: se omite (no es un archivo)"); return; }
 
         var pending = new List<EsDeMediaFolder>();
         foreach (var folder in o.Folders)
-            if (o.Overwrite != BulkOverwrite.No || !index.Has(RomFolderTarget(o, row, folder))) pending.Add(folder);
+        {
+            string target = RomFolderTarget(o, row, folder);
+            bool exists = index.Has(target);
+            bool wanted = o.Overwrite != BulkOverwrite.No || !exists;
+            Dbg($"{id} · {folder.Folder}: {(exists ? "ya existe" : "no existe")} en destino ({Path.GetFileName(target)}) → {(wanted ? "se pide" : "se omite (no se sobrescribe)")}");
+            if (wanted) pending.Add(folder);
+        }
         bool needLanguages = languageIndex is not null && (o.Overwrite != BulkOverwrite.No || !languageIndex.Has(RomKey.Of(row)));
-        if (pending.Count == 0 && !o.Metadata && !needLanguages) { Interlocked.Increment(ref Summary.AlreadyComplete); return; }
+        bool needMetadata = NeedsMetadata(o, row);
+        if (o.Metadata && !needMetadata) Dbg($"{id}: ya tiene metadatos, no se tocan (no se sobrescribe)");
+        if (pending.Count == 0 && !needMetadata && !needLanguages) { Interlocked.Increment(ref Summary.AlreadyComplete); Dbg($"{id}: completa en destino, no se consulta a ScreenScraper"); return; }
+        if (pending.Count == 0) Dbg($"{id}: sus medios ya están, pero se consulta igualmente porque se piden " + (needMetadata ? "metadatos" : "idiomas"));
 
         var (game, via, note) = await FindGameAsync(row, ss, token);
+        Dbg($"{id}: consulta a ScreenScraper → " + (game is null ? $"NO encontrada ({note})" : $"juego {game.Id} «{game.Name}» (vía {via})"));
         if (game is null)
         {
             Interlocked.Increment(ref Summary.NotFound);
             Issue(row, "No encontrada", note);
+            Dbg($"{id}: RESULTADO → NO se descarga nada: la ROM no se ha encontrado en ScreenScraper" + (pending.Count > 0 ? $" (se habían pedido: {string.Join(", ", pending.Select(f => f.Folder))})" : ""));
             trace.Add("bulk_media_rom", $"system={row.System}; rom={row.RomName}; not_found; {note}");
             return;
         }
@@ -308,12 +325,15 @@ internal sealed class BulkMediaRunner
             languageIndex.Set(RomKey.Of(row), new RomLanguageInfo { Languages = game.RomLanguages.ToList(), Regions = game.RomRegions.ToList(), FetchedAt = DateTime.Now });
             Interlocked.Increment(ref Summary.LanguagesStored);
         }
-        if (o.Metadata)
+        if (needMetadata)
         {
             if (row.Gamelist.Length == 0 || row.GamelistPath.Length == 0) Issue(row, "Metadatos", "La ROM no tiene entrada en ningún gamelist.xml");
             else
             {
-                pendingMetadata.GetOrAdd(row.Gamelist, _ => new(StringComparer.OrdinalIgnoreCase))[PathRules.Relative(row.GamelistPath)] = GamelistMetadata.From(game, regions);
+                var fetched = GamelistMetadata.From(game, regions);
+                if (fetched.Genre.Length == 0) Summary.NoGenre.Add($"{row.System}: {row.RomName}");
+                pendingMetadata.GetOrAdd(row.Gamelist, _ => new(StringComparer.OrdinalIgnoreCase))[PathRules.Relative(row.GamelistPath)] = fetched;
+                Dbg($"{id}: metadatos recibidos (nombre «{fetched.Name}», género «{fetched.Genre}», descripción de {fetched.Desc.Length} caracteres) → se escribirán en el gamelist.xml");
                 Interlocked.Increment(ref Summary.MetadataFetched); // descargados; se escriben en el gamelist.xml de una sola vez al terminar cada sistema
             }
         }
@@ -321,6 +341,7 @@ internal sealed class BulkMediaRunner
         var temps = new List<string>();
         var errors = new List<string>();
         var missing = new List<string>();
+        int savedHere = 0;
         try
         {
             foreach (var folder in pending)
@@ -328,9 +349,9 @@ internal sealed class BulkMediaRunner
                 string[] order = SsMediaSelector.TypeOrder(folder, o.NormalizedVideo, miximageV2Only: true);
                 var (candidates, _) = SsMediaSelector.Candidates(game, regions, folder, order);
                 var media = candidates.FirstOrDefault();
-                if (media is null) { Interlocked.Increment(ref Summary.FoldersUnavailable); missing.Add(folder.Folder); continue; }
+                if (media is null) { Interlocked.Increment(ref Summary.FoldersUnavailable); missing.Add(folder.Folder); Dbg($"{id} · {folder.Folder}: ScreenScraper no tiene este medio"); continue; }
 
-                if (o.Overwrite == BulkOverwrite.IfSizeDiffers && SameSizeAsExisting(RomFolderTarget(o, row, folder), media)) { Interlocked.Increment(ref Summary.FilesIdentical); continue; }
+                if (o.Overwrite == BulkOverwrite.IfSizeDiffers && SameSizeAsExisting(RomFolderTarget(o, row, folder), media)) { Interlocked.Increment(ref Summary.FilesIdentical); Dbg($"{id} · {folder.Folder}: mismo tamaño que el actual, se omite"); continue; }
 
                 string source = SsMediaCache.PathFor(game.Id, media);
                 if (!SsMediaCache.IsCached(game.Id, media))
@@ -338,6 +359,7 @@ internal sealed class BulkMediaRunner
                     // Sin pasar por la caché de comparación: se descarga a un temporal y se borra tras instalarlo.
                     source = Path.Combine(SsMediaCache.Root, "_lote", Guid.NewGuid().ToString("N") + "." + media.Format.ToLowerInvariant());
                     string label = media.Label;
+                    Dbg($"{id} · {folder.Folder}: descarga {label} ({(media.Size > 0 ? ScreenScraperDialog.FormatBytes(media.Size) : "tamaño desconocido")})");
                     var progress = new Progress<long>(received => status?.Report(new BulkStatus(
                         $"{row.System}: {row.RomName} · {folder.Folder}: {label} {ScreenScraperDialog.FormatBytes(received)}" + (media.Size > 0 ? $" de {ScreenScraperDialog.FormatBytes(media.Size)}" : ""), Summary)));
                     try
@@ -348,6 +370,7 @@ internal sealed class BulkMediaRunner
                     }
                     catch (ScreenScraperException ex) when (!IsFatal(ex))
                     {
+                        Dbg($"{id} · {folder.Folder}: ERROR al descargar: {Mask(ex.Message)}");
                         errors.Add($"{folder.Folder}: {Mask(ex.Message)}");
                         continue;
                     }
@@ -374,6 +397,7 @@ internal sealed class BulkMediaRunner
                 {
                     foreach (var r in results)
                     {
+                        Dbg($"{id} · {r.Folder}: guardado {Path.GetFileName(r.TargetPath)}" + (r.ReplacedFiles.Count > 0 ? $" (sustituye {r.ReplacedFiles.Count} archivo(s))" : " (nuevo)"));
                         index.Add(EsDeMediaInstaller.TargetBase(o.Root, row, r.Folder));
                         if (r.ReplacedFiles.Count > 0) Interlocked.Increment(ref Summary.FilesReplaced);
                         lock (Summary.ByFolder)
@@ -386,6 +410,7 @@ internal sealed class BulkMediaRunner
                         }
                     }
                     Interlocked.Add(ref Summary.FilesSaved, results.Count);
+                    savedHere = results.Count;
                     if (results.Count > 0) CollectionChanged = true;
                     errors.AddRange(installErrors);
                     trace.Add("bulk_media_rom", $"system={row.System}; rom={row.RomName}; ss_game={game.Id}; via={via}; " +
@@ -400,6 +425,17 @@ internal sealed class BulkMediaRunner
         finally
         {
             foreach (string temp in temps) try { File.Delete(temp); } catch { }
+        }
+
+        // Resultado de la ROM: qué se ha descargado de lo pedido y qué no.
+        Dbg($"{id}: RESULTADO → descargados y guardados {savedHere} · sin medio en ScreenScraper {missing.Count}" + (missing.Count > 0 ? $" ({string.Join(", ", missing)})" : "")
+            + $" · errores {errors.Count} · omitidos por existir {o.Folders.Count - pending.Count}");
+
+        // Medios pedidos que ScreenScraper no tiene para esta ROM.
+        if (missing.Count > 0)
+        {
+            string names = string.Join(", ", missing.Select(f => EsDeMediaInstaller.Folders.FirstOrDefault(x => x.Folder == f)?.Description ?? f));
+            Issue(row, "Medio no disponible", $"ScreenScraper no tiene: {names}");
         }
 
         if (errors.Count > 0)

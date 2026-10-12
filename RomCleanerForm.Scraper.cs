@@ -52,11 +52,11 @@ public sealed partial class RomCleanerForm
 {
     // Categorizar: descarga solo los metadatos (categoría incluida) y los idiomas de los sistemas indicados, en una ventana con la barra de
     // progreso y lo que se está haciendo (sin el formulario de scrapeo). Al terminar se vuelve a analizar la colección.
-    private async Task CategorizeAsync(IReadOnlyCollection<string> systemNames)
+    private async Task CategorizeAsync(IReadOnlyCollection<string> systemNames, bool onlyMissingCategory = false)
     {
         StopVideoPlayback();
         trace.Add("categorize_started", $"systems={string.Join(",", systemNames)}");
-        var rows = all.Where(r => systemNames.Contains(r.System, StringComparer.OrdinalIgnoreCase)).ToList();
+        var rows = all.Where(r => systemNames.Contains(r.System, StringComparer.OrdinalIgnoreCase) && (!onlyMissingCategory || NoCategory(r))).ToList();
         bool changed; string result;
         using (var dialog = new CategorizeDialog(rows, systemNames.ToList(), root.Text, trace, createGamelistBackups))
         {
@@ -69,5 +69,30 @@ public sealed partial class RomCleanerForm
         VideoFileIndex.Clear();
         await ScanAsync(offerUnclassified: false);
         status.Text = result;
+    }
+}
+
+public sealed partial class RomCleanerForm
+{
+    private async Task OpenCurationDialogAsync()
+    {
+        if (!await EnsureCollectionLoadedAsync())
+        {
+            if (cts == null) QuietMessage.Show(this, "Curado", "No hay ROMs analizadas: las reglas de curado trabajan sobre las ROMs de la colección. Copia ROMs en Roms\\<sistema> y analiza la colección.");
+            return;
+        }
+        trace.Add("curation_dialog_opened", root.Text);
+        RomRow[] toDelete;
+        List<RomRow> excludedRows;
+        using (var dialog = new CurationDialog(all.Where(r => IsVisibleSystem(r.System)).ToList(), trace, createGamelistBackups))
+        {
+            dialog.ShowDialog(this);
+            toDelete = dialog.RowsForDeletion.ToArray();
+            excludedRows = dialog.ExcludedRows.ToList();
+        }
+        // Las ROMs excluidas de la colección desde el curado se quitan ya de la ventana principal (sin volver a analizar).
+        RemoveRowsFromCollection(excludedRows);
+        // Si en el formulario se eligió eliminar candidatas, el borrado se hace ya fuera de él, con el flujo de siempre.
+        if (toDelete.Length > 0) await DeleteRowsAsync(toDelete);
     }
 }

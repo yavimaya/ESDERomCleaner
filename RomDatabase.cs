@@ -34,20 +34,14 @@ internal sealed class DatSettings
 {
     public List<string> Kinds { get; set; } = ["no-intro", "redump", "tosec", "mame", "fbneo", "other"];
 
-    private static string PathOfFile => Path.Combine(AppPaths.Data, "dat_settings.json");
-
     public static DatSettings Load()
     {
-        try { return System.Text.Json.JsonSerializer.Deserialize<DatSettings>(File.ReadAllText(PathOfFile)) ?? new DatSettings(); }
-        catch { return new DatSettings(); }
+        return AppSettings.Get("Dats", new DatSettings());
     }
 
     public void Save()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(PathOfFile)!);
-        string temp = PathOfFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        File.WriteAllText(temp, System.Text.Json.JsonSerializer.Serialize(this, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temp, PathOfFile, overwrite: true);
+        AppSettings.Set("Dats", this);
     }
 }
 

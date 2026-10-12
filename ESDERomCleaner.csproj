@@ -12,7 +12,7 @@
     <VlcWindowsX86Enabled>false</VlcWindowsX86Enabled>
     <VlcWindowsArm64Enabled>false</VlcWindowsArm64Enabled>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.1.2</Version>
+    <Version>0.1.3</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,5 +31,8 @@
   <ItemGroup>
     <None Include="$(Pkg7-Zip_CommandLine)\tools\x64\7za.exe" Link="7z\7za.exe" CopyToOutputDirectory="PreserveNewest" />
     <None Include="$(Pkg7-Zip_CommandLine)\tools\License.txt" Link="7z\License.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\SystemIcons\*.png" LogicalName="SystemIcons.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

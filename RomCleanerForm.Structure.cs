@@ -6,6 +6,7 @@ public sealed partial class RomCleanerForm
     // la estructura de ES-DE si falta. Solo crea carpetas vacías que no existan; nunca toca lo que ya hay.
     private bool EnsureCollectionRoot()
     {
+        if (!EnsureActiveCollection()) return false;
         string rootPath = root.Text.Trim().Trim('"');
         if (rootPath.Length == 0)
         {

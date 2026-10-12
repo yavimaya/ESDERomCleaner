@@ -16,24 +16,14 @@ internal sealed class StorageSettings
     public StorageFormat Format { get; set; } = StorageFormat.Keep;
     public StorageLevel Level { get; set; } = StorageLevel.Normal;
 
-    private static string FilePath => Path.Combine(AppPaths.Data, "storage_options.json");
-
     public static StorageSettings Load()
     {
-        try { return System.Text.Json.JsonSerializer.Deserialize<StorageSettings>(File.ReadAllText(FilePath)) ?? new StorageSettings(); }
-        catch { return new StorageSettings(); }
+        return AppSettings.Get("Storage", new StorageSettings());
     }
 
     public void Save()
     {
-        try
-        {
-            Directory.CreateDirectory(AppPaths.Data);
-            string temp = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            File.WriteAllText(temp, System.Text.Json.JsonSerializer.Serialize(this));
-            File.Move(temp, FilePath, overwrite: true);
-        }
-        catch { }
+        AppSettings.Set("Storage", this);
     }
 }
 
@@ -124,8 +114,41 @@ internal static class RomStorage
         return null;
     }
 
-    // Formato con el que se guardará realmente la ROM: el pedido si el sistema lo admite y se puede hacer; si no, el más parecido que sí, con el motivo.
+    // Si hay que guardar sin comprimir pero el comprimido lleva varios archivos de ROM (o subcarpetas), extraerlo aplanado mezclaría archivos y podría
+    // perder alguno con el mismo nombre: se guarda tal como llega.
     public static (StorageFormat Format, string Note) Plan(RomIdentity id, StorageOptions options, HashSet<string>? allowed)
+    {
+        var (format, note) = PlanCore(id, options, allowed);
+        if (format == StorageFormat.Raw && id.Files.Any(f => IsArchive(f) && IsMultiFile(f)))
+            return (StorageFormat.Keep, "tiene varios archivos: se guarda comprimido, como llega");
+        return (format, note);
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> MultiFileCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsMultiFile(string archive) => MultiFileCache.GetOrAdd(archive, path =>
+    {
+        try
+        {
+            var names = new List<string>();
+            if (Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                using var zip = ZipFile.OpenRead(path);
+                names.AddRange(zip.Entries.Where(e => e.Name.Length > 0).Select(e => e.FullName));
+            }
+            else
+            {
+                using var a = ArchiveFactory.OpenArchive(path);
+                names.AddRange(a.Entries.Where(e => !e.IsDirectory).Select(e => e.Key ?? ""));
+            }
+            if (names.Any(n => n.Contains('/') || n.Contains('\\'))) return true;
+            return names.Count(n => !GamelistGenerator.IsNotRom(n)) > 1;
+        }
+        catch { return false; }
+    });
+
+    // Formato con el que se guardará realmente la ROM: el pedido si el sistema lo admite y se puede hacer; si no, el más parecido que sí, con el motivo.
+    private static (StorageFormat Format, string Note) PlanCore(RomIdentity id, StorageOptions options, HashSet<string>? allowed)
     {
         bool Admits(string ext) => allowed is null || allowed.Contains(ext);
         string source = Path.GetExtension(id.Path).ToLowerInvariant();

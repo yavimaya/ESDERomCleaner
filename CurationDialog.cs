@@ -10,7 +10,12 @@ internal sealed class CurationDialog : LocalizedForm
 {
     private sealed record Hit(RomRow Row, CurationRule Rule, string Reason);
 
-    private readonly IReadOnlyList<RomRow> roms;
+    private readonly List<RomRow> roms;
+    private readonly bool gamelistBackups;
+    // Es true si se han excluido ROMs de la colección (se han cambiado gamelists): la ventana principal debe volver a analizar.
+    public bool CollectionChanged { get; private set; }
+    // Las ROMs que se han excluido de la colección desde este formulario: la ventana principal las quita de su lista al cerrarlo.
+    public List<RomRow> ExcludedRows { get; } = new();
     private readonly TraceLog trace;
     // ROMs que el usuario ha decidido eliminar al cerrar el formulario; las borra la ventana principal con su borrado seguro.
     public List<RomRow> RowsForDeletion { get; } = new();
@@ -27,7 +32,7 @@ internal sealed class CurationDialog : LocalizedForm
     private Font? strikeFont;
     // Columnas de la lista de candidatas que el usuario ha ocultado (por defecto, el nombre del archivo).
     private readonly HashSet<string> hiddenColumns = new();
-    private readonly ContextMenuStrip columnsMenu = new();
+    private readonly ContextMenuStrip columnsMenu = new() { ShowImageMargin = false, ShowCheckMargin = true };
     private readonly Button columnsButton = new() { Text = "Columnas ▾", AutoSize = true, Margin = new Padding(16, 1, 3, 0) };
     private static readonly (string Name, string Title)[] ColumnChoices =
         [("state", "Estado"), ("system", "Sistema"), ("rom", "Nombre del archivo"), ("game", "Nombre"), ("genre", "Categoría"), ("rules", "Regla(s)"), ("reason", "Motivo"), ("size", "Tamaño")];
@@ -52,13 +57,15 @@ internal sealed class CurationDialog : LocalizedForm
     private readonly Button loadProfileButton = new() { Text = "Cargar", AutoSize = true, MinimumSize = new Size(80, 28), Enabled = false };
     private readonly Button saveProfileButton = new() { Text = "Guardar perfil…", AutoSize = true, MinimumSize = new Size(120, 28) };
     private readonly Button deleteProfileButton = new() { Text = "Eliminar", AutoSize = true, MinimumSize = new Size(80, 28), Enabled = false };
+    private readonly Button excludeButton = new() { Text = "Excluir de la colección…", AutoSize = true, MinimumSize = new Size(170, 30), Enabled = false, ForeColor = Color.FromArgb(214, 100, 0) };
     private readonly Button exportButton = new() { Text = "Exportar candidatas…", AutoSize = true, MinimumSize = new Size(150, 30) };
     private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(100, 30), DialogResult = DialogResult.Cancel };
 
     private static string StorePath => Path.Combine(AppPaths.Data, "curation.json");
 
-    public CurationDialog(IReadOnlyList<RomRow> allRoms, TraceLog trace)
+    public CurationDialog(IReadOnlyList<RomRow> allRoms, TraceLog trace, bool gamelistBackups = false)
     {
+        this.gamelistBackups = gamelistBackups;
         roms = allRoms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0).ToList();
         this.trace = trace;
         Text = baseTitle = "Reglas de curado — análisis";
@@ -100,6 +107,29 @@ internal sealed class CurationDialog : LocalizedForm
         editSupraButton.Click += (_, _) => EditSupra();
         languagesButton.Click += (_, _) => EditLanguages();
         deleteButton.Click += (_, _) => RequestDeletion();
+        excludeButton.Click += (_, _) => ExcludeSelected();
+        // El botón muestra cuántas candidatas hay seleccionadas y solo está activo si hay alguna.
+        candidatesGrid.SelectionChanged += (_, _) =>
+        {
+            int count = candidatesGrid.SelectedRows.Count;
+            excludeButton.Enabled = count > 0;
+            excludeButton.Text = count > 0 ? $"Excluir de la colección ({count:N0})…" : "Excluir de la colección…";
+        };
+        // Menú contextual de las candidatas: excluirlas de la colección (contador y multiscrapeo de ES-DE) y sacarlas de esta lista.
+        var rowMenu = new ContextMenuStrip { ShowImageMargin = false };
+        var excludeItem = new ToolStripMenuItem("Excluir de la colección (contador y multiscrapeo)…");
+        excludeItem.Click += (_, _) => ExcludeSelected();
+        rowMenu.Items.Add(excludeItem);
+        var deleteItem = new ToolStripMenuItem("Eliminar (ROM, accesorios y media)…") { ForeColor = Color.Firebrick };
+        deleteItem.Click += (_, _) => DeleteSelected();
+        rowMenu.Items.Add(deleteItem);
+        rowMenu.Opening += (_, e) => { if (candidatesGrid.SelectedRows.Count == 0) e.Cancel = true; };
+        candidatesGrid.ContextMenuStrip = rowMenu;
+        candidatesGrid.CellMouseDown += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Right && e.RowIndex >= 0 && !candidatesGrid.Rows[e.RowIndex].Selected)
+            { candidatesGrid.ClearSelection(); candidatesGrid.Rows[e.RowIndex].Selected = true; }
+        };
         saveProfileButton.Click += (_, _) => SaveProfile();
         loadProfileButton.Click += (_, _) => LoadProfile();
         deleteProfileButton.Click += (_, _) => DeleteProfile();
@@ -152,6 +182,7 @@ internal sealed class CurationDialog : LocalizedForm
         left.Controls.Add(genresGroup, 0, 1);
 
         Configure(candidatesGrid);
+        candidatesGrid.MultiSelect = true; // se pueden seleccionar varias candidatas para excluirlas de una vez
         foreach (var (name, header, width) in new[] { ("state", "Estado", 66), ("system", "Sistema", 90), ("rom", "Nombre del archivo", 220), ("game", "Nombre", 190), ("genre", "Categoría", 140), ("rules", "Regla(s)", 150), ("reason", "Motivo", 0), ("size", "Tamaño", 80) })
             candidatesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = header, Width = width > 0 ? width : 100, ReadOnly = true });
         candidatesGrid.Columns["reason"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
@@ -194,6 +225,7 @@ internal sealed class CurationDialog : LocalizedForm
 
         var buttons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, Margin = Padding.Empty };
         buttons.Controls.Add(exportButton);
+        buttons.Controls.Add(excludeButton);
         buttons.Controls.Add(deleteButton);
         buttons.Controls.Add(closeButton);
         var buttonBar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 1, Margin = Padding.Empty };
@@ -368,23 +400,100 @@ internal sealed class CurationDialog : LocalizedForm
 
     // Eliminar las candidatas: aquí solo se confirma el paso; el borrado real lo hace la ventana principal con su plan, su resumen y su
     // confirmación, que muestran qué se va a borrar antes de tocar nada.
-    private void RequestDeletion()
+    private void RequestDeletion() => RequestDeletionOf(Union().Select(p => p.Row).ToList());
+
+    // Eliminar solo las candidatas seleccionadas en la lista (menú contextual). Las excluidas a mano de la selección están protegidas y no se tocan.
+    private void DeleteSelected()
     {
-        var union = Union();
-        if (union.Count == 0) return;
-        long bytes = union.Sum(p => p.Row.Size);
-        string text = $"Se van a pasar {union.Count:N0} ROMs ({ScreenScraperDialog.FormatBytes(bytes)}) al borrado seguro de la ventana principal.\r\n\r\n" +
-                      "Allí se calculará el plan completo (ROMs, archivos accesorios, media de ES-DE y gamelists) y verás el resumen para confirmar antes de eliminar nada.\r\n\r\n" +
-                      "El borrado es PERMANENTE: no pasa por la Papelera." +
-                      (excluded.Count > 0 ? $"\r\n\r\nLas {excluded.Count:N0} ROMs excluidas a mano no se tocan." : "");
-        if (!QuietMessage.Confirm(this, "Eliminar candidatas", text, "Continuar al borrado")) return;
+        var keys = candidatesGrid.SelectedRows.Cast<DataGridViewRow>().Select(r => r.Tag as string).Where(k => k is not null).Select(k => k!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (keys.Count == 0 && candidatesGrid.CurrentRow?.Tag is string current) keys.Add(current);
+        if (keys.Count == 0)
+        {
+            QuietMessage.Show(this, "Eliminar candidatas", "Selecciona primero las ROMs candidatas que quieras eliminar.");
+            return;
+        }
+        var rows = roms.Where(r => keys.Contains(KeyOf(r)) && !excluded.Contains(KeyOf(r))).ToList();
+        if (rows.Count == 0)
+        {
+            QuietMessage.Show(this, "Eliminar candidatas", "Las ROMs seleccionadas están excluidas a mano de la selección (tachadas), así que no se tocan.");
+            return;
+        }
+        RequestDeletionOf(rows);
+    }
+
+    private void RequestDeletionOf(IReadOnlyList<RomRow> rowsToDelete)
+    {
+        if (rowsToDelete.Count == 0) return;
+        long bytes = rowsToDelete.Sum(r => r.Size);
+        // Mismo aviso que el borrado de la ventana principal. Aquí solo se conocen las ROMs (los accesorios, la media y los gamelists se calculan en el plan
+        // posterior, que vuelve a pedir confirmación con los números exactos), y lo que aún no se sabe se muestra como «—».
+        var data = new DeleteConfirmData(rowsToDelete.Count, ScreenScraperDialog.FormatBytes(bytes), -1, "—", -1, "—", -1, ScreenScraperDialog.FormatBytes(bytes) + "+", gamelistBackups);
+        using (var confirm = new DeleteConfirmDialog(data))
+            if (confirm.ShowDialog(this) != DialogResult.OK) return;
         RowsForDeletion.Clear();
-        RowsForDeletion.AddRange(union.Select(p => p.Row));
+        RowsForDeletion.AddRange(rowsToDelete);
         trace.Add("curation_deletion_requested", $"roms={RowsForDeletion.Count}; bytes={bytes}");
         DialogResult = DialogResult.OK;
         Close();
     }
 
+    // Excluye de la colección las candidatas seleccionadas: nogamecount y nomultiscrape en true en su gamelist.xml (ES-DE no las cuenta ni las multiscrapea). No se
+    // marca nada ni se borran archivos: solo desaparecen de esta lista, de las reglas y, al cerrar, de la ventana principal.
+    private void ExcludeSelected()
+    {
+        var keys = candidatesGrid.SelectedRows.Cast<DataGridViewRow>().Select(r => r.Tag as string).Where(k => k is not null).Select(k => k!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (keys.Count == 0 && candidatesGrid.CurrentRow?.Tag is string current) keys.Add(current);
+        if (keys.Count == 0)
+        {
+            QuietMessage.Show(this, "Excluir de la colección", "Selecciona primero las ROMs candidatas que quieras excluir.");
+            return;
+        }
+        var rows = roms.Where(r => keys.Contains(KeyOf(r)) && r.Gamelist.Length > 0 && r.GamelistPath.Length > 0).ToList();
+        if (rows.Count == 0)
+        {
+            QuietMessage.Show(this, "Excluir de la colección", "Las ROMs seleccionadas no tienen entrada en ningún gamelist.xml, así que no se pueden excluir.");
+            return;
+        }
+        string text = $"Se van a excluir {rows.Count:N0} ROMs del contador y del multiscrapeo de ES-DE (nogamecount y nomultiscrape en true en su gamelist.xml).\r\n\r\n"
+            + "Desaparecerán de esta lista y de la ventana principal. No se toca ningún archivo de ROM ni de media y se puede revertir editando el gamelist.xml.";
+        if (!QuietMessage.Confirm(this, "Excluir de la colección", text, "Excluir")) return;
+
+        var flags = new Dictionary<string, string> { ["nogamecount"] = "true", ["nomultiscrape"] = "true" };
+        var errors = new List<string>();
+        var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        UseWaitCursor = true;
+        try
+        {
+            foreach (var group in rows.GroupBy(r => r.Gamelist, StringComparer.OrdinalIgnoreCase))
+            {
+                var relatives = group.Select(r => PathRules.Relative(r.GamelistPath)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                try
+                {
+                    int updated = GamelistMetadataWriter.SetFields(group.Key, relatives, flags, gamelistBackups, errors);
+                    if (updated == relatives.Count) foreach (var row in group) done.Add(KeyOf(row)); // las que no se pudieron marcar se quedan en la lista
+                }
+                catch (Exception ex) { errors.Add($"{Path.GetFileName(Path.GetDirectoryName(group.Key) ?? "")}: {ex.Message}"); }
+            }
+        }
+        finally { UseWaitCursor = false; }
+
+        if (done.Count > 0)
+        {
+            ExcludedRows.AddRange(roms.Where(r => done.Contains(KeyOf(r))));
+            roms.RemoveAll(r => done.Contains(KeyOf(r)));
+            foreach (string key in done) excluded.Remove(key);
+            CollectionChanged = true;
+            BuildRules();
+            FillSupra();
+            FillGenres();
+            RefreshAll();
+            SaveState();
+        }
+        trace.Add("curation_excluded_from_collection", $"roms={done.Count}; errors={errors.Count}");
+        if (errors.Count > 0) QuietMessage.Show(this, "Excluir de la colección", string.Join("\r\n", errors.Take(10)));
+    }
     private void EditSupra()
     {
         var genreCounts = genreRules.ToDictionary(r => r.Title, r => counts.GetValueOrDefault(r.Id), StringComparer.OrdinalIgnoreCase);
@@ -545,6 +654,7 @@ internal sealed class CurationDialog : LocalizedForm
         // La celda actual debe estar en una columna visible (la del nombre del archivo puede estar oculta).
         var firstVisible = candidatesGrid.Columns.GetFirstColumn(DataGridViewElementStates.Visible);
         if (currentIndex >= 0 && firstVisible is not null) candidatesGrid.CurrentCell = candidatesGrid.Rows[currentIndex].Cells[firstVisible.Index];
+        else candidatesGrid.ClearSelection(); // la lista recién cargada no tiene nada seleccionado (la primera fila se marca sola): así el botón de excluir no cuenta una que nadie ha elegido
         if (first >= 0 && first < candidatesGrid.Rows.Count) candidatesGrid.FirstDisplayedScrollingRowIndex = first;
     }
 

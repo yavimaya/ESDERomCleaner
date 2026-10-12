@@ -115,7 +115,7 @@ internal sealed class CollectionScanner
     }
     internal static string WriteCache(string root, List<RomRow> rows)
     {
-        string dir = AppPaths.Data;
+        string dir = CollectionCache.FolderOf(root); // el CSV es de cada colección
         Directory.CreateDirectory(dir);
         string path = Path.Combine(dir, "database.csv"), temp = Path.Combine(dir, "database.tmp." + Guid.NewGuid().ToString("N") + ".csv");
         static string Csv(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";

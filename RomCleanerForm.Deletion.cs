@@ -81,7 +81,11 @@ public sealed partial class RomCleanerForm : LocalizedForm
 
         string planSummary = BuildDeletionPlanSummary(plan, backupsEnabledForOperation);
         trace.Add("deletion_plan_ready", planSummary);
-        if (MessageBox.Show(this, planSummary, "Confirmar eliminación", MessageBoxButtons.YesNo, MessageBoxIcon.None) != DialogResult.Yes)
+        var confirmData = new DeleteConfirmData(plan.Items.Count, FormatSize(plan.RomBytes), plan.Accessories.Count, FormatSize(plan.AccessoryBytes), plan.Media.Count,
+            FormatSize(plan.MediaBytes), plan.Gamelists.Count, FormatSize(plan.RomBytes + plan.AccessoryBytes + plan.MediaBytes), backupsEnabledForOperation);
+        bool confirmed;
+        using (var confirm = new DeleteConfirmDialog(confirmData)) confirmed = confirm.ShowDialog(this) == DialogResult.OK;
+        if (!confirmed)
         {
             trace.Add("deletion_cancelled_by_user", $"roms={plan.Items.Count}");
             status.Text = "Borrado cancelado; no se modificó ningún archivo.";
@@ -142,6 +146,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = !busy;
         clearSelection.Enabled = !busy && selected.Count > 0;
         deleteSelected.Enabled = !busy && selected.Count > 0;
+        excludeButton.Enabled = !busy && selected.Count > 0;
         cancel.Enabled = busy && canCancel;
     }
 
@@ -229,6 +234,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
 
         cachePath = CollectionScanner.WriteCache(root.Text, all);
         UpdateCollectionCounters();
+        _ = RefreshGapsAsync();
 
         string? previousSystem = systems.SelectedItem as string;
         changing = true;
@@ -265,6 +271,9 @@ public sealed partial class RomCleanerForm : LocalizedForm
 
     private void UpdateCollectionCounters()
     {
+        UpdateScanButton();
+        UpdateActiveCollectionStats();
+        if (!sizesCalculating) SaveAnalysisCache();
         int identified = all.Count(row => row.Status == RomStatus.Ok);
         int ambiguous = all.Count(row => row.Status == RomStatus.Ambiguous);
         int systemCount = all.Where(row => row.Status == RomStatus.Ok).Select(row => row.System).Distinct(StringComparer.OrdinalIgnoreCase).Count();

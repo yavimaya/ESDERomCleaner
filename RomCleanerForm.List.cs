@@ -23,6 +23,8 @@ public sealed partial class RomCleanerForm : LocalizedForm
             QuietMessage.Show(this, "Ruta raíz no válida", problem);
             return;
         }
+        // Para analizar una carpeta hace falta una colección con ella (se ofrece crearla).
+        if (!EnsureActiveCollection()) return;
         root.Text = rootPath;
         // El análisis solo lista los juegos que figuran en un gamelist: si hay ROMs sin gamelist (sistema nuevo o ROMs recién copiadas), se ofrece añadirlas.
         await CreateGamelistsAsync(scanAfter: false, quiet: true, reason: "Hay ROMs en Roms\\<sistema> que no figuran en ningún gamelist.xml, y el análisis solo lista los juegos de los gamelists.");
@@ -37,6 +39,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
             var reporter = new Progress<ScanProgress>(p => { status.Text = p.Message; if (p.Total > 0) progress.Value = Math.Clamp(p.Current * 100 / p.Total, 0, 100); });
             var result = await Task.Run(() => new CollectionScanner().Scan(root.Text, reporter, token), token);
             all = result.Rows;
+            loadedRoot = rootPath; UpdateScanButton();
             accessories = result.Accessories;
             systemFileCounts = result.SystemFileCounts;
             gamelistCount = result.Gamelists;
@@ -49,15 +52,16 @@ public sealed partial class RomCleanerForm : LocalizedForm
             // Solo se recuerda una ruta con la que el análisis ha funcionado.
             if (!lastRootPath.Equals(rootPath, StringComparison.OrdinalIgnoreCase)) { lastRootPath = rootPath; SaveOptions(); }
             status.Text = "Archivos consultados; calculando tamaños…";
+            _ = RefreshGapsAsync();
             await mediaSizeTask;
             mediaBytes = mediaSizeTask.Result;
             sizesCalculating = false;
             UpdateCollectionCounters();
-            status.Text = $"Escaneo completado: {all.Count:N0} filas · {systems.Items.Count} sistemas · {result.Gamelists} gamelists.";
-            // Sistemas cuyas ROMs no tienen ninguna categoría (nunca se han scrapeado).
+            status.Text = $"Escaneo completado: {identified:N0} ROMs · {systems.Items.Count} sistemas · {result.Gamelists} gamelists.";
+            // Sistemas con alguna ROM sin categoría (no se han scrapeado, o no se reconocieron).
             unclassified = all.Where(r => r.Status == RomStatus.Ok && IsVisibleSystem(r.System))
                 .GroupBy(r => r.System, StringComparer.OrdinalIgnoreCase)
-                .Where(g => g.All(r => string.IsNullOrWhiteSpace(r.Genre) || r.Genre == "Sin categoría"))
+                .Where(g => g.Any(NoCategory))
                 .Select(g => g.Key).OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
             trace.Add("scan_completed", $"rows={all.Count}; systems={result.SystemCount}; files={result.FileCount}; identified={identified}; ambiguous={ambiguous}; accessories={result.Accessories.Count}; gamelists={result.Gamelists}; cache={result.CachePath}; extensions={string.Join(" | ", result.ExtensionCounts.OrderByDescending(x => x.Value).ThenBy(x => x.Key).Select(x => $"{x.Key}:{x.Value}"))}");
         }
@@ -79,12 +83,12 @@ public sealed partial class RomCleanerForm : LocalizedForm
         else if (skipUnclassifiedOffer) skipUnclassifiedOffer = false;
         else if (offerUnclassified && unclassified is { Count: > 0 })
         {
-            var listed = unclassified.Select(s => (s, all.Count(r => r.Status == RomStatus.Ok && r.System.Equals(s, StringComparison.OrdinalIgnoreCase)))).ToList();
+            var listed = unclassified.Select(s => (s, all.Count(r => r.Status == RomStatus.Ok && r.System.Equals(s, StringComparison.OrdinalIgnoreCase) && NoCategory(r)))).ToList();
             UnclassifiedChoice choice;
             using (var dialog = new UnclassifiedSystemsDialog(listed)) { dialog.ShowDialog(this); choice = dialog.Choice; }
             // «Categorizar» solo descarga los metadatos (que traen la categoría), con una ventana de progreso y sin abrir el scrapeo; «Categorizar y scrapear» abre la descarga masiva con los medios elegidos la última vez.
-            if (choice == UnclassifiedChoice.Categorize) await CategorizeAsync(unclassified);
-            else if (choice == UnclassifiedChoice.CategorizeAndScrape) await OpenBulkMediaDialogAsync(unclassified, preset: BulkPreset.WithMetadata);
+            if (choice == UnclassifiedChoice.Categorize) await CategorizeAsync(unclassified, onlyMissingCategory: true);
+            else if (choice == UnclassifiedChoice.CategorizeAndScrape) await OpenBulkMediaDialogAsync(onlyRows: all.Where(r => r.Status == RomStatus.Ok && NoCategory(r) && unclassified.Contains(r.System, StringComparer.OrdinalIgnoreCase)).ToList(), preset: BulkPreset.WithMetadata);
         }
     }
     // La ruta raíz debe ser la carpeta que contiene Roms y ES-DE\gamelists. Se comprueba antes de empezar para dar un mensaje claro.
@@ -142,7 +146,8 @@ public sealed partial class RomCleanerForm : LocalizedForm
     {
         string? previousCategory = (categories.SelectedItem as CategoryItem)?.Genre;
         current = all.Where(r => r.System.Equals(system, StringComparison.OrdinalIgnoreCase)).OrderBy(r => r.RomName, StringComparer.OrdinalIgnoreCase).ToList();
-        systemSummary.Text = $"{system} : {current.Count(r => r.Status == RomStatus.Ok):N0} ROMs identificadas en el gamelist.";
+        systemSummary.Text = $"ROMs encontradas: {current.Count(r => r.Status == RomStatus.Ok):N0}";
+        UpdateGapLabels();
         changing = true;
         try
         {
@@ -158,13 +163,15 @@ public sealed partial class RomCleanerForm : LocalizedForm
         UpdateSelection();
     }
 
+    private static bool NoCategory(RomRow r) => string.IsNullOrWhiteSpace(r.Genre) || r.Genre == "Sin categoría";
     private static string Genre(RomRow r) => string.IsNullOrWhiteSpace(r.Genre) ? "Sin categoría" : r.Genre;
     private void ChangeSystem()
     {
         if (systems.SelectedItem is not string s) return;
         current = all.Where(r => r.System.Equals(s, StringComparison.OrdinalIgnoreCase)).OrderBy(r => r.RomName, StringComparer.OrdinalIgnoreCase).ToList();
         int identified = current.Count(r => r.Status == RomStatus.Ok);
-        systemSummary.Text = $"{s} : {identified:N0} ROMs identificadas en el gamelist.";
+        systemSummary.Text = $"ROMs encontradas: {identified:N0}";
+        UpdateGapLabels();
         categories.Items.Clear();
         foreach (var group in current.GroupBy(Genre, StringComparer.OrdinalIgnoreCase).OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
             categories.Items.Add(new CategoryItem(group.Key, group.Count(row => row.Status == RomStatus.Ok)));
@@ -187,15 +194,23 @@ public sealed partial class RomCleanerForm : LocalizedForm
         string? focusedPath = preferredFocusPath ?? (roms.SelectedItem as RomItem)?.Row.Path;
         RomRow? previousRow = (roms.SelectedItem as RomItem)?.Row;
         var q = search.Text.Trim(); IEnumerable<RomRow> rows;
+        Func<string, bool>? textMatch = null; // cómo se busca el texto, para saber en qué parte de cada ROM aparece
         if (q.Length >= 3)
         {
+            // El texto se busca siempre como expresión regular; si no es una expresión válida (o tarda demasiado), se busca como texto literal.
+            var source = searchInAll.Checked ? all.Where(r => r.Status == RomStatus.Ok && IsVisibleSystem(r.System)) : current;
             try
             {
-                if (regex.Checked) { var re = new Regex(q, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200)); rows = current.Where(r => re.IsMatch(r.RomName) || re.IsMatch(r.GameName) || re.IsMatch(r.Genre)); }
-                else rows = current.Where(r => r.RomName.Contains(q, StringComparison.OrdinalIgnoreCase) || r.GameName.Contains(q, StringComparison.OrdinalIgnoreCase) || r.Genre.Contains(q, StringComparison.OrdinalIgnoreCase));
-                status.Text = $"Búsqueda en el sistema: {q}";
+                var re = new Regex(q, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200));
+                rows = source.Where(r => re.IsMatch(r.RomName) || re.IsMatch(r.GameName) || re.IsMatch(r.Genre)).ToList();
+                textMatch = s => { try { return re.IsMatch(s); } catch (RegexMatchTimeoutException) { return false; } };
             }
-            catch (ArgumentException e) { status.Text = $"Regex no válida: {e.Message}"; rows = Array.Empty<RomRow>(); }
+            catch (Exception e) when (e is ArgumentException or RegexMatchTimeoutException)
+            {
+                rows = source.Where(r => r.RomName.Contains(q, StringComparison.OrdinalIgnoreCase) || r.GameName.Contains(q, StringComparison.OrdinalIgnoreCase) || r.Genre.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+            textMatch ??= s => s.Contains(q, StringComparison.OrdinalIgnoreCase);
+            status.Text = searchInAll.Checked ? $"Búsqueda en todos los sistemas: {q}" : $"Búsqueda en el sistema: {q}";
         }
         else if (categories.SelectedItem is CategoryItem category) rows = current.Where(r => Genre(r).Equals(category.Genre, StringComparison.OrdinalIgnoreCase));
         else rows = Array.Empty<RomRow>();
@@ -206,7 +221,9 @@ public sealed partial class RomCleanerForm : LocalizedForm
             roms.Items.Clear();
             foreach (var r in visibleRows)
             {
-                int i = roms.Items.Add(new RomItem(r));
+                // Si el texto buscado no está en el nombre del juego y sí en el del archivo, se muestra el archivo entre paréntesis para saber por qué ha salido.
+                string? fileHint = textMatch is not null && !textMatch(r.Display) && textMatch(r.RomName) ? r.RomName : null;
+                int i = roms.Items.Add(new RomItem(r, searchInAll.Checked && q.Length >= 3, fileHint));
                 if (r.Path.Length > 0 && selected.Contains(r.Path)) roms.SetItemChecked(i, true);
             }
             if (roms.Items.Count > 0)
@@ -294,7 +311,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         trace.Add("selection_toggled", item.Row.Path);
     }
 
-    private void UpdateSelection() { selectionLabel.Text = $"ROMs seleccionadas: {selected.Count:N0}    |    Tamaño: {FormatSize(all.Where(r => selected.Contains(r.Path)).Sum(r => r.Size))}"; clearSelection.Enabled = selected.Count > 0; deleteSelected.Enabled = selected.Count > 0 && cts is null; }
+    private void UpdateSelection() { selectionLabel.Text = $"ROMs seleccionadas: {selected.Count:N0}\r\nTamaño: {FormatSize(all.Where(r => selected.Contains(r.Path)).Sum(r => r.Size))}"; clearSelection.Enabled = selected.Count > 0; deleteSelected.Enabled = selected.Count > 0 && cts is null; excludeButton.Enabled = selected.Count > 0 && cts is null; excludeButton.Text = selected.Count > 0 ? $"Excluir seleccionados ({selected.Count:N0})" : "Excluir seleccionados"; }
     private void ClearSelection() { if (selected.Count == 0) return; var answer = MessageBox.Show(this, $"Se van a desmarcar {selected.Count:N0} ROMs seleccionadas. No se borrará ningún archivo.\r\n\r\n¿Deseas continuar?", "Vaciar selección", MessageBoxButtons.YesNo, MessageBoxIcon.Question); if (answer != DialogResult.Yes) return; int count = selected.Count; selected.Clear(); RefreshList(); UpdateSelection(); trace.Add("clear_selection", $"count={count}"); }
     private static string FormatSize(long n) { string[] u = ["B", "KB", "MB", "GB", "TB"]; double x = n; int i = 0; while (x >= 1024 && i < 4) { x /= 1024; i++; } return i == 0 ? $"{n} B" : $"{x:0.##} {u[i]}"; }
 }

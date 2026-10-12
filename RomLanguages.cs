@@ -149,31 +149,12 @@ internal sealed class CurationLanguageSettings
     public bool OnlyTextGenres { get; set; }
     public bool UseFilename { get; set; } = true;
 
-    private static string StorePath => Path.Combine(AppPaths.Data, "curation_languages.json");
-
     public static CurationLanguageSettings Load()
     {
-        try
-        {
-            if (File.Exists(StorePath) && JsonSerializer.Deserialize<CurationLanguageSettings>(File.ReadAllText(StorePath)) is { } loaded) return loaded;
-        }
-        catch { }
-        return new CurationLanguageSettings();
+        return AppSettings.Get("CurationLanguages", new CurationLanguageSettings());
     }
 
-    public void Save()
-    {
-        string? temp = null;
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(StorePath)!);
-            temp = StorePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
-            File.Move(temp, StorePath, overwrite: true);
-        }
-        catch { }
-        finally { if (temp is not null && File.Exists(temp)) try { File.Delete(temp); } catch { } }
-    }
+    public void Save() => AppSettings.Set("CurationLanguages", this);
 
     private static readonly Regex TextGenres = new("rol|rpg|aventura|novela|estrategia|t[aá]ctico|quiz|trivia|educaci|ingenio|juego de mesa|construcci[oó]n", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 

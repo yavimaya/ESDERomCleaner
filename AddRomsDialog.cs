@@ -244,7 +244,7 @@ internal sealed class AddRomsDialog : LocalizedForm
         Controls.Add(middle); Controls.Add(bottom); Controls.Add(dropZone);
 
         // Menú superior: las bases de datos de ROMs se gestionan desde aquí.
-        var menuBar = new MenuStrip();
+        var menuBar = new ClickThroughMenuStrip();
         var optionsMenu = new ToolStripMenuItem("Opciones");
         optionsMenu.DropDownItems.Add("Cómo guardar las ROMs…", null, (_, _) => ChooseStorage());
         optionsMenu.DropDownItems.Add("Bases de datos de ROMs…", null, (_, _) => OpenDatManager());
@@ -258,7 +258,7 @@ internal sealed class AddRomsDialog : LocalizedForm
             control.DragDrop += async (_, e) => { if (e.Data?.GetData(DataFormats.FileDrop) is string[] paths) await HandleDropAsync(paths); };
         }
         // Examinar: archivos sueltos o una carpeta entera, con el mismo análisis que al arrastrar.
-        var browseMenu = new ContextMenuStrip();
+        var browseMenu = new ContextMenuStrip { ShowImageMargin = false };
         browseMenu.Items.Add("Archivos…", null, async (_, _) =>
         {
             using var open = new OpenFileDialog { Title = Loc.T("Elige las ROMs a añadir"), Multiselect = true, Filter = Loc.T("Todos los archivos|*.*") };
@@ -333,17 +333,20 @@ internal sealed class AddRomsDialog : LocalizedForm
             RemoveRows(g, row.Selected ? g.SelectedRows.Cast<DataGridViewRow>().ToList() : [row]);
         };
         // Menú contextual: actúa solo sobre las filas seleccionadas de esta lista. El botón derecho selecciona la fila pulsada si no lo estaba.
-        var menu = new ContextMenuStrip();
+        var menu = new ContextMenuStrip { ShowImageMargin = false };
         var removeItem = new ToolStripMenuItem("Quitar de la lista");
         var assignItem = new ToolStripMenuItem("Asignar a carpeta");
-        menu.Items.Add(assignItem); menu.Items.Add(removeItem);
+        var reidentifyItem = new ToolStripMenuItem("Re-identificar");
+        menu.Items.Add(assignItem); menu.Items.Add(reidentifyItem); menu.Items.Add(removeItem);
         g.ContextMenuStrip = menu;
+        ((ToolStripDropDownMenu)assignItem.DropDown).ShowImageMargin = false;
         g.CellMouseDown += (_, e) =>
         {
             if (e.Button != MouseButtons.Right || e.RowIndex < 0 || working) return;
             if (!g.Rows[e.RowIndex].Selected) { g.ClearSelection(); g.Rows[e.RowIndex].Selected = true; }
         };
         removeItem.Click += (_, _) => RemoveRows(g, g.SelectedRows.Cast<DataGridViewRow>().ToList());
+        reidentifyItem.Click += (_, _) => Reidentify(g.SelectedRows.Cast<DataGridViewRow>().ToList());
         menu.Opening += (_, e) =>
         {
             var selected = g.SelectedRows.Cast<DataGridViewRow>().ToList();
@@ -417,6 +420,45 @@ internal sealed class AddRomsDialog : LocalizedForm
             UpdateRemoveButton();
             status.Text = $"{items.Count} archivo(s) en la lista.";
         });
+    }
+
+    // Vuelve a identificar las ROMs seleccionadas de cualquiera de las dos listas (p. ej. tras instalar o importar un DAT) y las recoloca según el nuevo resultado.
+    private async void Reidentify(List<DataGridViewRow> rows)
+    {
+        var olds = rows.Select(r => r.Tag).OfType<RomIdentity>().ToList();
+        if (olds.Count == 0 || working) return;
+        working = true; UpdateAddButton(); UpdateRemoveButton();
+        progress.Style = ProgressBarStyle.Marquee; progress.Visible = true;
+        status.Text = $"Re-identificando {olds.Count} archivo(s)…";
+        try
+        {
+            if (!RomDatabase.IndexReady && RomDatabase.InstalledCount() > 0) await PrepareIndexAsync("");
+            progress.Style = ProgressBarStyle.Marquee; progress.Visible = true;
+            var results = new RomIdentity?[olds.Count];
+            int degree = Math.Clamp(Environment.ProcessorCount / 2, 2, 8);
+            await Parallel.ForEachAsync(Enumerable.Range(0, olds.Count), new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = cts.Token },
+                async (i, ct) => results[i] = await RomIdentifier.IdentifyAsync(olds[i].Path, ct));
+            if (IsDisposed) return;
+            int resolved = 0;
+            for (int i = 0; i < olds.Count; i++)
+            {
+                var old = olds[i]; var fresh = results[i]!;
+                var row = doubtGrid.Rows.Cast<DataGridViewRow>().Concat(grid.Rows.Cast<DataGridViewRow>()).FirstOrDefault(r => ReferenceEquals(r.Tag, old));
+                if (row is null) continue;
+                fresh.Origin = old.Origin;
+                int at = items.IndexOf(old);
+                if (at >= 0) items[at] = fresh; else items.Add(fresh);
+                var owner = row.DataGridView!;
+                try { owner.CancelEdit(); } catch (InvalidOperationException) { }
+                owner.Rows.Remove(row);
+                AddRow(fresh);
+                if (grid.Rows.Cast<DataGridViewRow>().Any(r => ReferenceEquals(r.Tag, fresh))) resolved++;
+            }
+            UpdateDoubtLabel();
+            status.Text = $"Re-identificadas {olds.Count}: {resolved} identificadas, {olds.Count - resolved} sin decidir.";
+        }
+        catch (OperationCanceledException) { }
+        finally { working = false; if (!IsDisposed) { progress.Visible = false; progress.Style = ProgressBarStyle.Blocks; UpdateAddButton(); UpdateRemoveButton(); } }
     }
 
     // Asigna la carpeta de destino a las filas indicadas (de una sola lista). En la lista de dudas, cada fila pasa a la de identificadas.
@@ -815,7 +857,7 @@ internal sealed class AddRomsDialog : LocalizedForm
         {
             int systems = AddedPaths.Select(p => Path.GetFileName(Path.GetDirectoryName(p)) ?? "").Distinct(StringComparer.OrdinalIgnoreCase).Count();
             if (QuietMessage.Confirm(this, "Scrapear las ROMs añadidas",
-                $"Se han añadido {added:N0} ROM(s) de {systems:N0} sistema(s).\r\n\r\n¿Quieres categorizarlas y descargar sus medios con ScreenScraper? Se abrirá la descarga masiva solo con esas ROMs.",
+                $"Se han añadido {added:N0} ROM(s) de {systems:N0} sistema(s).\r\n\r\n¿Quieres categorizarlas y descargar sus medios con ScreenScraper?\r\nSe abrirá la descarga masiva solo con esas ROMs.",
                 "Scrapear"))
             {
                 ScrapeRequested = true;

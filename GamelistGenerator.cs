@@ -147,6 +147,17 @@ public static class GamelistGenerator
         }
     }
 
+    // Comprueba que el archivo es XML correcto envolviéndolo en una raíz sintética (sin su declaración <?xml?>), como el resto de lectores y escritores de gamelists.
+    private static void ValidateWrapped(string path)
+    {
+        string xml = File.ReadAllText(path);
+        var declaration = Regex.Match(xml, @"^\s*<\?xml\b.*?\?>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        string content = declaration.Success ? xml[declaration.Length..] : xml;
+        using var input = new StringReader("<__esde_document>" + content + "</__esde_document>");
+        using var reader = XmlReader.Create(input, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
+        new XmlDocument { XmlResolver = null }.Load(reader);
+    }
+
     // Añade las ROMs al final de un gamelist existente sin tocar el resto del archivo.
     private static void AppendTo(string root, GeneratedGamelist item, bool backup)
     {
@@ -173,8 +184,7 @@ public static class GamelistGenerator
         try
         {
             File.WriteAllText(temp, result, new UTF8Encoding(false));
-            using (var reader = XmlReader.Create(temp, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null }))
-                new XmlDocument { XmlResolver = null }.Load(reader);
+            ValidateWrapped(temp); // los gamelists de ES-DE pueden tener varios elementos de primer nivel, que no es XML estricto
             if (backup) File.Copy(item.GamelistPath, item.GamelistPath + ".bak_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N"), overwrite: false);
             File.Move(temp, item.GamelistPath, overwrite: true);
         }

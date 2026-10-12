@@ -34,3 +34,16 @@ internal sealed class NotebookButton : Button
         }
     }
 }
+
+// Barra de menús que responde al primer clic aunque la ventana no estuviera activa (por defecto WinForms usa ese clic solo para activarla).
+internal sealed class ClickThroughMenuStrip : MenuStrip
+{
+    private const int WM_MOUSEACTIVATE = 0x21, MA_ACTIVATE = 1, MA_ACTIVATEANDEAT = 2;
+
+    protected override void WndProc(ref Message m)
+    {
+        base.WndProc(ref m);
+        // Si el clic solo iba a activar la ventana (se «come»), se deja pasar también al menú.
+        if (m.Msg == WM_MOUSEACTIVATE && m.Result == (IntPtr)MA_ACTIVATEANDEAT) m.Result = (IntPtr)MA_ACTIVATE;
+    }
+}
