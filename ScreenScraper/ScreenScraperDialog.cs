@@ -126,7 +126,7 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
         mediaToolbar.Controls.Add(mediaSummary, 0, 0);
         mediaToolbar.Controls.Add(downloadAllButton, 1, 0);
 
-        var viewer = new Panel { Dock = DockStyle.Fill };
+        var viewer = new Panel { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle }; // cuadro fino alrededor del medio
         viewer.Controls.Add(mediaPreview);
         var viewerButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
         viewerButtons.Controls.Add(openMediaButton);

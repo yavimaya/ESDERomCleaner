@@ -121,7 +121,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         miximageGroup.Text = $"Imagen de {row.GameName}";
         try
         {
-            string? imagePath = await Task.Run(() => FindImage(root.Text, row, ImageSettings.Folder));
+            string? imagePath = await Task.Run(() => FindImage(root.Text, row, ImageSettings.Folder) ?? ImageSettings.Fallbacks.Select(f => FindImage(root.Text, row, f)).FirstOrDefault(p => p is not null));
             if (version != previewVersion) return;
             if (!string.IsNullOrEmpty(imagePath))
             {

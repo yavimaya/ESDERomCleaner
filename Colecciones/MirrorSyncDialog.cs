@@ -189,8 +189,7 @@ internal sealed class MirrorSyncDialog : LocalizedForm
 
     private static bool IsRemovableDrive(string path)
     {
-        try { return new DriveInfo(Path.GetPathRoot(path) ?? path).DriveType == DriveType.Removable; }
-        catch { return false; }
+        return StorageKind.IsSdOrRemovable(path);
     }
 
     private bool ValidateSourcePath(out string error)
@@ -355,7 +354,7 @@ internal sealed class MirrorSyncDialog : LocalizedForm
         int taken = 0;
         while ((all || taken < 600) && outputQueue.TryDequeue(out var line)) { text.AppendLine(line); taken++; }
         if (text.Length == 0) return;
-        if (output.TextLength > 1_000_000) { output.Select(0, 400_000); output.SelectedText = ""; }
+        if (output.TextLength > 1_000_000) { output.ReadOnly = false; output.Select(0, 400_000); output.SelectedText = ""; output.ReadOnly = true; } // en solo lectura, borrar la selección hace sonar el aviso del sistema
         output.AppendText(text.ToString());
         output.SelectionStart = output.TextLength;
         output.ScrollToCaret();
@@ -385,6 +384,7 @@ internal sealed class MirrorSyncDialog : LocalizedForm
             start.ArgumentList.Add(argument);
 
         while (lastRobocopyLines.TryDequeue(out _)) { }
+        Interlocked.Exchange(ref copiedEntries, 0);
 
         using var process = new Process { StartInfo = start, EnableRaisingEvents = true };
         if (!process.Start()) throw new InvalidOperationException("Windows no pudo iniciar Robocopy.");
@@ -397,12 +397,20 @@ internal sealed class MirrorSyncDialog : LocalizedForm
         return process.ExitCode;
     }
 
+    private long copiedEntries;
+
     private async Task CaptureOutputAsync(StreamReader reader)
     {
         while (await reader.ReadLineAsync() is { } line)
         {
             lastRobocopyLines.Enqueue(line);
-            outputQueue.Enqueue(line);
+            // Las líneas de archivos copiados (nuevo, más reciente, modificado…) empiezan por tabulador: no se muestran una a una, solo cada 1.000 como avance.
+            // Se muestran siempre los «*EXTRA» (lo que /MIR borra del destino), los errores y el resumen final.
+            if (line.StartsWith('\t') && !line.TrimStart().StartsWith('*'))
+            {
+                if (line.Trim().Length > 0 && Interlocked.Increment(ref copiedEntries) % 1000 == 0) outputQueue.Enqueue($"  … {copiedEntries:N0} archivos y carpetas copiados");
+            }
+            else outputQueue.Enqueue(line);
             if (line.Trim().Length > 0) Interlocked.Increment(ref processedLines);
             while (lastRobocopyLines.Count > 24)
                 lastRobocopyLines.TryDequeue(out _);

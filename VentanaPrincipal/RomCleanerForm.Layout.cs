@@ -11,6 +11,23 @@ namespace ESDERomCleaner;
 
 public sealed partial class RomCleanerForm : LocalizedForm
 {
+    private Label? welcomeLabel; private TableLayoutPanel? welcomeShell; private Control[] welcomeParts = []; private Control? welcomeFooter;
+
+    // Menús que solo se muestran con una colección cargada.
+    private ToolStripMenuItem[] collectionMenus = [];
+
+    private void ApplyWelcome()
+    {
+        bool loaded = activeCollectionValue is not null;
+        foreach (var m in collectionMenus) m.Visible = loaded;
+        createGamelists.Enabled = loaded; showAccessory.Enabled = loaded; // opciones que actúan sobre la colección
+        if (welcomeLabel is null || welcomeShell is null) return;
+        foreach (var c in welcomeParts) c.Visible = loaded;
+        if (welcomeFooter is not null) welcomeFooter.Visible = loaded;
+        welcomeShell.RowStyles[4].Height = loaded ? 102 : 0;
+        welcomeLabel.Visible = !loaded;
+    }
+
     private void BuildLayout()
     {
         AutoScaleMode = AutoScaleMode.Font; Font = new Font("Segoe UI", 9F);
@@ -19,7 +36,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         shell.RowStyles.Add(new RowStyle(SizeType.AutoSize)); shell.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         shell.RowStyles.Add(new RowStyle(SizeType.Absolute,0));
         shell.RowStyles.Add(new RowStyle(SizeType.Percent,100)); shell.RowStyles.Add(new RowStyle(SizeType.Absolute,102));
-        var menu=new ClickThroughMenuStrip { Dock=DockStyle.Fill, AutoSize=true }; var tm=new ToolStripMenuItem("Trazabilidad"); tm.DropDownItems.Add("Ver registro de trazas…",null,(_,_)=>ShowTrace()); var optionsMenu = new ToolStripMenuItem("Opciones"); optionsMenu.DropDownItems.Add(createGamelists); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(backupOption); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(showVideos); optionsMenu.DropDownItems.Add(videoSound); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(showAccessory); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(dataFolderMenu); optionsMenu.DropDownItems.Add(tempFolderMenu); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(imageMenu); optionsMenu.DropDownItems.Add(languageMenu); menu.Items.Add(optionsMenu); menu.Items.Add(collectionsMenu); var scrapeMenu=new ToolStripMenuItem("Scrapeo"); scrapeMenu.DropDownItems.Add(bulkMedia); scrapeMenu.DropDownItems.Add(screenScraperCredentials); scrapeMenu.DropDownItems.Add(screenScraperSignUp); scrapeMenu.DropDownItems.Add(new ToolStripSeparator()); scrapeMenu.DropDownItems.Add(raScan); scrapeMenu.DropDownItems.Add(raOnlyWith); scrapeMenu.DropDownItems.Add(raCredentials); menu.Items.Add(scrapeMenu); var curationMenu=new ToolStripMenuItem("Curado"); curationMenu.DropDownItems.Add(curationRules); menu.Items.Add(curationMenu); var romsMenu=new ToolStripMenuItem("Añadir ROMs"); romsMenu.DropDownItems.Add(addRoms); romsMenu.DropDownItems.Add(datManager); menu.Items.Add(romsMenu); menu.Items.Add(tm); menu.Items.Add(helpMenu); MainMenuStrip=menu; shell.Controls.Add(menu,0,0);
+        var menu=new ClickThroughMenuStrip { Dock=DockStyle.Fill, AutoSize=true }; var tm=new ToolStripMenuItem("Trazabilidad"); tm.DropDownItems.Add("Ver registro de trazas…",null,(_,_)=>ShowTrace()); var optionsMenu = new ToolStripMenuItem("Opciones"); optionsMenu.DropDownItems.Add(createGamelists); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(backupOption); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(showVideos); optionsMenu.DropDownItems.Add(videoSound); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(showAccessory); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(dataFolderMenu); optionsMenu.DropDownItems.Add(tempFolderMenu); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(imageMenu); optionsMenu.DropDownItems.Add(languageMenu); menu.Items.Add(optionsMenu); menu.Items.Add(collectionsMenu); var romsMenu=new ToolStripMenuItem("Añadir ROMs"); romsMenu.DropDownItems.Add(addRoms); romsMenu.DropDownItems.Add(datManager); menu.Items.Add(romsMenu); var curationMenu=new ToolStripMenuItem("Curado"); curationMenu.DropDownItems.Add(curationRules); menu.Items.Add(curationMenu); var scrapeMenu=new ToolStripMenuItem("Scrapeo"); scrapeMenu.DropDownItems.Add(bulkMedia); menu.Items.Add(scrapeMenu); var raMenu=new ToolStripMenuItem("RetroAchievements") { Tag = "noloc" }; raMenu.DropDownItems.Add(raScan); raMenu.DropDownItems.Add(raOnlyWith); menu.Items.Add(raMenu); var credentialsMenu=new ToolStripMenuItem("Credenciales"); credentialsMenu.DropDownItems.Add(screenScraperCredentials); credentialsMenu.DropDownItems.Add(screenScraperSignUp); credentialsMenu.DropDownItems.Add(new ToolStripSeparator()); credentialsMenu.DropDownItems.Add(raCredentials); menu.Items.Add(credentialsMenu); collectionMenus = [romsMenu, scrapeMenu, raMenu, curationMenu]; menu.Items.Add(tm); menu.Items.Add(helpMenu); MainMenuStrip=menu; shell.Controls.Add(menu,0,0);
         var rootLine = new TableLayoutPanel { Dock = DockStyle.Fill, Height = 42, Padding = new Padding(10, 4, 10, 4), ColumnCount = 2, RowCount = 3, Margin = Padding.Empty };
         rootLine.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         rootLine.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -60,7 +77,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         cancel.Dock = DockStyle.None;
         cancel.Anchor = AnchorStyles.None;
         cancel.Margin = Padding.Empty;
-        // «Cancelar» ocupa el sitio de «Analizar colección» mientras hay una acción en curso.
+        // «Cancelar» ocupa el sitio de «Listar colección» mientras hay una acción en curso.
         cancel.Visible = false;
         cancel.EnabledChanged += (_, _) => { cancel.Visible = cancel.Enabled; scan.Visible = !cancel.Enabled; };
         actionLine.Controls.Add(scan, 0, 0);
@@ -261,7 +278,12 @@ public sealed partial class RomCleanerForm : LocalizedForm
         w.Resize += (_, _) => AlignSearch();
         Shown += (_, _) => AlignSearch();
         actionLine.Controls.Add(searchHost, 1, 0);
-        shell.Controls.Add(w, 0, 3);
+        // Sin colección cargada solo se ve el menú y un mensaje centrado; al cargar o crear una colección aparece todo.
+        var body = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+        welcomeLabel = new Label { Text = "ESDEROM CLEANER\r\n\r\nSELECCIONE O CREE UNA NUEVA COLECCIÓN", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 16F, FontStyle.Bold), ForeColor = SystemColors.GrayText };
+        body.Controls.Add(w); body.Controls.Add(welcomeLabel);
+        welcomeShell = shell; welcomeParts = new Control[] { rootLine, w };
+        shell.Controls.Add(body, 0, 3);
         status.AutoSize = false; status.Dock = DockStyle.Fill; status.AutoEllipsis = true;
         var f = new TableLayoutPanel { Dock = DockStyle.Fill, Height = 102, Padding = new Padding(10, 2, 10, 2), ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
         f.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -297,6 +319,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         f.Controls.Add(status, 0, 2);
         f.Controls.Add(progressHost, 0, 3);
         shell.Controls.Add(f, 0, 4); Controls.Add(shell);
+        welcomeFooter = f; ApplyWelcome();
     }
     private static GroupBox Group(string title, Control control) { var g = new GroupBox { Text = title, Dock = DockStyle.Fill, Padding = new Padding(6, 6, 6, 4) }; g.Controls.Add(control); return g; }
 }

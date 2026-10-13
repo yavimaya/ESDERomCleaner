@@ -164,3 +164,16 @@ internal static class PixelSystemIcons
         return big;
     }
 }
+
+// Columna de icono de sistema para las rejillas que listan sistemas.
+internal static class SystemIconColumn
+{
+    public static DataGridViewImageColumn Create(int width = 30) => new()
+    {
+        Name = "icon", HeaderText = "", Width = width, ReadOnly = true, ImageLayout = DataGridViewImageCellLayout.Zoom,
+        SortMode = DataGridViewColumnSortMode.NotSortable, Resizable = DataGridViewTriState.False
+    };
+
+    // Icono del sistema para la celda (de «size» píxeles de lado).
+    public static Image Icon(string system, int size) => PixelSystemIcons.Get(system, size);
+}

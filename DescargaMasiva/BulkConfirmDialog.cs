@@ -20,6 +20,7 @@ internal sealed class BulkConfirmDialog : LocalizedForm
             ScrollBars = systems.Count > visibleRows ? ScrollBars.Vertical : ScrollBars.None
         };
         grid.ApplyInfoStyle(rowHeight, headerHeight);
+        grid.Columns.Add(SystemIconColumn.Create(28));
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sistema", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, SortMode = DataGridViewColumnSortMode.NotSortable });
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -27,7 +28,7 @@ internal sealed class BulkConfirmDialog : LocalizedForm
             DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter },
             HeaderCell = { Style = { Alignment = DataGridViewContentAlignment.MiddleCenter } }
         });
-        foreach (var (system, roms) in systems) grid.Rows.Add(system, roms.ToString("N0"));
+        foreach (var (system, roms) in systems) grid.Rows.Add(SystemIconColumn.Icon(system, 16), system, roms.ToString("N0"));
         grid.ClearSelection();
 
         int y = 32 + gridHeight + 8;

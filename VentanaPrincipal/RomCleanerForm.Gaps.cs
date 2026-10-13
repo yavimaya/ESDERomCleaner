@@ -12,17 +12,19 @@ public sealed partial class RomCleanerForm
         UpdateGapLabels();
     }
 
-    // Carpeta raíz del último análisis correcto: mientras siga siendo la de la caja, el botón ofrece «Re-analizar».
+    // Carpeta raíz del último análisis correcto: mientras siga siendo la de la caja, el botón ofrece «Re-listar».
     private string? loadedRoot;
     private int gapsVersion;
 
     private void UpdateScanButton()
     {
         bool loaded = all.Count > 0 && loadedRoot is not null && root.Text.Trim().Trim('"').Equals(loadedRoot, StringComparison.OrdinalIgnoreCase);
-        scan.Text = loaded ? "Re-analizar colección" : "Analizar colección";
+        scan.Text = loaded ? "Re-listar colección" : "Listar colección";
     }
 
     // Vuelve a calcular los huecos (lista cada carpeta de medios una vez) sin bloquear la ventana.
+    private Task? gapsTask;
+
     private async Task RefreshGapsAsync()
     {
         var rows = ScrapableRows().ToList();

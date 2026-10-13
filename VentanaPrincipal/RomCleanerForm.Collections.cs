@@ -15,7 +15,7 @@ public sealed partial class RomCleanerForm
     private SavedCollection? activeCollection
     {
         get => activeCollectionValue;
-        set { activeCollectionValue = value; CollectionTitle.Set(value?.Name, value?.Root); UpdateScanEnabled(); }
+        set { activeCollectionValue = value; CollectionTitle.Set(value?.Name, value?.Root); UpdateScanEnabled(); ApplyWelcome(); }
     }
 
     private static List<SavedCollection> LoadCollections() => AppSettings.Get("Collections", new List<SavedCollection>());
@@ -122,7 +122,7 @@ public sealed partial class RomCleanerForm
             status.Text = $"Colección «{name}» creada.";
             // Al crearla no se carga sola: se pregunta. Si se analiza una carpeta sin colección (askToSwitch = false) sí se carga, porque hace falta para seguir.
             if (!askToSwitch || QuietMessage.Confirm(this, "Colección creada",
-                $"Colección «{name}» creada.\r\n\r\n¿Quieres cambiar a ella ahora? Se descargará la colección cargada y el formulario quedará vacío; el primer «Analizar colección» lo preparará todo.", "Cambiar"))
+                $"Colección «{name}» creada.\r\n\r\n¿Quieres cambiar a ella ahora? Se descargará la colección cargada y el formulario quedará vacío; el primer «Listar colección» lo preparará todo.", "Cambiar"))
                 SwitchToCollection(created);
             return true;
         }
@@ -187,7 +187,7 @@ public sealed partial class RomCleanerForm
         activeCollection = updated;
     }
 
-    // Cargar una colección: se descarga la anterior, el formulario queda vacío y el primer «Analizar colección» lo prepara todo.
+    // Cargar una colección: se descarga la anterior, el formulario queda vacío y el primer «Listar colección» lo prepara todo.
     private void OpenSavedCollection(SavedCollection collection)
     {
         if (cts != null) return;
@@ -206,7 +206,7 @@ public sealed partial class RomCleanerForm
     }
 
     // Deja la colección indicada como la cargada. Si ya se había analizado, se recupera su análisis guardado; si no, empieza de cero y el primer
-    // «Analizar colección» lo prepara todo.
+    // «Listar colección» lo prepara todo.
     private void SwitchToCollection(SavedCollection collection)
     {
         UnloadCollection();
@@ -217,10 +217,10 @@ public sealed partial class RomCleanerForm
         var cached = CollectionCache.TryLoad(collection.Root);
         if (cached is null || cached.Rows.Count == 0)
         {
-            status.Text = $"Colección «{collection.Name}» cargada. Pulsa «Analizar colección» para prepararla.";
+            status.Text = $"Colección «{collection.Name}» cargada. Pulsa «Listar colección» para prepararla.";
             return;
         }
-        // Análisis guardado: se muestra al instante. «Re-analizar colección» lo actualiza si algo ha cambiado fuera del programa.
+        // Análisis guardado: se muestra al instante. «Re-listar colección» lo actualiza si algo ha cambiado fuera del programa.
         loadingFromCache = true;
         try
         {
@@ -234,7 +234,7 @@ public sealed partial class RomCleanerForm
         }
         finally { loadingFromCache = false; }
         _ = RefreshGapsAsync();
-        status.Text = $"Colección «{collection.Name}» cargada desde su caché ({cached.SavedUtc.ToLocalTime():g}). Pulsa «Re-analizar colección» para actualizarla.";
+        status.Text = $"Colección «{collection.Name}» cargada desde su caché ({cached.SavedUtc.ToLocalTime():g}). Pulsa «Re-listar colección» para actualizarla.";
         trace.Add("collection_cache_loaded", $"name={collection.Name}; roms={cached.Rows.Count}");
     }
 

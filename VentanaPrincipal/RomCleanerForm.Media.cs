@@ -156,6 +156,9 @@ internal static class ImageSettings
         ("marquees", "Logo / marquee"), ("fanart", "Fan art"), ("custom", "Imagen personalizada (custom)")
     ];
 
+    // Si la ROM no tiene la imagen por defecto, el panel prueba estas carpetas por orden: carátula frontal, caja 3D, pantalla de título, captura, soporte físico, logo, carátula trasera, fan art e imagen personalizada.
+    public static readonly string[] Fallbacks = ["covers", "3dboxes", "titlescreens", "screenshots", "physicalmedia", "marquees", "backcovers", "fanart", "custom"];
+
     public static string Folder { get; private set; } = "miximages";
 
     static ImageSettings()

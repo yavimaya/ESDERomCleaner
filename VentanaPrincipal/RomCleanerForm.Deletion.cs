@@ -34,9 +34,16 @@ public sealed partial class RomCleanerForm : LocalizedForm
 
     // Borrado seguro de unas ROMs concretas (plan, resumen con confirmación, ejecución y actualización de los sistemas afectados).
     // Lo usan tanto la selección de la ventana principal como el formulario de curado.
-    private async Task DeleteRowsAsync(RomRow[] selectedRows)
+    // Con dialogOwner (el formulario de curado) todos los avisos se muestran sobre él, el avance se comunica con report y el re-listado de los sistemas
+    // afectados se lanza en segundo plano sin abrir ningún aviso. Devuelve las rutas de las ROMs borradas (null si se canceló o falló antes de borrar).
+    private async Task<HashSet<string>?> DeleteRowsAsync(RomRow[] selectedRows, IWin32Window? dialogOwner = null, Action<string>? report = null)
     {
-        if (cts is not null) return;
+        if (cts is not null) return null;
+        IWin32Window owner = dialogOwner ?? this;
+        bool embedded = dialogOwner is not null;
+        bool rescanInBackground = false;
+        HashSet<string>? deletedPaths = null;
+        void Say(string text) { status.Text = text; report?.Invoke(text); }
         var rowPaths = selectedRows.Select(row => row.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
         bool backupsEnabledForOperation = createGamelistBackups;
 
@@ -46,12 +53,12 @@ public sealed partial class RomCleanerForm : LocalizedForm
         cts = planningCancellation;
         SetOperationUi(busy: true, canCancel: true);
         progress.Style = ProgressBarStyle.Marquee;
-        status.Text = "Preparando el borrado…";
+        Say("Preparando el borrado…");
         trace.Add("deletion_plan_started", $"roms={selectedRows.Length}");
 
         try
         {
-            var planningProgress = new Progress<string>(message => status.Text = message);
+            var planningProgress = new Progress<string>(Say);
             plan = await Task.Run(
                 () => service.BuildPlan(root.Text, selectedRows, accessories, planningProgress, planningCancellation.Token),
                 planningCancellation.Token);
@@ -59,15 +66,15 @@ public sealed partial class RomCleanerForm : LocalizedForm
         catch (OperationCanceledException)
         {
             trace.Add("deletion_plan_cancelled", $"roms={selectedRows.Length}");
-            status.Text = "Preparación cancelada; no se modificó ningún archivo.";
-            return;
+            Say("Preparación cancelada; no se modificó ningún archivo.");
+            return null;
         }
         catch (Exception ex)
         {
             trace.Add("deletion_plan_error", ex.ToString());
-            MessageBox.Show(this, ex.Message, "No se pudo preparar el borrado", MessageBoxButtons.OK, MessageBoxIcon.None);
-            status.Text = "No se pudo preparar el borrado; no se modificó ningún archivo.";
-            return;
+            MessageBox.Show(owner, ex.Message, "No se pudo preparar el borrado", MessageBoxButtons.OK, MessageBoxIcon.None);
+            Say("No se pudo preparar el borrado; no se modificó ningún archivo.");
+            return null;
         }
         finally
         {
@@ -84,22 +91,22 @@ public sealed partial class RomCleanerForm : LocalizedForm
         var confirmData = new DeleteConfirmData(plan.Items.Count, FormatSize(plan.RomBytes), plan.Accessories.Count, FormatSize(plan.AccessoryBytes), plan.Media.Count,
             FormatSize(plan.MediaBytes), plan.Gamelists.Count, FormatSize(plan.RomBytes + plan.AccessoryBytes + plan.MediaBytes), backupsEnabledForOperation);
         bool confirmed;
-        using (var confirm = new DeleteConfirmDialog(confirmData)) confirmed = confirm.ShowDialog(this) == DialogResult.OK;
+        using (var confirm = new DeleteConfirmDialog(confirmData)) confirmed = confirm.ShowDialog(owner) == DialogResult.OK;
         if (!confirmed)
         {
             trace.Add("deletion_cancelled_by_user", $"roms={plan.Items.Count}");
-            status.Text = "Borrado cancelado; no se modificó ningún archivo.";
-            return;
+            Say("Borrado cancelado; no se modificó ningún archivo.");
+            return null;
         }
 
         try
         {
             SetOperationUi(busy: true, canCancel: false);
             progress.Style = ProgressBarStyle.Marquee;
-            status.Text = "Eliminando archivos y actualizando gamelists…";
+            Say("Eliminando archivos y actualizando gamelists…");
             var executionProgress = new Progress<string>(message =>
             {
-                status.Text = message;
+                Say(message);
                 trace.Add("deletion_progress", message);
             });
 
@@ -107,11 +114,19 @@ public sealed partial class RomCleanerForm : LocalizedForm
             string finalSummary = BuildDeletionResultSummary(plan, result);
             details.Text = finalSummary;
             trace.Add("deletion_completed", finalSummary);
-            MessageBox.Show(this, finalSummary, "Resultado de la eliminación", MessageBoxButtons.OK,
+            MessageBox.Show(owner, finalSummary, "Resultado de la eliminación", MessageBoxButtons.OK,
                 MessageBoxIcon.None);
+            deletedPaths = plan.Items.Select(item => item.Row).Where(row => !File.Exists(row.Path) && !Directory.Exists(row.Path)).Select(row => row.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             selected.RemoveWhere(path => rowPaths.Contains(path));
-            status.Text = $"Borrado terminado: {result.DeletedRomCount}/{result.RomCountPlanned} ROMs. Actualizando sistemas afectados…";
+            Say($"Borrado terminado: {result.DeletedRomCount}/{result.RomCountPlanned} ROMs. Actualizando sistemas afectados…");
+            if (embedded)
+            {
+                // Desde el curado el formulario sigue abierto: el re-listado va en paralelo y sin avisos; la interfaz se libera cuando termina.
+                rescanInBackground = true;
+                _ = RescanInBackgroundAsync(plan.Items.Select(item => item.Row.System).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+                return deletedPaths;
+            }
             try
             {
                 await RefreshSystemsAfterDeletionAsync(plan.Items.Select(item => item.Row.System).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
@@ -127,17 +142,42 @@ public sealed partial class RomCleanerForm : LocalizedForm
         catch (Exception ex)
         {
             trace.Add("deletion_error", ex.ToString());
-            MessageBox.Show(this, ex.Message, "Error durante la eliminación", MessageBoxButtons.OK, MessageBoxIcon.None);
-            status.Text = "El borrado terminó con un error; revisa la trazabilidad.";
+            MessageBox.Show(owner, ex.Message, "Error durante la eliminación", MessageBoxButtons.OK, MessageBoxIcon.None);
+            Say("El borrado terminó con un error; revisa la trazabilidad.");
         }
         finally
         {
-            cts?.Dispose();
-            cts = null;
-            SetOperationUi(busy: false, canCancel: false);
-            progress.Style = ProgressBarStyle.Blocks;
-            progress.Value = 0;
-            UpdateSelection();
+            if (!rescanInBackground) FinishOperationUi();
+        }
+        return deletedPaths;
+    }
+
+    // Deja la interfaz principal como estaba antes de una operación de borrado.
+    private void FinishOperationUi()
+    {
+        cts?.Dispose();
+        cts = null;
+        SetOperationUi(busy: false, canCancel: false);
+        progress.Style = ProgressBarStyle.Blocks;
+        progress.Value = 0;
+        UpdateSelection();
+    }
+
+    // Re-listado de los sistemas afectados por un borrado hecho desde el curado: sin avisos ni formularios, solo el estado y la traza.
+    private async Task RescanInBackgroundAsync(IReadOnlyCollection<string> affectedSystems)
+    {
+        try
+        {
+            await RefreshSystemsAfterDeletionAsync(affectedSystems);
+        }
+        catch (Exception refreshError)
+        {
+            trace.Add("deletion_partial_rescan_error", refreshError.ToString());
+            status.Text = "Borrado terminado; falló la actualización de la vista. Re-lista la colección.";
+        }
+        finally
+        {
+            FinishOperationUi();
         }
     }
 

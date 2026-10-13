@@ -29,7 +29,7 @@ internal static class MediaGaps
             bool noMix, noVideo;
             try
             {
-                noMix = !index.Has(EsDeMediaInstaller.TargetBase(root, row, ImageSettings.Folder));
+                noMix = !ImageSettings.Choices.Any(c => index.Has(EsDeMediaInstaller.TargetBase(root, row, c.Folder))); // sin imagen = ninguna de las carpetas de imagen tiene archivo
                 noVideo = !index.Has(EsDeMediaInstaller.TargetBase(root, row, "videos"));
             }
             catch (Exception ex) when (ex is not OperationCanceledException) { continue; } // ROM fuera de su carpeta o ruta no válida: no se puede deducir dónde estarían sus medios

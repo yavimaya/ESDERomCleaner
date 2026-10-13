@@ -52,7 +52,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
             // Solo se recuerda una ruta con la que el análisis ha funcionado.
             if (!lastRootPath.Equals(rootPath, StringComparison.OrdinalIgnoreCase)) { lastRootPath = rootPath; SaveOptions(); }
             status.Text = "Archivos consultados; calculando tamaños…";
-            _ = RefreshGapsAsync();
+            gapsTask = RefreshGapsAsync(); // se espera justo antes del aviso de sistemas sin categoría, que también cuenta las ROMs sin imagen y sin vídeo
             await mediaSizeTask;
             mediaBytes = mediaSizeTask.Result;
             sizesCalculating = false;
@@ -83,9 +83,19 @@ public sealed partial class RomCleanerForm : LocalizedForm
         else if (skipUnclassifiedOffer) skipUnclassifiedOffer = false;
         else if (offerUnclassified && unclassified is { Count: > 0 })
         {
-            var listed = unclassified.Select(s => (s, all.Count(r => r.Status == RomStatus.Ok && r.System.Equals(s, StringComparison.OrdinalIgnoreCase) && NoCategory(r)))).ToList();
+            if (gapsTask is not null) { status.Text = "Calculando huecos…"; try { await gapsTask; } catch { } }
+            var listed = unclassified.Select(s => (s, all.Count(r => r.Status == RomStatus.Ok && r.System.Equals(s, StringComparison.OrdinalIgnoreCase) && NoCategory(r)),
+                gaps is not null && gaps.TryGetValue(s, out var gap) ? gap.NoImage : 0, gaps is not null && gaps.TryGetValue(s, out var gap2) ? gap2.NoVideo : 0)).ToList();
             UnclassifiedChoice choice;
-            using (var dialog = new UnclassifiedSystemsDialog(listed)) { dialog.ShowDialog(this); choice = dialog.Choice; }
+            var gapRowsCache = new Dictionary<string, GapRows>(StringComparer.OrdinalIgnoreCase);
+            IReadOnlyList<string> GapNames(string system, int kind)
+            {
+                if (!gapRowsCache.TryGetValue(system, out var set))
+                    gapRowsCache[system] = set = MediaGaps.Rows(root.Text, ScrapableRows().Where(r => r.System.Equals(system, StringComparison.OrdinalIgnoreCase)));
+                var paths = kind == 0 ? set.NoMetadata : kind == 1 ? set.NoImage : set.NoVideo;
+                return paths.Select(Path.GetFileName).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).Order(StringComparer.OrdinalIgnoreCase).ToList();
+            }
+            using (var dialog = new UnclassifiedSystemsDialog(listed, GapNames)) { dialog.ShowDialog(this); choice = dialog.Choice; }
             // «Categorizar» solo descarga los metadatos (que traen la categoría), con una ventana de progreso y sin abrir el scrapeo; «Categorizar y scrapear» abre la descarga masiva con los medios elegidos la última vez.
             if (choice == UnclassifiedChoice.Categorize) await CategorizeAsync(unclassified, onlyMissingCategory: true);
             else if (choice == UnclassifiedChoice.CategorizeAndScrape) await OpenBulkMediaDialogAsync(onlyRows: all.Where(r => r.Status == RomStatus.Ok && NoCategory(r) && unclassified.Contains(r.System, StringComparer.OrdinalIgnoreCase)).ToList(), preset: BulkPreset.WithMetadata);

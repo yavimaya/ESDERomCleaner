@@ -19,6 +19,12 @@ internal sealed class CurationDialog : LocalizedForm
     private readonly TraceLog trace;
     // ROMs que el usuario ha decidido eliminar al cerrar el formulario; las borra la ventana principal con su borrado seguro.
     public List<RomRow> RowsForDeletion { get; } = new();
+
+    // Borrado completo (plan, aviso con las cifras exactas, ejecución y resultado) hecho por la ventana principal, pero mostrado sobre este formulario.
+    // Devuelve las rutas de las ROMs borradas (null si se canceló). Sin él, las filas se entregan a la ventana principal al cerrar.
+    [System.ComponentModel.Browsable(false), System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Func<RomRow[], IWin32Window, Action<string>, Task<HashSet<string>?>>? DeleteHandler { get; set; }
+    private bool deleting;
     // Las supracategorías son editables (botón «Editar supracategorías…»); sus definiciones se guardan aparte.
     private List<SupraDefinition> supraDefs = new();
     private CurationRule[] supra = Array.Empty<CurationRule>();
@@ -203,6 +209,7 @@ internal sealed class CurationDialog : LocalizedForm
         candidatesLayout.Controls.Add(candidatesGrid, 0, 1);
 
         Configure(systemsGrid);
+        systemsGrid.Columns.Add(SystemIconColumn.Create(30));
         systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "system", HeaderText = "Sistema", Width = 160, ReadOnly = true });
         foreach (var (name, header) in new[] { ("total", "ROMs"), ("cand", "Candidatas"), ("pct", "%"), ("size", "Espacio candidatas") })
             systemsGrid.Columns.Add(new DataGridViewTextBoxColumn
@@ -436,6 +443,7 @@ internal sealed class CurationDialog : LocalizedForm
     private void RequestDeletionOf(IReadOnlyList<RomRow> rowsToDelete)
     {
         if (rowsToDelete.Count == 0) return;
+        if (DeleteHandler is not null) { _ = DeleteWithHandlerAsync(rowsToDelete); return; }
         long bytes = rowsToDelete.Sum(r => r.Size);
         // Mismo aviso que el borrado de la ventana principal. Aquí solo se conocen las ROMs (los accesorios, la media y los gamelists se calculan en el plan
         // posterior, que vuelve a pedir confirmación con los números exactos), y lo que aún no se sabe se muestra como «—».
@@ -447,6 +455,37 @@ internal sealed class CurationDialog : LocalizedForm
         trace.Add("curation_deletion_requested", $"roms={RowsForDeletion.Count}; bytes={bytes}");
         DialogResult = DialogResult.OK;
         Close();
+    }
+
+    private async Task DeleteWithHandlerAsync(IReadOnlyList<RomRow> rowsToDelete)
+    {
+        if (deleting || DeleteHandler is null) return;
+        deleting = true;
+        deleteButton.Enabled = false;
+        string previousNote = note.Text;
+        try
+        {
+            trace.Add("curation_deletion_requested", $"roms={rowsToDelete.Count}; bytes={rowsToDelete.Sum(r => r.Size)}");
+            var deleted = await DeleteHandler(rowsToDelete.ToArray(), this, text => { if (!IsDisposed) note.Text = text; });
+            if (IsDisposed) return;
+            if (deleted is { Count: > 0 })
+            {
+                roms.RemoveAll(r => deleted.Contains(r.Path));
+                foreach (var row in rowsToDelete) excluded.Remove(KeyOf(row));
+                CollectionChanged = true;
+                BuildRules();
+                FillSupra();
+                FillGenres();
+                RefreshAll();
+                SaveState();
+            }
+            else note.Text = previousNote;
+        }
+        finally
+        {
+            deleting = false;
+            if (!IsDisposed) { deleteButton.Enabled = Union().Count > 0; }
+        }
     }
 
     // Excluye de la colección las candidatas seleccionadas: nogamecount y nomultiscrape en true en su gamelist.xml (ES-DE no las cuenta ni las multiscrapea). No se
@@ -635,7 +674,7 @@ internal sealed class CurationDialog : LocalizedForm
         {
             var (count, size) = candidates.GetValueOrDefault(group.Key);
             int total = group.Count();
-            systemsGrid.Rows.Add(group.Key, total.ToString("N0"), count.ToString("N0"), (total > 0 ? count * 100.0 / total : 0).ToString("0.0"), size > 0 ? ScreenScraperDialog.FormatBytes(size) : "—");
+            systemsGrid.Rows.Add(SystemIconColumn.Icon(group.Key, 18), group.Key, total.ToString("N0"), count.ToString("N0"), (total > 0 ? count * 100.0 / total : 0).ToString("0.0"), size > 0 ? ScreenScraperDialog.FormatBytes(size) : "—");
         }
     }
 

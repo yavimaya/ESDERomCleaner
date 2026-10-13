@@ -121,14 +121,27 @@ internal sealed class ScreenScraperQuotaStrip : StatusStrip
     private readonly ToolStripStatusLabel threads = NewLabel("Peticiones simultáneas que permite tu membresía.");
     private readonly ToolStripStatusLabel speed = NewLabel("Velocidad máxima de descarga de tu membresía.");
     private readonly ToolStripStatusLabel synced = NewLabel("Hora de la última lectura del servidor.");
+    private readonly ToolStripStatusLabel cpu = NewLabel("Uso de CPU del proceso (sobre el total de la máquina).");
+    private readonly System.Windows.Forms.Timer cpuTimer = new() { Interval = 1000 };
+    private TimeSpan lastCpu = System.Diagnostics.Process.GetCurrentProcess().TotalProcessorTime;
+    private long lastTick = Environment.TickCount64;
     private readonly ToolStripStatusLabel filler = new() { Spring = true };
+    private readonly ToolStripStatusLabel timing = new() { AutoSize = true, TextAlign = ContentAlignment.MiddleRight, Visible = false };
 
-    public ScreenScraperQuotaStrip()
+    // Texto de la derecha de la barra (tiempo transcurrido y restante en la descarga masiva); vacío = oculto.
+    [System.ComponentModel.Browsable(false), System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public string TimeText { set { timing.Text = value; timing.Visible = value.Length > 0; } }
+
+    // showPending = false quita la casilla de llamadas pendientes de leer.
+    public ScreenScraperQuotaStrip(bool showPending = true)
     {
         Dock = DockStyle.Bottom;
         SizingGrip = false;
         ShowItemToolTips = true;
-        Items.AddRange(new ToolStripItem[] { requests, pending, failed, threads, speed, synced, filler });
+        Items.AddRange(new ToolStripItem[] { requests, pending, failed, threads, speed, synced, cpu, filler, timing });
+        cpuTimer.Tick += (_, _) => UpdateCpu();
+        cpuTimer.Start();
+        pending.Visible = showPending;
         ApplyWidths();
         UpdateText();
         ScreenScraperQuota.Changed += OnChanged;
@@ -150,12 +163,30 @@ internal sealed class ScreenScraperQuotaStrip : StatusStrip
         Fix(threads, "Hilos: 00");
         Fix(speed, "Velocidad máx.: 000000 KB/s");
         Fix(synced, "Leído del servidor: 00/00 00:00");
+        Fix(cpu, "CPU: 100 %");
     }
 
     protected override void OnFontChanged(EventArgs e)
     {
         base.OnFontChanged(e);
         ApplyWidths();
+    }
+
+    // Porcentaje de CPU del proceso desde la última lectura, sobre todos los núcleos.
+    private void UpdateCpu()
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            var total = process.TotalProcessorTime;
+            long now = Environment.TickCount64;
+            double elapsedMs = now - lastTick;
+            if (elapsedMs <= 0) return;
+            double percent = (total - lastCpu).TotalMilliseconds / (elapsedMs * Environment.ProcessorCount) * 100;
+            lastCpu = total; lastTick = now;
+            cpu.Text = $"CPU: {Math.Clamp(percent, 0, 100):0} %";
+        }
+        catch { cpu.Text = ""; }
     }
 
     private void OnChanged()
@@ -178,7 +209,7 @@ internal sealed class ScreenScraperQuotaStrip : StatusStrip
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) ScreenScraperQuota.Changed -= OnChanged;
+        if (disposing) { ScreenScraperQuota.Changed -= OnChanged; cpuTimer.Dispose(); }
         base.Dispose(disposing);
     }
 }

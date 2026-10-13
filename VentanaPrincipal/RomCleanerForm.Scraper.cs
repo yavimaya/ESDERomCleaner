@@ -23,6 +23,13 @@ public sealed partial class RomCleanerForm
         StopVideoPlayback();
         trace.Add("bulk_media_dialog_opened", root.Text);
         using var dialog = new BulkMediaDialog((onlyRows?.Where(r => EsDeSystemExtensions.IsGameFile(r.System, r.Path)) ?? ScrapableRows()).ToList(), root.Text, trace, PreferNormalizedVideo(), createGamelistBackups, preselected, preset);
+        dialog.OpenSingleHandler = (row, owner) =>
+        {
+            trace.Add("screenscraper_dialog_opened", $"system={row.System}; rom={row.RomName}; desde=descarga_masiva");
+            using var single = new ScreenScraperDialog(row, root.Text, trace, PreferNormalizedVideo(), createGamelistBackups);
+            single.ShowDialog(owner);
+            return (single.CollectionMediaChanged, single.MetadataChanged);
+        };
         dialog.ShowDialog(this);
         if (!dialog.MetadataChanged && !dialog.CollectionChanged) return;
         // Los índices de miximages y vídeos se construyen una vez por carpeta: hay que olvidarlos para ver los nuevos.
@@ -88,6 +95,8 @@ public sealed partial class RomCleanerForm
         List<RomRow> excludedRows;
         using (var dialog = new CurationDialog(all.Where(r => IsVisibleSystem(r.System)).ToList(), trace, createGamelistBackups))
         {
+            // El borrado se hace sin salir del curado: los avisos salen sobre él y el re-listado de la ventana principal va en segundo plano.
+            dialog.DeleteHandler = (rows, owner, report) => DeleteRowsAsync(rows, owner, report);
             dialog.ShowDialog(this);
             toDelete = dialog.RowsForDeletion.ToArray();
             excludedRows = dialog.ExcludedRows.ToList();

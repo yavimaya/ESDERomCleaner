@@ -8,8 +8,15 @@ namespace ESDERomCleaner;
 // Qué hacer cuando ya hay en destino un medio de la ROM en esa carpeta.
 internal enum BulkOverwrite { No, Always, IfSizeDiffers }
 
+// Cómo se sustituye un elemento (metadatos o una carpeta de medios) cuando ya existe en destino: siempre, solo si el nuevo es menor que el actual
+// o solo si es mayor. En los medios se compara el tamaño del archivo; en los metadatos, la longitud de la descripción.
+internal enum BulkReplace { Always, NewSmaller, NewLarger }
+
 internal sealed record BulkMediaSettings(string[] Folders, bool NormalizedVideo, BulkOverwrite Overwrite, bool Backup, bool SearchByName, string[] Systems)
 {
+    // Cómo se sustituye cada elemento (clave de carpeta, o «metadata»). Lo que no figure usa «Nuevo es menor».
+    public Dictionary<string, string>? Replace { get; init; }
+
     public static BulkMediaSettings Default(bool normalizedVideo) => new(
         ["covers", "backcovers", "3dboxes", "physicalmedia", "screenshots", "titlescreens", "marquees", "miximages", "videos"],
         normalizedVideo, BulkOverwrite.No, true, false, []);
@@ -29,6 +36,10 @@ internal sealed record BulkMediaOptions(
 {
     // Juego elegido a mano para una ROM (desde «Aproximaciones por nombre» del formulario de una ROM): se usa tal cual, sin buscar en ScreenScraper.
     public Func<RomRow, SsGame?>? ForcedGame { get; init; }
+
+    // Sustitución por elemento (descarga masiva): si no es null, manda sobre «Overwrite» para los medios y los metadatos (los idiomas solo se piden si faltan).
+    public IReadOnlyDictionary<string, BulkReplace>? Replace { get; init; }
+    public BulkReplace ReplaceFor(string element) => Replace is not null && Replace.TryGetValue(element, out var policy) ? policy : BulkReplace.NewSmaller;
 }
 
 internal sealed record BulkIssue(string System, string Rom, string Result, string Detail);
@@ -128,7 +139,7 @@ internal sealed class BulkMediaRunner
         !string.IsNullOrWhiteSpace(row.Description) || (!string.IsNullOrWhiteSpace(row.Genre) && row.Genre != "Sin categoría");
 
     // Metadatos que hay que pedir para esta ROM: siempre si se sobrescribe; con «no sobrescribir», solo los juegos que todavía no tienen.
-    private static bool NeedsMetadata(BulkMediaOptions o, RomRow row) => o.Metadata && (o.Overwrite != BulkOverwrite.No || !HasMetadata(row));
+    private static bool NeedsMetadata(BulkMediaOptions o, RomRow row) => o.Metadata && (o.Replace is not null || o.Overwrite != BulkOverwrite.No || !HasMetadata(row));
 
     // Cuenta, sin tocar nada, cuánto trabajo habría: ROMs de los sistemas elegidos y cuántas ya lo tienen todo en destino.
     public static BulkPlan Plan(BulkMediaOptions o)
@@ -146,10 +157,10 @@ internal sealed class BulkMediaRunner
                 int pending = 0;
                 foreach (var folder in o.Folders)
                 {
-                    try { if (o.Overwrite != BulkOverwrite.No || !index.Has(RomFolderTarget(o, row, folder))) pending++; }
+                    try { if (o.Replace is not null || o.Overwrite != BulkOverwrite.No || !index.Has(RomFolderTarget(o, row, folder))) pending++; }
                     catch { pending++; }
                 }
-                bool needLanguages = languageIndex is not null && (o.Overwrite != BulkOverwrite.No || !languageIndex.Has(RomKey.Of(row)));
+                bool needLanguages = languageIndex is not null && ((o.Replace is null && o.Overwrite != BulkOverwrite.No) || !languageIndex.Has(RomKey.Of(row)));
                 if (pending > 0 || NeedsMetadata(o, row) || needLanguages) { withWork++; targets += pending; }
             }
         }
@@ -186,9 +197,14 @@ internal sealed class BulkMediaRunner
         int threads = Math.Max(1, o.Threads);
         Dbg($"=== INICIO === sistemas={systems.Count}; ROMs={Summary.RomsTotal}; hilos={threads}");
         Dbg($"Carpetas pedidas: {string.Join(", ", o.Folders.Select(f => f.Folder))}; metadatos={o.Metadata}; idiomas={o.Languages}");
+        if (o.Replace is not null)
+            Dbg("Sustituir lo que ya existe, por elemento: " + string.Join(", ", o.Folders.Select(f => f.Folder).Concat(o.Metadata ? ["metadata"] : []).Select(e => $"{e}={o.ReplaceFor(e)}"))
+                + $"; copia de seguridad={o.Backup}; buscar por nombre={o.SearchByName}; vídeo normalizado={o.NormalizedVideo}");
+        else
         Dbg("Sobrescribir archivos de medios: " + (o.Overwrite == BulkOverwrite.No ? "NO (solo se descarga lo que falta en destino)" : o.Overwrite == BulkOverwrite.Always ? "SIEMPRE" : "solo si el tamaño cambia")
             + $"; copia de seguridad={o.Backup}; buscar por nombre={o.SearchByName}; vídeo normalizado={o.NormalizedVideo}");
-        if (o.Metadata) Dbg(o.Overwrite == BulkOverwrite.No
+        if (o.Metadata && o.Replace is not null) Dbg("METADATOS: se piden para todos los juegos y se escriben según su opción (descripción nueva frente a la actual).");
+        else if (o.Metadata) Dbg(o.Overwrite == BulkOverwrite.No
             ? "METADATOS: solo se piden y escriben para los juegos que aún no tienen (sin descripción ni categoría); los que ya tienen se respetan."
             : "METADATOS: se piden y reescriben en el gamelist.xml de todos los juegos (nombre, descripción, género…).");
         trace.Add("bulk_media_started", $"systems={string.Join(",", systems)}; folders={string.Join(",", o.Folders.Select(f => f.Folder))}; normalized={o.NormalizedVideo}; overwrite={o.Overwrite}; backup={o.Backup}; by_name={o.SearchByName}; threads={threads}; roms={Summary.RomsTotal}");
@@ -234,6 +250,7 @@ internal sealed class BulkMediaRunner
                 catch (ScreenScraperException ex) when (IsFatal(ex)) { Stop(ex.Message, row, "Descarga detenida"); }
                 catch (Exception ex)
                 {
+                    Dbg($"{row.System}: {row.RomName}: RESULTADO → ERROR, se omite: {Mask(ex.Message)}");
                     Interlocked.Increment(ref Summary.WithErrors);
                     Issue(row, "Error", ex.Message);
                     trace.Add("bulk_media_rom_error", $"system={row.System}; rom={row.RomName}; {Mask(ex.Message)}");
@@ -300,11 +317,11 @@ internal sealed class BulkMediaRunner
         {
             string target = RomFolderTarget(o, row, folder);
             bool exists = index.Has(target);
-            bool wanted = o.Overwrite != BulkOverwrite.No || !exists;
+            bool wanted = o.Replace is not null || o.Overwrite != BulkOverwrite.No || !exists;
             Dbg($"{id} · {folder.Folder}: {(exists ? "ya existe" : "no existe")} en destino ({Path.GetFileName(target)}) → {(wanted ? "se pide" : "se omite (no se sobrescribe)")}");
             if (wanted) pending.Add(folder);
         }
-        bool needLanguages = languageIndex is not null && (o.Overwrite != BulkOverwrite.No || !languageIndex.Has(RomKey.Of(row)));
+        bool needLanguages = languageIndex is not null && ((o.Replace is null && o.Overwrite != BulkOverwrite.No) || !languageIndex.Has(RomKey.Of(row)));
         bool needMetadata = NeedsMetadata(o, row);
         if (o.Metadata && !needMetadata) Dbg($"{id}: ya tiene metadatos, no se tocan (no se sobrescribe)");
         if (pending.Count == 0 && !needMetadata && !needLanguages) { Interlocked.Increment(ref Summary.AlreadyComplete); Dbg($"{id}: completa en destino, no se consulta a ScreenScraper"); return; }
@@ -335,11 +352,24 @@ internal sealed class BulkMediaRunner
             else
             {
                 var fetched = GamelistMetadata.From(game, regions);
+                // Con política por elemento y metadatos ya existentes, se compara la longitud de la descripción (si la actual está vacía se rellena siempre).
+                if (o.Replace is not null && HasMetadata(row) && !string.IsNullOrWhiteSpace(row.Description))
+                {
+                    var policy = o.ReplaceFor("metadata");
+                    int current = row.Description.Length, incoming = fetched.Desc.Length;
+                    bool replace = policy switch { BulkReplace.Always => true, BulkReplace.NewSmaller => incoming > 0 && incoming < current, _ => incoming > current };
+                    if (!replace)
+                    {
+                        Dbg($"{id}: metadatos recibidos (descripción de {incoming} caracteres frente a {current} actuales) pero no cumplen «{(policy == BulkReplace.NewSmaller ? "Nuevo es menor" : "Nuevo es mayor")}»: se respetan los actuales");
+                        goto metadataDone;
+                    }
+                }
                 if (fetched.Genre.Length == 0) Summary.NoGenre.Add($"{row.System}: {row.RomName}");
                 pendingMetadata.GetOrAdd(row.Gamelist, _ => new(StringComparer.OrdinalIgnoreCase))[PathRules.Relative(row.GamelistPath)] = fetched;
                 Dbg($"{id}: metadatos recibidos (nombre «{fetched.Name}», género «{fetched.Genre}», descripción de {fetched.Desc.Length} caracteres) → se escribirán en el gamelist.xml");
                 Interlocked.Increment(ref Summary.MetadataFetched); // descargados; se escriben en el gamelist.xml de una sola vez al terminar cada sistema
             }
+            metadataDone: ;
         }
         var requests = new List<MediaInstallRequest>();
         var temps = new List<string>();
@@ -355,7 +385,7 @@ internal sealed class BulkMediaRunner
                 var media = candidates.FirstOrDefault();
                 if (media is null) { Interlocked.Increment(ref Summary.FoldersUnavailable); missing.Add(folder.Folder); Dbg($"{id} · {folder.Folder}: ScreenScraper no tiene este medio"); continue; }
 
-                if (o.Overwrite == BulkOverwrite.IfSizeDiffers && SameSizeAsExisting(RomFolderTarget(o, row, folder), media)) { Interlocked.Increment(ref Summary.FilesIdentical); Dbg($"{id} · {folder.Folder}: mismo tamaño que el actual, se omite"); continue; }
+                if (SkipExisting(RomFolderTarget(o, row, folder), media, folder.Folder, out string skipReason)) { Interlocked.Increment(ref Summary.FilesIdentical); Dbg($"{id} · {folder.Folder}: {skipReason}, se omite"); continue; }
 
                 string source = SsMediaCache.PathFor(game.Id, media);
                 if (!SsMediaCache.IsCached(game.Id, media))
@@ -449,6 +479,32 @@ internal sealed class BulkMediaRunner
         }
     }
 
+    // Con una política por elemento (descarga masiva) se compara con el archivo que ya hay en destino: «Siempre» lo sustituye; «Nuevo es menor» solo si
+    // el medio de ScreenScraper pesa menos (y se conoce su tamaño); «Nuevo es mayor», solo si pesa más. Si no hay nada en destino se descarga sin comparar.
+    // Sin política por elemento se mantiene el modo antiguo («Solo si el tamaño es distinto»).
+    private bool SkipExisting(string targetBase, SsMedia media, string element, out string reason)
+    {
+        reason = "";
+        if (o.Replace is null)
+        {
+            bool same = o.Overwrite == BulkOverwrite.IfSizeDiffers && SameSizeAsExisting(targetBase, media);
+            if (same) reason = "mismo tamaño que el actual";
+            return same;
+        }
+        if (!index.Has(targetBase)) return false;
+        long current = 0;
+        foreach (string existing in EsDeMediaInstaller.Existing(targetBase)) { try { current = Math.Max(current, new FileInfo(existing).Length); } catch (IOException) { } }
+        var policy = o.ReplaceFor(element);
+        bool replace = policy switch
+        {
+            BulkReplace.Always => true,
+            BulkReplace.NewSmaller => media.Size > 0 && media.Size < current,
+            _ => media.Size > current
+        };
+        if (!replace) reason = $"el nuevo ({(media.Size > 0 ? ScreenScraperDialog.FormatBytes(media.Size) : "tamaño desconocido")}) no cumple «{(policy == BulkReplace.NewSmaller ? "Nuevo es menor" : "Nuevo es mayor")}» frente al actual ({ScreenScraperDialog.FormatBytes(current)})";
+        return !replace;
+    }
+
     // «Solo si el tamaño es distinto»: si algún archivo de destino pesa lo mismo que el medio de ScreenScraper, se deja como está.
     private bool SameSizeAsExisting(string targetBase, SsMedia media)
     {
@@ -471,12 +527,19 @@ internal sealed class BulkMediaRunner
         {
             bool isZip = Path.GetExtension(row.Path).Equals(".zip", StringComparison.OrdinalIgnoreCase);
             bool packed = isZip || Path.GetExtension(row.Path).ToLowerInvariant() is ".7z" or ".rar";
+            string id = $"{row.System}: {row.RomName}";
+            long size = 0;
+            try { size = new FileInfo(row.Path).Length; } catch (IOException) { }
+            Dbg($"{id}: calculando hash ({ScreenScraperDialog.FormatBytes(size)}{(packed ? ", comprimida: se descomprime para el hash" : "")})");
+            var watch = System.Diagnostics.Stopwatch.StartNew();
             var hashes = await Task.Run(() => RomHasher.Compute(row.Path, packed, null, token), token);
-            try { result = await WithRetry(() => client.LookupAsync(ss.Id, row.RomName, hashes, token), token); }
+            Dbg($"{id}: hash calculado en {watch.Elapsed.TotalSeconds:0.0} s");
+            try { result = await WithRetry(id + " · consulta por hash", () => client.LookupAsync(ss.Id, row.RomName, hashes, token), token); }
             catch (ScreenScraperException ex) when (ex.StatusCode == 404 && isZip)
             {
+                Dbg($"{id}: no reconocida con el hash del contenido; se calcula el del zip entero");
                 var whole = await Task.Run(() => RomHasher.Compute(row.Path, false, null, token), token);
-                result = await WithRetry(() => client.LookupAsync(ss.Id, row.RomName, whole, token), token);
+                result = await WithRetry(id + " · consulta por hash del zip", () => client.LookupAsync(ss.Id, row.RomName, whole, token), token);
             }
         }
         catch (ScreenScraperException ex) when (ex.StatusCode == 404) { hashNote = "No reconocida por hash"; }
@@ -489,12 +552,12 @@ internal sealed class BulkMediaRunner
         foreach (string query in NameQueries(row))
         {
             tried.Add(query);
-            var found = await WithRetry(() => client.SearchGamesAsync(ss.Id, query, token), token);
+            var found = await WithRetry($"{row.System}: {row.RomName} · búsqueda por nombre «{query}»", () => client.SearchGamesAsync(ss.Id, query, token), token);
             string key = NormalizeName(query);
             var matches = found.Where(g => g.Names.Any(n => NormalizeName(n) == key)).ToList();
             if (matches.Count == 1)
             {
-                var full = await WithRetry(() => client.LookupByGameIdAsync(ss.Id, matches[0].Id, token), token);
+                var full = await WithRetry($"{row.System}: {row.RomName} · lectura del juego {matches[0].Id}", () => client.LookupByGameIdAsync(ss.Id, matches[0].Id, token), token);
                 if (full.Games.Count > 0) return (full.Games[0], "nombre", $"Nombre exacto: «{query}»");
             }
             else if (matches.Count > 1) note = $"Varios juegos con el nombre exacto «{query}»";
@@ -502,12 +565,30 @@ internal sealed class BulkMediaRunner
         return (null, "", $"{hashNote} · " + (note.Length > 0 ? note : $"sin coincidencia por nombre: {string.Join(" / ", tried.Select(t => "«" + t + "»"))}"));
     }
 
-    private static async Task<T> WithRetry<T>(Func<Task<T>> action, CancellationToken token)
+    // Cada consulta deja su duración en el registro (las lentas, con aviso) y cada espera por límite de peticiones (429) también.
+    private async Task<T> WithRetry<T>(string what, Func<Task<T>> action, CancellationToken token)
     {
         for (int attempt = 1; ; attempt++)
         {
-            try { return await action(); }
-            catch (ScreenScraperException ex) when (ex.StatusCode == 429 && attempt < 4) { await Task.Delay(TimeSpan.FromSeconds(20 * attempt), token); }
+            Dbg($"{what}: enviada, esperando respuesta de ScreenScraper…" + (attempt > 1 ? $" (intento {attempt})" : ""));
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                var result = await action();
+                Dbg($"{what}: respuesta en {watch.Elapsed.TotalSeconds:0.0} s" + (watch.Elapsed.TotalSeconds > 5 ? " (LENTA)" : ""));
+                return result;
+            }
+            catch (ScreenScraperException ex) when (ex.StatusCode == 429 && attempt < 4)
+            {
+                int wait = 20 * attempt;
+                Dbg($"{what}: ScreenScraper pide esperar (429, demasiadas peticiones); intento {attempt}/3, espera {wait} s");
+                await Task.Delay(TimeSpan.FromSeconds(wait), token);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Dbg($"{what}: error tras {watch.Elapsed.TotalSeconds:0.0} s: {Mask(ex.Message)}");
+                throw;
+            }
         }
     }
 

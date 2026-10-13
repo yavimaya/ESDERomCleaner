@@ -66,10 +66,11 @@ internal sealed class GamelistPlanDialog : LocalizedForm
         grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = grid.ColumnHeadersDefaultCellStyle.ForeColor = SystemColors.ControlText;
         grid.DefaultCellStyle.SelectionBackColor = SystemColors.Window;
         grid.DefaultCellStyle.SelectionForeColor = SystemColors.WindowText;
+        grid.Columns.Add(SystemIconColumn.Create(28));
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sistema", Width = 170, SortMode = DataGridViewColumnSortMode.NotSortable });
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ROMs", Width = 70, SortMode = DataGridViewColumnSortMode.NotSortable, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter }, HeaderCell = { Style = { Alignment = DataGridViewContentAlignment.MiddleCenter } } });
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Situación", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, SortMode = DataGridViewColumnSortMode.NotSortable });
-        foreach (var item in plan) grid.Rows.Add(item.System, item.RomPaths.Count.ToString("N0"), item.Append ? "ROMs nuevas" : "Sistema nuevo");
+        foreach (var item in plan) grid.Rows.Add(SystemIconColumn.Icon(item.System, 16), item.System, item.RomPaths.Count.ToString("N0"), item.Append ? "ROMs nuevas" : "Sistema nuevo");
         grid.ClearSelection();
 
         var question = new Label

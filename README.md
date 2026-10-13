@@ -27,9 +27,9 @@ La interfaz está en **español e inglés** (*Opciones › Idioma*; por defecto,
 - **Clonar la estructura de ES-DE a otra carpeta o a una tarjeta SD** (botón *Clonar*): pensado para llevar la colección ya depurada a Android, donde ES-DE suele usarse con tarjeta SD. Ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd).
 - **Trazabilidad**: cada acción relevante queda anotada en un registro que se puede consultar desde la propia aplicación.
 - **Interfaz en español e inglés** (*Opciones › Idioma*): «Predeterminado del sistema» (por defecto: el idioma de Windows si es español y, si no, inglés), Español o English, con cambio inmediato. En inglés, los metadatos que se descarguen a partir de ese momento (descripción y categoría) llegan en inglés; los gamelists que ya tienes no se tocan.
-- **Colecciones** (menú *Colecciones*): crea una colección con un nombre, su carpeta y un comentario; cárgala cuando quieras desde el menú, que muestra los sistemas, ROMs y tamaño de cada una. Cada colección guarda su propio análisis, así que al volver a ella se ve al instante (con *Re-analizar colección* lo actualizas). Desde el mismo menú: **clonar**, **editar** y **eliminar** colecciones (eliminar solo la quita de la lista) y ver su **resumen**, con una tarjeta que puedes copiar al portapapeles para compartir.
+- **Colecciones** (menú *Colecciones*): crea una colección con un nombre, su carpeta y un comentario; cárgala cuando quieras desde el menú, que muestra los sistemas, ROMs y tamaño de cada una. Cada colección guarda su propio análisis, así que al volver a ella se ve al instante (con *Re-listar colección* lo actualizas). Desde el mismo menú: **clonar**, **editar** y **eliminar** colecciones (eliminar solo la quita de la lista) y ver su **resumen**, con una tarjeta que puedes copiar al portapapeles para compartir.
 - **Búsqueda** de ROMs en el sistema seleccionado o en todos (admite expresiones regulares); si el texto solo está en el nombre del archivo, este se muestra entre paréntesis.
-- **Huecos de la colección**: por sistema y en total, cuántos juegos no tienen categoría, imagen o vídeo (la *imagen por defecto* se elige en *Opciones*), con acceso directo a scrapear justo los que faltan.
+- **Huecos de la colección**: por sistema y en total, cuántos juegos no tienen categoría, imagen o vídeo (sin imagen = sin ninguna de las imágenes que lee ES-DE), con acceso directo a scrapear justo los que faltan.
 - **Excluir seleccionados**: marca ROMs como excluidas del contador y del multiscrapeo de ES-DE (`nogamecount` y `nomultiscrape`), desde la ventana principal o desde el curado, donde además se puede eliminar a partir del menú contextual.
 - **Visor de medios**: un clic sobre la imagen o el vídeo pasa al siguiente medio de la ROM y un doble clic lo abre en una ventana grande.
 - **Registro de la descarga masiva** (botón *Registro…*): todo lo que hace el proceso en directo, ROM a ROM, filtrable con expresiones regulares.
@@ -106,10 +106,10 @@ ES-DE es también un frontend para **Android**, donde las colecciones suelen viv
 
 ## Cómo se usa
 
-1. Menú **Colecciones › Crear colección…** (nombre, carpeta y comentario) o carga una ya creada, y pulsa **Analizar colección** (si no tiene la estructura de ES-DE o los gamelists, te ofrece crearlos). Para meter ROMs nuevas: menú **Añadir ROMs** (descarga antes las bases de datos en *Añadir ROMs › Bases de datos de ROMs…*).
-2. **Scrapeo › Credenciales de ScreenScraper…** (o **Alta en ScreenScraper…** si todavía no tienes cuenta).
+1. Menú **Colecciones › Crear colección…** (nombre, carpeta y comentario) o carga una ya creada, y pulsa **Listar colección** (si no tiene la estructura de ES-DE o los gamelists, te ofrece crearlos). Para meter ROMs nuevas: menú **Añadir ROMs** (descarga antes las bases de datos en *Añadir ROMs › Bases de datos de ROMs…*).
+2. **Credenciales › Credenciales de ScreenScraper…** (o **Credenciales › Alta en ScreenScraper…** si todavía no tienes cuenta).
 3. Para una ROM concreta: clic derecho › *Scrapear con ScreenScraper…*. Para sistemas enteros: **Scrapeo › Descarga masiva de medios…**
-4. Para saber qué ROMs tienen logros: **Scrapeo › Credenciales de RetroAchievements…** y después **Scrapeo › Buscar logros de RetroAchievements…**; los verás en el panel de datos y con clic derecho › *Ver logros de RetroAchievements…*.
+4. Para saber qué ROMs tienen logros: **Credenciales › Credenciales de RetroAchievements…** y después **RetroAchievements › Buscar logros de RetroAchievements…**; los verás en el panel de datos y con clic derecho › *Ver logros de RetroAchievements…*.
 5. Para depurar la colección: **Curado › Reglas de curado (análisis)…**, marca lo que quieras descartar y revisa las candidatas antes de eliminar nada.
 6. Para llevar la colección a otra carpeta o a la tarjeta SD de tu dispositivo Android: **Colecciones › Clonar colección…** (ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd)).
 

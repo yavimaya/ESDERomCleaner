@@ -12,7 +12,7 @@ namespace ESDERomCleaner;
 public sealed partial class RomCleanerForm : LocalizedForm
 {
     private readonly TextBox root = new() { Dock = DockStyle.Fill, PlaceholderText = "Carpeta que contiene Roms y ES-DE" };
-    private readonly Button browse = new() { Text = "Examinar…" }, cloneButton = new() { Text = "Clonar" }, scan = new() { Text = "Analizar colección" }, cancel = new() { Text = "Cancelar", Enabled = false }, deleteSelected = new() { Text = "Eliminar\r\nSeleccionadas", Enabled = false, ForeColor = Color.DarkRed };
+    private readonly Button browse = new() { Text = "Examinar…" }, cloneButton = new() { Text = "Clonar" }, scan = new() { Text = "Listar colección" }, cancel = new() { Text = "Cancelar", Enabled = false }, deleteSelected = new() { Text = "Eliminar\r\nSeleccionadas", Enabled = false, ForeColor = Color.DarkRed };
     private readonly ComboBox systems = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
     private readonly TextBox search = new() { Width = 190, PlaceholderText = "Buscar (3 caracteres mínimo)" };
     // Ámbito de la búsqueda: el sistema seleccionado (su nombre sale en el botón) o todos. El texto se interpreta siempre como expresión regular.
