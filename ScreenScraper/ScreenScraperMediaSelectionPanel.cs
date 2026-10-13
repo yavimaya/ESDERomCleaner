@@ -1,3 +1,4 @@
+using LibVLCSharp.Shared;
 using System.Diagnostics;
 
 namespace ESDERomCleaner;
@@ -40,12 +41,10 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     private readonly ListBox candidatesList = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly MediaPreviewPane currentPreview = new() { Dock = DockStyle.Fill };
     private readonly MediaPreviewPane candidatePreview = new() { Dock = DockStyle.Fill };
-    private readonly CheckBox currentSound = new() { Text = "Sonido", AutoSize = true, Margin = new Padding(0, 4, 8, 0) };
-    private readonly CheckBox candidateSound = new() { Text = "Sonido", AutoSize = true, Margin = new Padding(0, 4, 8, 0) };
+    private readonly CheckBox currentSound = new() { Text = "Sonido", AutoSize = true, Enabled = false, Margin = new Padding(0, 4, 8, 0) };
+    private readonly CheckBox candidateSound = new() { Text = "Sonido", AutoSize = true, Enabled = false, Margin = new Padding(0, 4, 8, 0) };
     private readonly Label currentCaption = NewCaption();
     private readonly Label candidateCaption = NewCaption();
-    private readonly Button openCurrentButton = new() { Text = "Abrir", AutoSize = true, Enabled = false };
-    private readonly Button openCandidateButton = new() { Text = "Abrir", AutoSize = true, Enabled = false };
     private readonly Button markAllButton = new() { Text = "Marcar todas", AutoSize = true, MinimumSize = new Size(110, 30), Margin = new Padding(6, 0, 3, 0) };
     private readonly Button clearButton = new() { Text = "Limpiar", AutoSize = true, MinimumSize = new Size(90, 30), Margin = new Padding(3, 0, 3, 0) };
     private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 30) };
@@ -133,11 +132,12 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
             e.Handled = true;
         };
         candidatesList.SelectedIndexChanged += (_, _) => ChooseCandidate();
-        openCurrentButton.Click += (_, _) => { if (SelectedState()?.Existing.FirstOrDefault() is string path) OpenFile(path); };
-        openCandidateButton.Click += (_, _) =>
+        // Doble clic sobre un visor: abre el archivo con la aplicación predeterminada (en el del candidato, si aún no está descargado, lo descarga).
+        currentPreview.ContentDoubleClick += (_, _) =>
         {
-            if (SelectedState()?.Chosen is SsMedia media && SsMediaCache.IsCached(game.Id, media)) OpenFile(SsMediaCache.PathFor(game.Id, media));
+            if (SelectedState() is { } state && state.Existing.FirstOrDefault() is string path) OpenViewer(path, $"{state.Folder.Description} — actual en la colección", currentSound.Checked);
         };
+        candidatePreview.ContentDoubleClick += async (_, _) => await OpenOrDownloadCandidateAsync();
         saveButton.Click += async (_, _) => await SaveAsync();
         closeButton.Click += (_, _) => CloseRequested?.Invoke();
         markAllButton.Click += (_, _) => SetSave(Enumerable.Range(0, states.Count), true);
@@ -151,14 +151,13 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     // La pestaña pasa a verse: se vuelve a leer la caché (el diálogo pudo descargar medios) y se retoma la vista previa.
     public void Activate()
     {
-        // La primera vez no queda ninguna fila enfocada ni seleccionada: el grid solo muestra algo cuando el usuario elige.
-        if (!activated) { activated = true; foldersGrid.CurrentCell = null; foldersGrid.ClearSelection(); }
+        // Al abrir la pestaña queda enfocada y seleccionada la primera carpeta (si no hay ya una seleccionada).
+        if (foldersGrid.Rows.Count > 0 && foldersGrid.SelectedRows.Count == 0) foldersGrid.Rows[0].Selected = true;
         ShowSelectedFolder();
         foldersGrid.Focus();
         if (!IsSaving) Report("Marca las carpetas que quieres guardar (ninguna viene marcada). Ctrl o Mayús + clic seleccionan varias filas; Espacio las marca o desmarca. ← → cambian de candidato.");
     }
 
-    private bool activated;
 
     private List<int> SelectedIndexes() => foldersGrid.SelectedRows.Cast<DataGridViewRow>().Select(r => r.Index).ToList();
 
@@ -211,20 +210,14 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         left.Controls.Add(foldersGrid, 0, 0);
         left.Controls.Add(candidatesGroup, 0, 1);
 
-        var compare = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6 };
+        // Cada medio va en su propio panel (GroupBox, como el de imagen y vídeo de la ventana principal): el título es el del panel y dentro
+        // están los controles de sonido y abrir, el medio y su descripción.
+        var compare = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
         compare.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        compare.RowStyles.Add(new RowStyle(SizeType.Absolute, HeaderRow));
         compare.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-        compare.RowStyles.Add(new RowStyle(SizeType.Absolute, CaptionRow));
-        compare.RowStyles.Add(new RowStyle(SizeType.Absolute, HeaderRow));
         compare.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-        compare.RowStyles.Add(new RowStyle(SizeType.Absolute, CaptionRow));
-        compare.Controls.Add(Header("Actual en la colección", currentSound, openCurrentButton), 0, 0);
-        compare.Controls.Add(currentPreview, 0, 1);
-        compare.Controls.Add(currentCaption, 0, 2);
-        compare.Controls.Add(Header("Candidato de ScreenScraper", candidateSound, openCandidateButton), 0, 3);
-        compare.Controls.Add(candidatePreview, 0, 4);
-        compare.Controls.Add(candidateCaption, 0, 5);
+        compare.Controls.Add(MediaGroup("Actual en la colección", currentSound, currentPreview, currentCaption), 0, 0);
+        compare.Controls.Add(MediaGroup("Candidato de ScreenScraper", candidateSound, candidatePreview, candidateCaption), 0, 1);
 
         // Columna de vistas previas: su ancho sale de la altura disponible para que cada medio quede en un recuadro 4:3 sin barras
         // vacías, y el resto del ancho es para el grid. Se recalcula con cada cambio de tamaño (maximizar, restaurar…).
@@ -236,7 +229,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         split.Controls.Add(compare, 1, 0);
         split.SizeChanged += (_, _) =>
         {
-            int previewHeight = (split.Height - 2 * HeaderRow - 2 * CaptionRow) / 2;
+            int previewHeight = (split.Height - 2 * (HeaderRow + CaptionRow + GroupPadding)) / 2;
             int width = Math.Clamp(previewHeight * 4 / 3 + 16, 380, Math.Max(380, split.Width - 520));
             if ((int)split.ColumnStyles[1].Width != width) split.ColumnStyles[1].Width = width;
         };
@@ -273,17 +266,29 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         Controls.Add(layout);
     }
 
-    private static Control Header(string text, CheckBox sound, Button button)
+    // Alto que ocupan, además de la fila de controles y la descripción, el borde y el título del panel.
+    private const int GroupPadding = 28;
+
+    // El casillero de sonido va fuera y encima del panel; dentro del panel están el visor y su descripción.
+    private static Control MediaGroup(string title, CheckBox sound, MediaPreviewPane preview, Label caption)
     {
-        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty };
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        panel.Controls.Add(new Label { Text = text, Dock = DockStyle.Fill, Font = new Font(SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
-        button.Margin = Padding.Empty;
-        panel.Controls.Add(sound, 1, 0);
-        panel.Controls.Add(button, 2, 0);
-        return panel;
+        sound.Margin = new Padding(8, 2, 3, 0);
+        preview.Margin = Padding.Empty;
+        var inner = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty, Padding = Padding.Empty };
+        inner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        inner.RowStyles.Add(new RowStyle(SizeType.Absolute, CaptionRow));
+        inner.Controls.Add(preview, 0, 0);
+        inner.Controls.Add(caption, 0, 1);
+        var group = new GroupBox { Text = title, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 4), Padding = new Padding(6, 2, 6, 4) };
+        group.Controls.Add(inner);
+        var outer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty, Padding = Padding.Empty };
+        outer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        outer.RowStyles.Add(new RowStyle(SizeType.Absolute, HeaderRow));
+        outer.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        outer.Controls.Add(sound, 0, 0);
+        outer.Controls.Add(group, 0, 1);
+        return outer;
     }
 
     private void BuildStates()
@@ -346,7 +351,12 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
             gridRow.DefaultCellStyle.ForeColor = state.Chosen is null ? SystemColors.GrayText : SystemColors.ControlText;
         }
         finally { updating = previous; }
+        UpdateSaveEnabled();
     }
+
+    // Scrapear solo está disponible si hay algo marcado que se pueda guardar (con candidato y que no sea idéntico al actual).
+    private void UpdateSaveEnabled() =>
+        saveButton.Enabled = !IsSaving && states.Any(s => s.Save && s.Chosen is not null && !s.Identical);
 
     private void ShowSelectedFolder()
     {
@@ -396,6 +406,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         state.Identical = identical;
         int index = states.IndexOf(state);
         if (index >= 0 && index < foldersGrid.Rows.Count) UpdateRow(index);
+        if (ReferenceEquals(SelectedState(), state)) ShowCandidate(state); // si es la carpeta que se está viendo, el panel del candidato se rehace
     }
 
     private async Task RefreshAllIdenticalAsync()
@@ -406,7 +417,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     private void ShowCurrent(FolderState? state)
     {
         string? path = state?.Existing.FirstOrDefault();
-        openCurrentButton.Enabled = path is not null;
+        currentSound.Enabled = state is not null && path is not null && state.Folder.Kind == "video";
         if (state is null || path is null)
         {
             currentPreview.ShowMessage(state is null ? "" : "Vacío");
@@ -454,18 +465,33 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     private void ShowCandidate(FolderState? state)
     {
         var media = state?.Chosen;
+        candidateSound.Enabled = false; // solo se activa si el visor muestra un vídeo
         if (state is null || media is null)
         {
             candidatePreview.ShowMessage(state is null ? "" : "Sin candidatos");
             candidateCaption.Text = state is null ? "" : "ScreenScraper no tiene medios de este tipo para la región de la ROM en un formato que ES-DE pueda usar.";
-            openCandidateButton.Enabled = false;
+            return;
+        }
+        // Si el medio elegido es idéntico al que ya hay en la colección no hace falta descargarlo: se muestra ese mismo archivo.
+        if (state.Identical && state.Existing.Count == 1)
+        {
+            string same = state.Existing[0];
+            candidateSound.Enabled = state.Folder.Kind == "video";
+            candidatePreview.ShowFile(same);
+            string sameDescription = SsMediaInfo.Describe(media.Type);
+            candidateCaption.Text = $"{media.Label}{(sameDescription.Length > 0 ? " — " + sameDescription : "")}\r\n" +
+                $"{media.Format} · {(media.Size > 0 ? ScreenScraperDialog.FormatBytes(media.Size) : "?")}" +
+                (state.Folder.Kind == "image" ? $" · {ImageResolution(same)}" : state.Folder.Kind == "video" ? VideoInfoPending : "") +
+                "\r\nIdéntico al de la colección: no hace falta descargarlo.";
+            candidateCaption.Tag = same;
+            if (state.Folder.Kind == "video") _ = FillVideoInfoAsync(candidateCaption, same);
             return;
         }
         bool cached = SsMediaCache.IsCached(game.Id, media);
         string path = SsMediaCache.PathFor(game.Id, media);
-        openCandidateButton.Enabled = cached;
+        candidateSound.Enabled = cached && state.Folder.Kind == "video";
         if (cached) candidatePreview.ShowFile(path);
-        else candidatePreview.ShowMessage("Sin descargar.\r\nSe descargará al guardar.");
+        else candidatePreview.ShowMessage("Sin descargar.\r\nDoble clic para descargarlo y compararlo\r\n(solo se descarga: no se sustituye nada).");
         string description = SsMediaInfo.Describe(media.Type);
         candidateCaption.Text = $"{media.Label}{(description.Length > 0 ? " — " + description : "")}{(state.Fallback ? "  (no hay de la región de la ROM)" : "")}\r\n" +
             $"{media.Format} · {(media.Size > 0 ? ScreenScraperDialog.FormatBytes(media.Size) : "?")}" +
@@ -495,6 +521,21 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         catch { return ""; }
     }
 
+    // Doble clic sobre un visor: abre una ventana grande con solo ese medio (la del visor de la ventana principal, sin cambiar de medio).
+    // Lo que no es imagen ni vídeo (un manual en PDF) se abre con la aplicación predeterminada.
+    private void OpenViewer(string path, string title, bool sound)
+    {
+        string kind = SsMediaInfo.Kind(Path.GetExtension(path).TrimStart('.'));
+        if (kind is not ("image" or "video")) { OpenFile(path); return; }
+        currentPreview.StopVideo();
+        candidatePreview.StopVideo();
+        LibVLC? vlc = null;
+        if (kind == "video") { try { vlc = MediaPreviewPane.SharedLibVlc.Value; } catch { } }
+        using (var viewer = new MediaViewerDialog([new MediaItem(title, path, kind == "video", false)], 0, vlc, sound))
+            viewer.ShowDialog(this);
+        ShowSelectedFolder(); // los visores vuelven a mostrar su medio (y el vídeo vuelve a reproducirse)
+    }
+
     private void OpenFile(string path)
     {
         // Se paran los vídeos de la comparación para que no suenen a la vez que la otra aplicación.
@@ -504,12 +545,56 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         catch (Exception ex) { QuietMessage.Show(this, "No se pudo abrir el medio", ex.Message); }
     }
 
+    // Doble clic en el visor del candidato: si ya hay archivo (idéntico al de la colección o ya descargado) lo abre; si no, lo descarga.
+    private async Task OpenOrDownloadCandidateAsync()
+    {
+        if (SelectedState() is { Identical: true } same && same.Existing.Count == 1) { OpenViewer(same.Existing[0], $"{same.Folder.Description} — candidato de ScreenScraper", candidateSound.Checked); return; }
+        if (SelectedState() is { Chosen: SsMedia chosen } withCandidate && SsMediaCache.IsCached(game.Id, chosen))
+        {
+            OpenViewer(SsMediaCache.PathFor(game.Id, chosen), $"{withCandidate.Folder.Description} — candidato de ScreenScraper", candidateSound.Checked);
+            return;
+        }
+        await DownloadCandidateAsync();
+    }
+
+    // Descarga el candidato a la caché para compararlo con el actual. No toca la colección.
+    private async Task DownloadCandidateAsync()
+    {
+        if (IsSaving || SelectedState() is not FolderState state || state.Chosen is not SsMedia media || SsMediaCache.IsCached(game.Id, media)) return;
+        cts?.Dispose();
+        cts = new CancellationTokenSource();
+        var token = cts.Token;
+        SetBusy(true);
+        try
+        {
+            Report($"Descargando para comparar: {media.Label}…");
+            var progress = new Progress<long>(received =>
+            {
+                Report($"Descargando para comparar: {media.Label} · {ScreenScraperDialog.FormatBytes(received)}" + (media.Size > 0 ? $" de {ScreenScraperDialog.FormatBytes(media.Size)}" : ""));
+                ReportProgress(media.Size > 0 ? Math.Clamp((int)(received * 100 / media.Size), 0, 100) : 0);
+            });
+            await new ScreenScraperClient(credentials()).DownloadMediaAsync(media, SsMediaCache.PathFor(game.Id, media), progress, token);
+            trace.Add("screenscraper_media_compare_downloaded", $"rom={row.RomName}; ss_game={game.Id}; media={media.Label}");
+            Report($"Descargado para comparar: {media.Label}. No se ha modificado la colección.");
+        }
+        catch (OperationCanceledException) { Report("Cancelado."); }
+        catch (ScreenScraperException ex) { Report("No se pudo descargar para comparar: " + ex.Message); }
+        catch (Exception ex) { Report("Error: " + ex.Message); }
+        finally
+        {
+            ReportProgress(0);
+            SetBusy(false);
+            if (!IsDisposed) { ShowSelectedFolder(); SaveFinished?.Invoke(); }
+        }
+    }
+
     private void SetBusy(bool busy)
     {
         foldersGrid.Enabled = !busy;
         candidatesList.Enabled = !busy;
-        saveButton.Enabled = markAllButton.Enabled = clearButton.Enabled = closeButton.Enabled = !busy;
         IsSaving = busy;
+        markAllButton.Enabled = clearButton.Enabled = closeButton.Enabled = !busy;
+        UpdateSaveEnabled();
         BusyChanged?.Invoke(busy);
     }
 

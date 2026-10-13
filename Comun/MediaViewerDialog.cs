@@ -68,8 +68,11 @@ internal sealed class MediaViewerDialog : LocalizedForm
     private void ShowCurrent()
     {
         var item = media[index];
-        string hint = Loc.T("← → cambiar de medio · Espacio pausa el vídeo · Esc cierra");
-        caption.Text = $"{Loc.T(item.Title)}  ({index + 1}/{media.Count})   ·   {hint}";
+        // Con un solo medio no hay nada que cambiar: no se muestra ni el contador ni la pista de las flechas.
+        string hint = media.Count == 1
+            ? Loc.T(item.IsVideo ? "Espacio pausa el vídeo · Esc cierra" : "Esc cierra")
+            : Loc.T("← → cambiar de medio · Espacio pausa el vídeo · Esc cierra");
+        caption.Text = media.Count == 1 ? $"{Loc.T(item.Title)}   ·   {hint}" : $"{Loc.T(item.Title)}  ({index + 1}/{media.Count})   ·   {hint}";
         StopMedia(dispose: false);
         if (!item.IsVideo)
         {

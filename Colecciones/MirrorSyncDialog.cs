@@ -36,7 +36,6 @@ internal sealed class MirrorSyncDialog : LocalizedForm
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(560, 500);
         ClientSize = new Size(640, 580);
-        ShowIcon = false;
         BuildLayout();
         sourceBox.Text = this.sourcePath;
         sourceBrowseButton.Click += (_, _) => SelectSource();

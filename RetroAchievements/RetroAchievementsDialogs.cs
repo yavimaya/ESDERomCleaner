@@ -91,7 +91,7 @@ internal sealed class RaCredentialsDialog : LocalizedForm
                 try
                 {
                     if (await client.GetUserInfoAsync(CancellationToken.None) is { } info && !IsDisposed)
-                        avatarStats.Text = (info.Rank > 0 ? "#" + info.Rank.ToString("N0") : "â€”") + "\r\nHC " + info.HardcorePoints.ToString("N0") + "\r\nSC " + info.SoftcorePoints.ToString("N0");
+                        avatarStats.Text = (info.Rank > 0 ? "#" + info.Rank.ToString("N0") : "—") + "\r\nHC " + info.HardcorePoints.ToString("N0") + "\r\nSC " + info.SoftcorePoints.ToString("N0");
                 }
                 catch { }
             };
@@ -256,7 +256,7 @@ internal sealed class RaAchievementsDialog : LocalizedForm
     private readonly RadioButton filterPending = new() { Text = "Pendientes", Tag = "noloc" };
     private RaGameDetail? lastDetail;
 
-    // Muestra todos los logros, solo los conseguidos o solo los pendientes. Los textos llevan el recuento, asÃ­ que se traducen a mano.
+    // Muestra todos los logros, solo los conseguidos o solo los pendientes. Los textos llevan el recuento, así que se traducen a mano.
     private void ApplyFilter()
     {
         grid.CurrentCell = null;

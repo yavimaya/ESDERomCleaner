@@ -21,6 +21,8 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
     private readonly Label systemInfo = new() { Text = "Sistema: detectando…", AutoSize = true, Margin = new Padding(3, 7, 12, 0) };
     private readonly Button searchButton = new() { Text = "Refrescar consulta", AutoSize = true };
     private readonly Button cancelButton = new() { Text = "Cancelar", AutoSize = true, Enabled = false };
+    // Cerrar para las pestañas que no lo tienen propio (la de «Elegir y guardar» lleva el suyo junto a Scrapear).
+    private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 26), Margin = new Padding(3, 1, 6, 1) };
     private readonly Label statusLabel = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ProgressBar progressBar = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 100 };
     private readonly DataGridView metadataGrid = new();
@@ -169,12 +171,18 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         layout.Controls.Add(top, 0, 0);
         layout.Controls.Add(info, 0, 1);
         layout.Controls.Add(tabs, 0, 2);
         layout.Controls.Add(progressBar, 0, 3);
-        layout.Controls.Add(statusLabel, 0, 4);
+        var statusRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        statusRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        statusRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        statusRow.Controls.Add(statusLabel, 0, 0);
+        statusRow.Controls.Add(closeButton, 1, 0);
+        closeButton.Click += (_, _) => Close();
+        layout.Controls.Add(statusRow, 0, 4);
         Controls.Add(layout);
         Controls.Add(new ScreenScraperQuotaStrip());
     }
@@ -196,6 +204,7 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
         searchButton.Enabled = !busy;
         systemCombo.Enabled = !busy;
         cancelButton.Enabled = busy;
+        closeButton.Enabled = !busy;
         downloadAllButton.Enabled = !busy && currentGame is not null && AllMediaRows().Any(r => !IsCached(r));
         SetCandidatesBusy(busy);
         if (!busy) progressBar.Value = 0;
@@ -563,6 +572,7 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
     // Al cambiar de pestaña se paran los vídeos de la que se abandona y se retoma la vista previa de la que se muestra.
     private void OnTabChanged()
     {
+        closeButton.Visible = tabs.SelectedTab != selectionTab;
         if (tabs.SelectedTab != mediaTab) mediaPreview.StopVideo();
         if (tabs.SelectedTab != selectionTab) selectionPanel?.Deactivate();
         if (tabs.SelectedTab == mediaTab) { RefreshCacheStates(); ShowSelectedMedia(); }

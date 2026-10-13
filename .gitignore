@@ -495,3 +495,6 @@ carpetas_accedidas.txt
 
 # Copia local de la wiki (es otro repositorio; no se sube con este)
 .wiki/
+
+# Capturas y pruebas locales
+.probe/

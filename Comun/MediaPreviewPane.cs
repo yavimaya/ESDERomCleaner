@@ -1,5 +1,4 @@
 using LibVLCSharp.Shared;
-using LibVLCSharp.WinForms;
 
 namespace ESDERomCleaner;
 
@@ -16,8 +15,8 @@ internal sealed class MediaPreviewPane : Panel
     });
 
     private readonly PictureBox picture = new() { SizeMode = PictureBoxSizeMode.Zoom };
-    private readonly VideoView video = new() { BackColor = Color.Black, Visible = false };
-    private readonly Label message = new() { TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Gainsboro, Visible = false };
+    private readonly FrameVideoView video = new() { Visible = false };
+    private readonly Label message = new() { TextAlign = ContentAlignment.MiddleCenter, ForeColor = SystemColors.ControlText, Visible = false };
     private MediaPlayer? player;
     private Media? media;
     private bool sound;
@@ -25,10 +24,16 @@ internal sealed class MediaPreviewPane : Panel
     // Evita arrancar y parar el reproductor en cada fila al recorrer la lista con el teclado.
     private readonly System.Windows.Forms.Timer startTimer = new() { Interval = 350 };
 
+    // Doble clic sobre la imagen o el mensaje de la vista previa (la ventana nativa del vídeo no reenvía clics).
+    public event EventHandler? ContentDoubleClick;
+
     public MediaPreviewPane()
     {
+        picture.DoubleClick += (_, _) => ContentDoubleClick?.Invoke(this, EventArgs.Empty);
+        message.DoubleClick += (_, _) => ContentDoubleClick?.Invoke(this, EventArgs.Empty);
+        video.DoubleClick += (_, _) => ContentDoubleClick?.Invoke(this, EventArgs.Empty);
         startTimer.Tick += (_, _) => { startTimer.Stop(); if (pendingVideo is string path) { pendingVideo = null; StartVideoNow(path); } };
-        BackColor = picture.BackColor = message.BackColor = Color.FromArgb(32, 32, 32);
+        BackColor = picture.BackColor = message.BackColor = video.BackColor = SystemColors.Control; // mismo fondo que el panel de imagen y vídeo de la ventana principal
         Controls.Add(video);
         Controls.Add(message);
         Controls.Add(picture);
@@ -44,8 +49,12 @@ internal sealed class MediaPreviewPane : Panel
         int width = area.Width, height = width * 3 / 4;
         if (height > area.Height) { height = area.Height; width = height * 4 / 3; }
         var bounds = new Rectangle((area.Width - width) / 2, (area.Height - height) / 2, width, height);
+        // El contenido queda dentro del borde que delimita el panel de cada imagen o vídeo, con el mismo margen que en la ventana principal
+        // (proporcional al tamaño, de 1 a 5 píxeles).
+        int inset = Math.Clamp(Math.Min(bounds.Width, bounds.Height) / 80, 1, 5);
+        var inner = Rectangle.Inflate(bounds, -inset, -inset);
         foreach (Control child in new Control[] { picture, video, message })
-            if (child.Bounds != bounds) child.Bounds = bounds;
+            if (child.Bounds != inner) child.Bounds = inner;
     }
 
     protected override void OnResize(EventArgs eventargs)
@@ -112,8 +121,9 @@ internal sealed class MediaPreviewPane : Panel
             {
                 player = new MediaPlayer(SharedLibVlc.Value) { Scale = 0 };
                 player.AspectRatio = null;
+                video.Attach(player); // el vídeo se pinta en un control normal (como en la ventana principal)
             }
-            video.MediaPlayer = player;
+            video.ClearFrame();
             media = new Media(SharedLibVlc.Value, new Uri(Path.GetFullPath(path)));
             media.AddOption(":input-repeat=65535");
             player.Mute = !sound;
@@ -171,7 +181,6 @@ internal sealed class MediaPreviewPane : Panel
         {
             StopVideo();
             startTimer.Dispose();
-            video.MediaPlayer = null;
             player?.Dispose();
             player = null;
             SetImage(null);

@@ -40,7 +40,9 @@ internal static class SsMediaSelector
         var primary = usable
             .Where(m => m.Region.Length == 0 || romRegions.Count == 0 || romRegions.Contains(m.Region, StringComparer.OrdinalIgnoreCase))
             .OrderBy(TypeRank)
-            .ThenBy(m => RomRegionRank(m.Region))
+            // Con la región de la ROM conocida manda su orden; si no se conoce, se aplica el orden de reserva (wor, eu, us, jp) y no el que
+            // devuelva ScreenScraper (alfabético: «asi» saldría el primero). Los medios sin región valen para todas y van delante.
+            .ThenBy(m => romRegions.Count > 0 ? RomRegionRank(m.Region) : m.Region.Length == 0 ? -1 : FallbackRank(m.Region))
             .ToList();
         if (primary.Count > 0 || romRegions.Count == 0) return (primary, false);
 

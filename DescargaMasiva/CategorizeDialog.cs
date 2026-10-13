@@ -12,7 +12,7 @@ internal sealed class CategorizeDialog : LocalizedForm
     private readonly Label statusLabel = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
     private readonly Label summaryLabel = new() { AutoSize = false, TextAlign = ContentAlignment.TopLeft, ForeColor = SystemColors.GrayText, AutoEllipsis = true };
     private readonly ProgressBar bar = new() { Minimum = 0, Maximum = 100 };
-    // Peticiones de hoy a ScreenScraper y lÃ­mite diario; se actualiza con cada peticiÃ³n.
+    // Peticiones de hoy a ScreenScraper y límite diario; se actualiza con cada petición.
     private readonly Label quotaLabel = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, ForeColor = SystemColors.GrayText, Tag = "noloc" };
     private readonly Button cancel = new() { Text = "Cancelar", Size = new Size(90, 28) };
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 500 };

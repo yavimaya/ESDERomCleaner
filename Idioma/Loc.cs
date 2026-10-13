@@ -382,6 +382,12 @@ internal static class Loc
 // Base de los formularios de la aplicación: al cargarse, se engancha a Loc para traducir sus textos y los que cambien después.
 public class LocalizedForm : Form
 {
+    // Todos los formularios llevan el mismo icono que la ventana principal.
+    public LocalizedForm()
+    {
+        if (AppIcon.Value is { } icon) Icon = icon;
+    }
+
     protected override void OnLoad(EventArgs e)
     {
         Loc.Attach(this);
