@@ -40,6 +40,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
             currentVideoMedia?.Dispose();
             currentVideoMedia = new Media(libVlc!, new Uri(Path.GetFullPath(path!)));
             mediaPlayer!.Volume = videoSound.Checked ? 100 : 0;
+            videoView.ClearFrame();
             videoView.Visible = true;
             videoView.BringToFront();
             preview.Visible = false;
@@ -90,7 +91,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         mediaPlayer.EnableKeyInput = false;
         mediaPlayer.Scale = 0;
         mediaPlayer.AspectRatio = null;
-        videoView.MediaPlayer = mediaPlayer;
+        videoView.Attach(mediaPlayer); // el vídeo se pinta en un control normal, no en la ventana nativa de LibVLC
         mediaPlayer.EndReached += (_, _) =>
         {
             if (IsDisposed || !IsHandleCreated) return;

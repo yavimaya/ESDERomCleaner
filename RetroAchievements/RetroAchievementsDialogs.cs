@@ -330,7 +330,7 @@ internal sealed class RaAchievementsDialog : LocalizedForm
                 (match.By == "nombre" ? " · identificada por nombre, puede ser otra versión" : "");
             foreach (var a in detail.Achievements)
             {
-                int i = grid.Rows.Add(null, a.Title, a.Description, a.Points, a.NumAwarded.ToString("N0"), a.Hardcore ? "Hardcore" : a.Earned ? "Softcore" : "—", a.Earned ? a.When : "—");
+                int i = grid.Rows.Add((object)null!, a.Title, a.Description, a.Points, a.NumAwarded.ToString("N0"), a.Hardcore ? "Hardcore" : a.Earned ? "Softcore" : "—", a.Earned ? a.When : "—");
                 grid.Rows[i].Tag = a;
                 var style = grid.Rows[i].DefaultCellStyle;
                 if (a.Hardcore) { style.BackColor = Color.FromArgb(255, 241, 196); grid.Rows[i].Cells["mode"].Style.Font = new Font(Font, FontStyle.Bold); }

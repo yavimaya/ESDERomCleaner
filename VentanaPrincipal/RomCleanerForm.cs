@@ -24,7 +24,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
     private readonly ManualDoubleClickCheckedListBox categories = new() { Dock = DockStyle.Fill, CheckOnClick = false, SelectionMode = SelectionMode.One };
     private readonly ManualDoubleClickCheckedListBox roms = new() { Dock = DockStyle.Fill, CheckOnClick = false };
     private readonly PictureBox preview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = SystemColors.Control };
-    private readonly VideoView videoView = new() { Dock = DockStyle.Fill, BackColor = SystemColors.Control, Visible = false };
+    private readonly FrameVideoView videoView = new() { Dock = DockStyle.Fill, BackColor = SystemColors.Control, Visible = false };
     private readonly ToolStripMenuItem showVideos = new("Mostrar vídeos") { CheckOnClick = true, Checked = true };
     private readonly ToolStripMenuItem videoSound = new("Sonido en vídeos") { CheckOnClick = true, Checked = true };
     private readonly ToolStripMenuItem showAccessory = new("Mostrar sistemas accesorios") { CheckOnClick = true, Checked = false, ToolTipText = "Muestra también las carpetas que no son sistemas de juegos, como androidapps, emulators o desktop." };

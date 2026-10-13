@@ -162,7 +162,7 @@ internal sealed partial class ScreenScraperDialog
             {
                 string description = SsPick.Text(game.Synopsis, PreferredLanguages);
                 if (description.Length > 700) description = description[..700] + "…";
-                int i = candidatesGrid.Rows.Add(null, game.BestName + (game.SystemName.Length > 0 ? "\r\n(" + game.SystemName + ")" : ""), description);
+                int i = candidatesGrid.Rows.Add((object)null!, game.BestName + (game.SystemName.Length > 0 ? "\r\n(" + game.SystemName + ")" : ""), description);
                 candidatesGrid.Rows[i].Tag = game;
             }
             statusLabel.Text = $"{Math.Min(found.Count, MaxCandidates)} juegos parecidos a «{used}»: elige el que corresponde a esta ROM.";

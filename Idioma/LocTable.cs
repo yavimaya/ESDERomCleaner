@@ -78,6 +78,7 @@ internal static class LocTable
         ("No hay nada pendiente.", "There is nothing pending."),
         ("Trabajo calculado.", "Work calculated."),
         ("Marcar todas", "Mark all"),
+        ("Idéntico al actual: se omite", "Identical to the current one: skipped"),
         ("Marcar las seleccionadas", "Tick the selected ones"),
         ("Desmarcar las seleccionadas", "Untick the selected ones"),
         ("Limpiar", "Clear"),

@@ -13,6 +13,8 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         public required string TargetBase { get; init; }
         public SsMedia? Chosen { get; set; }
         public bool Save { get; set; }
+        // El archivo de la colección es exactamente el medio elegido (mismo MD5): sustituirlo no aportaría nada.
+        public bool Identical { get; set; }
         public bool Fallback { get; init; }
         public List<string> Existing { get; set; } = new();
     }
@@ -78,6 +80,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         Dock = DockStyle.Fill;
         BuildLayout();
         BuildStates();
+        _ = RefreshAllIdenticalAsync();
 
         foldersGrid.SelectionChanged += (_, _) => ShowSelectedFolder();
         foldersGrid.CurrentCellDirtyStateChanged += (_, _) => { if (foldersGrid.IsCurrentCellDirty) foldersGrid.CommitEdit(DataGridViewDataErrorContexts.Commit); };
@@ -165,7 +168,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         foreach (int i in indexes)
         {
             if (i < 0 || i >= states.Count) continue;
-            states[i].Save = states[i].Chosen is not null && value;
+            states[i].Save = states[i].Chosen is not null && !states[i].Identical && value;
             UpdateRow(i);
         }
     }
@@ -325,13 +328,14 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         try
         {
             var saveCell = gridRow.Cells["save"];
+            if (state.Identical) state.Save = false;
             saveCell.Value = state.Save;
-            saveCell.ReadOnly = state.Chosen is null;
+            saveCell.ReadOnly = state.Chosen is null || state.Identical;
             gridRow.Cells["chosen"].Value = state.Chosen is null ? "(sin candidatos)" : $"{state.Chosen.Label} · {state.Chosen.Format}" + (state.Fallback ? " · otra región" : "");
             gridRow.Cells["chosen"].ToolTipText = state.Fallback ? "No hay medios de la región de la ROM; se ofrecen los de wor, eu, us y jp, por ese orden." : "";
             gridRow.Cells["current"].Value = state.Existing.Count == 0 ? "—" : Path.GetFileName(state.Existing[0]) + (state.Existing.Count > 1 ? $" (+{state.Existing.Count - 1})" : "");
             var action = gridRow.Cells["action"];
-            (action.Value, action.Style.ForeColor) = (state.Chosen, state.Save, state.Existing.Count) switch
+            (action.Value, action.Style.ForeColor) = state.Identical ? ("Idéntico al actual: se omite", Color.DarkCyan) : (state.Chosen, state.Save, state.Existing.Count) switch
             {
                 (null, _, _) => ("Sin candidatos", SystemColors.GrayText),
                 (_, true, > 0) => ("Sustituir el actual", Color.DarkOrange),
@@ -376,6 +380,27 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         state.Chosen = item.Media;
         UpdateRow(states.IndexOf(state));
         ShowCandidate(state);
+        _ = RefreshIdenticalAsync(state);
+    }
+
+    // Marca como «idéntico» el medio elegido de una carpeta cuando el archivo que ya hay en la colección tiene su mismo MD5.
+    private async Task RefreshIdenticalAsync(FolderState state)
+    {
+        bool identical = false;
+        if (state.Chosen is { Md5.Length: > 0 } media && state.Existing.Count == 1)
+        {
+            string md5 = await Md5OfAsync(state.Existing[0]);
+            identical = md5.Length > 0 && md5.Equals(media.Md5, StringComparison.OrdinalIgnoreCase) && ReferenceEquals(state.Chosen, media);
+        }
+        if (IsDisposed || state.Identical == identical) return;
+        state.Identical = identical;
+        int index = states.IndexOf(state);
+        if (index >= 0 && index < foldersGrid.Rows.Count) UpdateRow(index);
+    }
+
+    private async Task RefreshAllIdenticalAsync()
+    {
+        foreach (var state in states.ToList()) await RefreshIdenticalAsync(state);
     }
 
     private void ShowCurrent(FolderState? state)
@@ -491,7 +516,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     private async Task SaveAsync()
     {
         foldersGrid.EndEdit();
-        var chosen = states.Where(s => s.Save && s.Chosen is not null).ToList();
+        var chosen = states.Where(s => s.Save && s.Chosen is not null && !s.Identical).ToList();
         if (chosen.Count == 0)
         {
             QuietMessage.Show(this, "Guardar medios", "No hay ninguna carpeta marcada para guardar.");
@@ -559,6 +584,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
             foreach (var state in chosen.Where(s => results.Any(r => r.Folder == s.Folder.Folder))) state.Save = false;
             for (int i = 0; i < states.Count; i++) UpdateRow(i);
             ShowSelectedFolder();
+            _ = RefreshAllIdenticalAsync();
 
             Report($"Guardados {results.Count} de {requests.Count} medios" + (errors.Count > 0 ? $"; {errors.Count} con error." : "."));
             // Si todo fue bien basta la barra de estado; solo se interrumpe al usuario cuando hubo errores.

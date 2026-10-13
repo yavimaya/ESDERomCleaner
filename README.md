@@ -145,7 +145,7 @@ dotnet build          # genera bin/Debug/net10.0-windows/ESDERomCleaner.exe
 dotnet run            # abre la aplicación
 ```
 
-Todo el código está en un único proyecto (`ESDERomCleaner.csproj`). No hay proyecto de pruebas. El motor de vídeo (LibVLC) se incorpora mediante paquetes NuGet.
+Todo el código está en un único proyecto (`ESDERomCleaner.csproj`), ordenado en carpetas por funcionalidad: `Aplicacion`, `Idioma`, `Comun`, `VentanaPrincipal`, `Colecciones`, `EsDe`, `AnadirRoms`, `ScreenScraper`, `DescargaMasiva`, `Curado`, `Borrado` y `RetroAchievements`. No hay proyecto de pruebas. El motor de vídeo (LibVLC) se incorpora mediante paquetes NuGet.
 
 ## Créditos
 
