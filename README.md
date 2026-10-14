@@ -8,12 +8,12 @@ Herramienta de escritorio para Windows que ayuda a **mantener y "curar" una cole
 
 La herramienta trabaja sobre una colección con la **estructura de carpetas de ES-DE** (`Roms`, `ES-DE\gamelists`, `ES-DE\downloaded_media`). Si no la tienes, la propia aplicación puede **crearla completa** y **generar los `gamelist.xml`** a partir de tus ROMs (ver [Estructura de colección](#estructura-de-colección)). Hay más documentación en la [wiki](../../wiki).
 
-La interfaz está en **español e inglés** (*Opciones › Idioma*; por defecto, el idioma de Windows). Los comentarios del código están en español.
+La interfaz está en **español, inglés, francés, italiano y portugués** (*Opciones › Idioma*; por defecto, el idioma de Windows). Los comentarios del código están en español.
 
 ## Qué puedes hacer
 
 - **Crear la estructura de ES-DE** (carpetas de todos los sistemas oficiales, de medios y de datos, con su `systeminfo.txt`) si la ruta elegida no la tiene, y **generar los `gamelist.xml`** desde las ROMs que haya en cada carpeta. Si copias ROMs nuevas, al analizar te ofrece añadirlas al gamelist (y, si quieres, categorizarlas y descargar sus medios).
-- **Añadir ROMs** (menú *Añadir ROMs*): arrastra archivos o carpetas (hasta 2 niveles de subcarpetas) y la aplicación las **identifica por hash** con los DAT de **No-Intro, Redump, TOSEC, MAME y FBNeo** (descargables desde la propia aplicación) o con los DAT que importes (GoodTools, clrmamepro, emuladores…), las coloca en la carpeta de su sistema y solo pregunta cuando hay dudas. Entiende **packs** (comprimidos con otros comprimidos dentro, recursivamente), prueba el hash sin cabecera (NES, FDS, Lynx, SNES…) y descarta lo que no son ROMs. Puedes elegir **cómo se guardan**: como llegan, sin comprimir, ZIP o 7z (con nivel de compresión; 7-Zip va incluido en la aplicación), respetando las extensiones que admite cada sistema. Identificar, copiar y comprimir se hace **en paralelo**. Las ROMs que ya existen en la colección se apartan en una lista de **duplicadas** (botón ⛔) y, al terminar de añadir, se ofrece **scrapear justo las añadidas**.
+- **Añadir ROMs** (menú *Añadir ROMs*): arrastra archivos o carpetas (hasta 2 niveles de subcarpetas) y la aplicación las **identifica por hash** con los DAT de **No-Intro, Redump, TOSEC, MAME y FBNeo** (descargables desde la propia aplicación) o con los DAT que importes (GoodTools, clrmamepro, emuladores…), las coloca en la carpeta de su sistema y solo pregunta cuando hay dudas. Entiende **packs** (comprimidos con otros comprimidos dentro, recursivamente), prueba el hash sin cabecera (NES, FDS, Lynx, SNES…) y descarta lo que no son ROMs. Puedes elegir **cómo se guardan**: como llegan, sin comprimir, ZIP o 7z (con nivel de compresión; 7-Zip va incluido en la aplicación), respetando las extensiones que admite cada sistema. Identificar, copiar y comprimir se hace **en paralelo**. Las ROMs que ya existen en la colección se apartan en una lista de **duplicadas** (botón ⛔) y, al terminar de añadir, se ofrece **scrapear justo las añadidas**. Antes de añadirlas puedes **categorizarlas de forma temporal** (ScreenScraper se consulta solo para decidir, sin escribir nada en los gamelists) y pulsar **Curar y añadir**, que abre el curado únicamente sobre las ROMs identificadas.
 - **Explorar** la colección por sistema y categoría (género), con búsqueda (también por expresión regular), vista previa de la *miximage* y reproducción del vídeo de la ROM enfocada.
 - **Editar metadatos** de un juego (`gamelist.xml`): nombre, descripción, valoración, fecha, desarrollador, género, favoritos, etc.
 - **Scrapear con ScreenScraper**:
@@ -26,8 +26,12 @@ La interfaz está en **español e inglés** (*Opciones › Idioma*; por defecto,
 - **Borrado seguro**: plan previo con todo lo que se va a tocar (ROMs, archivos accesorios, media, gamelists), comprobación de que nada ha cambiado antes de ejecutar, copia de seguridad opcional de los gamelists y actualización solo de los sistemas afectados.
 - **Clonar la estructura de ES-DE a otra carpeta o a una tarjeta SD** (botón *Clonar*): pensado para llevar la colección ya depurada a Android, donde ES-DE suele usarse con tarjeta SD. Ver [Clonar a otra carpeta o a una tarjeta SD](#clonar-a-otra-carpeta-o-a-una-tarjeta-sd).
 - **Trazabilidad**: cada acción relevante queda anotada en un registro que se puede consultar desde la propia aplicación.
-- **Interfaz en español e inglés** (*Opciones › Idioma*): «Predeterminado del sistema» (por defecto: el idioma de Windows si es español y, si no, inglés), Español o English, con cambio inmediato. En inglés, los metadatos que se descarguen a partir de ese momento (descripción y categoría) llegan en inglés; los gamelists que ya tienes no se tocan.
-- **Colecciones** (menú *Colecciones*): crea una colección con un nombre, su carpeta y un comentario; cárgala cuando quieras desde el menú, que muestra los sistemas, ROMs y tamaño de cada una. Cada colección guarda su propio análisis, así que al volver a ella se ve al instante (con *Re-listar colección* lo actualizas). Desde el mismo menú: **clonar**, **editar** y **eliminar** colecciones (eliminar solo la quita de la lista) y ver su **resumen**, con una tarjeta que puedes copiar al portapapeles para compartir.
+- **Interfaz en español, inglés, francés, italiano y portugués** (*Opciones › Idioma*): «Predeterminado del sistema» (el idioma de Windows si es uno de ellos y, si no, inglés) o el que elijas, con cambio inmediato. Las traducciones al francés, italiano y portugués son automáticas y no las ha revisado ningún nativo: si ves algo raro, avisa. Al descargar metadatos en un idioma distinto del español, la descripción y la categoría llegan en inglés; los gamelists que ya tienes no se tocan.
+- **Colecciones** (menú *Colecciones*): crea una colección con un nombre, su carpeta y un comentario; cárgala cuando quieras desde el menú, que muestra los sistemas, ROMs y tamaño de cada una. Cada colección guarda su propio análisis, así que al volver a ella se ve al instante (con *Re-listar colección* lo actualizas). Desde el mismo menú: **clonar**, **editar** y **eliminar** colecciones (eliminar quita la colección de la lista y borra sus datos de la aplicación; si lo marcas, y tras una doble confirmación, borra también su carpeta de ROMs y/o la estructura de ES-DE, con barra de progreso) y ver su **resumen**, con una tarjeta que puedes copiar al portapapeles para compartir.
+- **Sistema custom de RetroAchievements** (menú *RetroAchievements*): crea en `ES-DE\collections` la colección personalizada «RetroAchievements» con las ROMs cotejadas por hash, sin copiar ni mover nada (ES-DE sigue leyendo cada ROM, gamelist y medio de su sistema). Antes de crearla te pregunta si quieres repetir el cotejo para descubrir ROMs nuevas, y se mantiene al día cuando vuelves a cotejar.
+- **Comprobaciones previas**: las acciones que necesitan bases de datos de ROMs, una cuenta de ScreenScraper o de RetroAchievements o conexión a internet lo comprueban **antes** de empezar o de abrir el formulario y, si falta algo, te lo explican en un aviso naranja con lo que puedes hacer.
+- **Aspecto renovado**: los formularios comparten una cabecera oscura con su icono en *pixel art* (varios animados mientras trabajan: el papiro que se escribe al categorizar, la pala de la descarga masiva, los disquetes que se copian al clonar, la papelera al borrar), con una textura que se adapta al color de cada cabecera, tablas con filas alternas y barra de título oscura. La ventana principal destaca los sistemas y las ROMs de la colección y tiene un botón de eliminar más visible.
+- **Eliminación con detalle**: el botón *ROMs seleccionadas* abre una tabla con todas las ROMs marcadas (con icono de sistema, tamaño de ROM y de medios) donde puedes desmarcar las que no quieras; la confirmación del borrado tiene un botón *Ver ficheros* con esa misma tabla y, al borrar, muestra el avance y un resumen final.
 - **Búsqueda** de ROMs en el sistema seleccionado o en todos (admite expresiones regulares); si el texto solo está en el nombre del archivo, este se muestra entre paréntesis.
 - **Huecos de la colección**: por sistema y en total, cuántos juegos no tienen categoría, imagen o vídeo (sin imagen = sin ninguna de las imágenes que lee ES-DE), con acceso directo a scrapear justo los que faltan.
 - **Excluir seleccionados**: marca ROMs como excluidas del contador y del multiscrapeo de ES-DE (`nogamecount` y `nomultiscrape`), desde la ventana principal o desde el curado, donde además se puede eliminar a partir del menú contextual.
@@ -38,7 +42,7 @@ La interfaz está en **español e inglés** (*Opciones › Idioma*; por defecto,
 
 ## Capturas
 
-**Ventana principal.** El panel del sistema (con su icono y los huecos de la colección), las ROMs, la imagen o el vídeo de la ROM enfocada y, en el título, la colección cargada.
+**Ventana principal.** Cabecera con el chip de la aplicación, la colección cargada, su ruta y la versión; las cifras de sistemas y ROMs destacadas; el panel del sistema (con su icono y los huecos de la colección), las ROMs y la imagen o el vídeo de la ROM enfocada.
 
 ![Ventana principal](docs/img/ventana-principal.png)
 
@@ -46,11 +50,19 @@ La interfaz está en **español e inglés** (*Opciones › Idioma*; por defecto,
 
 ![Menú Colecciones](docs/img/menu-colecciones.png)
 
+**Eliminar colección.** Siempre se quita de la lista y se borran sus datos de la aplicación; si lo marcas (y confirmas), también se borran su carpeta de ROMs y/o la estructura de ES-DE, con barra de progreso.
+
+![Eliminar colección](docs/img/eliminar-coleccion.png)
+
 **Resumen de la colección.** La tarjeta se puede copiar al portapapeles para compartirla.
 
 ![Resumen de la colección](docs/img/resumen-coleccion.png)
 
-**Scrapeo de una ROM.** Compara el medio que ya tienes con el que ofrece ScreenScraper (imagen o vídeo, con sonido opcional) y elige qué guardar en cada carpeta de ES-DE.
+**Añadir ROMs.** Las ROMs se identifican por hash y se colocan en la carpeta de su sistema; las dudosas esperan en «Sin decidir». *Curar y añadir* abre el curado solo sobre las identificadas, y *Añadir a la colección* las guarda.
+
+![Añadir ROMs](docs/img/anadir-roms.png)
+
+**Scrapeo de una ROM.** En la pestaña «Elegir y guardar en la colección» compara el medio que ya tienes con el que ofrece ScreenScraper (imagen o vídeo, con sonido opcional) y elige qué guardar en cada carpeta de ES-DE; los medios idénticos a los que ya tienes se omiten.
 
 ![Scrapeo de una ROM](docs/img/scrapeo-de-una-rom.png)
 
@@ -65,6 +77,10 @@ La interfaz está en **español e inglés** (*Opciones › Idioma*; por defecto,
 **Curado del romset.** Marca géneros y supracategorías para ver qué ROMs saldrían como candidatas a descartar, con el espacio que liberarías; las excluidas a mano aparecen tachadas.
 
 ![Análisis de curado](docs/img/curado-analisis.png)
+
+**Confirmación del borrado.** Resume lo que se va a eliminar (ROMs, accesorios, medios y gamelists) y el espacio que se libera; *Ver ficheros* abre la tabla de ROMs para desmarcar las que no quieras. Al pulsar BORRAR, la papelera se anima mientras se borra.
+
+![Confirmación del borrado](docs/img/confirmar-borrado.png)
 
 **Editor de metadatos.** Compacto, con el género en un desplegable y el botón de guardar activo solo si hay cambios.
 
@@ -154,6 +170,7 @@ Todo el código está en un único proyecto (`ESDERomCleaner.csproj`), ordenado 
 - [RetroAchievements](https://retroachievements.org/) por su API de logros, insignias y avatares.
 - [LibVLCSharp](https://github.com/videolan/libvlcsharp) y [VLC](https://www.videolan.org/) para la reproducción de vídeo.
 - [libretro-database](https://github.com/libretro/libretro-database) por mantener los DAT de No-Intro, Redump, TOSEC, MAME y FBNeo que se usan para identificar las ROMs, y los proyectos No-Intro, Redump y TOSEC que los elaboran.
+- [RetroAchievements](https://retroachievements.org/) por su API web (logros, puntos y progreso) y por su logotipo, que se usa como icono del sistema custom «RetroAchievements». El logotipo es marca de sus propietarios y se usa solo para identificar su servicio; este proyecto no está afiliado a RetroAchievements.
 - [libretro/retroarch-assets](https://github.com/libretro/retroarch-assets) (carpeta `xmb/dot-art`, licencia [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) por los iconos en pixel art de cada sistema, incrustados en la aplicación (`Assets/SystemIcons`).
 - [SharpCompress](https://github.com/adamhathcock/sharpcompress) para leer archivos 7z y rar y la descompresión LZMA de los CHD. [7-Zip](https://www.7-zip.org/) (7za.exe, licencia LGPL, incluido en la aplicación) para crear archivos 7z.
 
