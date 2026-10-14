@@ -46,7 +46,7 @@ internal sealed class SelectedRomsDialog : LocalizedForm
         var center = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter, Padding = new Padding(0) };
         var right = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight };
         grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "mark", HeaderText = "", Width = 40, DefaultCellStyle = center });
-        grid.Columns.Add(new DataGridViewImageColumn { Name = "icon", HeaderText = "", Width = 40, ImageLayout = DataGridViewImageCellLayout.Zoom, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Padding = new Padding(3) } });
+        grid.Columns.Add(new DataGridViewImageColumn { Name = "icon", HeaderText = "", Width = 40, ImageLayout = DataGridViewImageCellLayout.Zoom, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Padding = new Padding(3), NullValue = null } });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "system", HeaderText = "Sistema", Width = 150, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Font = new Font(Font, FontStyle.Bold) } });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "name", HeaderText = "Nombre", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, FillWeight = 100, ReadOnly = true });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "category", HeaderText = "Categoría", Width = 190, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { ForeColor = Color.FromArgb(70, 76, 90) } });

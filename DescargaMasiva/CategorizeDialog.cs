@@ -168,7 +168,7 @@ internal sealed class CategorizeSummaryDialog : LocalizedForm
             SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false, Tag = "noloc", AutoGenerateColumns = false
         };
         RaUi.StyleGrid(grid, 24, 26, selectionVisible: false);
-        grid.Columns.Add(new DataGridViewImageColumn { Width = 30, SortMode = DataGridViewColumnSortMode.NotSortable, ImageLayout = DataGridViewImageCellLayout.Zoom });
+        grid.Columns.Add(new DataGridViewImageColumn { Width = 30, SortMode = DataGridViewColumnSortMode.NotSortable, ImageLayout = DataGridViewImageCellLayout.Zoom, DefaultCellStyle = new DataGridViewCellStyle { NullValue = null } });
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sistema", Width = 130, SortMode = DataGridViewColumnSortMode.NotSortable });
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ROM", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, SortMode = DataGridViewColumnSortMode.NotSortable });
         foreach (string entry in missing.Take(200))

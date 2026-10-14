@@ -299,7 +299,7 @@ internal sealed class RaAchievementsDialog : LocalizedForm
         grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(6, 0, 0, 0);
         grid.DefaultCellStyle.Padding = new Padding(6, 0, 6, 0);
         var center = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter, Padding = new Padding(0) };
-        grid.Columns.Add(new DataGridViewImageColumn { Name = "badge", HeaderText = "", Width = 64, ImageLayout = DataGridViewImageCellLayout.Zoom, DefaultCellStyle = new DataGridViewCellStyle { Padding = new Padding(6) } });
+        grid.Columns.Add(new DataGridViewImageColumn { Name = "badge", HeaderText = "", Width = 64, ImageLayout = DataGridViewImageCellLayout.Zoom, DefaultCellStyle = new DataGridViewCellStyle { Padding = new Padding(6), NullValue = null } }); // NullValue = null: sin él, una celda sin imagen devuelve "" y da error de formato
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "title", HeaderText = "Logro", Width = 230, DefaultCellStyle = new DataGridViewCellStyle { WrapMode = DataGridViewTriState.True, Padding = new Padding(6, 0, 6, 0) } });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "desc", HeaderText = "Descripción", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, DefaultCellStyle = new DataGridViewCellStyle { WrapMode = DataGridViewTriState.True, ForeColor = Color.FromArgb(70, 76, 90), Padding = new Padding(6, 0, 6, 0) } });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "points", HeaderText = "Puntos", Width = 70, DefaultCellStyle = center });

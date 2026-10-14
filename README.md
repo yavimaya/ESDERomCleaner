@@ -82,6 +82,10 @@ La interfaz está en **español, inglés, francés, italiano y portugués** (*Op
 
 ![Confirmación del borrado](docs/img/confirmar-borrado.png)
 
+**Logros de RetroAchievements.** Clic derecho en una ROM › *Ver logros de RetroAchievements…*: insignia, puntos, cuántos jugadores lo tienen y, si has iniciado sesión, tu progreso con los logros **hardcore** en dorado y los **softcore** en verde.
+
+![Logros de RetroAchievements](docs/img/logros-retroachievements.png)
+
 **Editor de metadatos.** Compacto, con el género en un desplegable y el botón de guardar activo solo si hay cambios.
 
 ![Editor de metadatos](docs/img/editor-de-metadatos.png)
