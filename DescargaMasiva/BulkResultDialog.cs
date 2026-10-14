@@ -36,10 +36,9 @@ internal sealed class BulkResultDialog : LocalizedForm
             AddRow(grid, $"{folder.Description} ({folder.Folder})", s.Files, s.Replaced, s.BytesBefore, s.BytesAfter, bold: false);
             totalBefore += s.BytesBefore; totalAfter += s.BytesAfter; totalFiles += s.Files; totalReplaced += s.Replaced;
         }
-        if (grid.Rows.Count == 0)
-            grid.Rows.Add("No se guardó ningún medio.", "", "", "", "", "", "");
-        else
-            AddRow(grid, "TOTAL", totalFiles, totalReplaced, totalBefore, totalAfter, bold: true);
+        // Si no se ha guardado nada no hay tabla que enseñar: el resumen queda reducido a los contadores.
+        bool nothingSaved = grid.Rows.Count == 0;
+        if (!nothingSaved) AddRow(grid, "TOTAL", totalFiles, totalReplaced, totalBefore, totalAfter, bold: true);
         grid.ClearSelection();
 
         var note = new Label
@@ -62,6 +61,16 @@ internal sealed class BulkResultDialog : LocalizedForm
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        if (nothingSaved)
+        {
+            title.Text = headline + " " + Loc.T("No se guardó ningún medio.");
+            layout.RowStyles[2].SizeType = SizeType.Absolute; layout.RowStyles[2].Height = 0;
+            layout.RowStyles[3].Height = 0;
+            grid.Visible = false; note.Visible = false;
+            FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
+            ClientSize = new Size(820, 8 + 28 + 64 + 40 + 8);
+            MinimumSize = Size;
+        }
         layout.Controls.Add(title, 0, 0);
         layout.Controls.Add(counts, 0, 1);
         layout.Controls.Add(grid, 0, 2);

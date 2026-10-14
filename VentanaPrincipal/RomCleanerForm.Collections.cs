@@ -15,15 +15,30 @@ public sealed partial class RomCleanerForm
     private SavedCollection? activeCollection
     {
         get => activeCollectionValue;
-        set { activeCollectionValue = value; CollectionTitle.Set(value?.Name, value?.Root); UpdateScanEnabled(); ApplyWelcome(); }
+        set { activeCollectionValue = value; CollectionTitle.Set(value?.Name, value?.Root); UpdateMainHeader(); UpdateScanEnabled(); ApplyWelcome(); }
     }
 
     private static List<SavedCollection> LoadCollections() => AppSettings.Get("Collections", new List<SavedCollection>());
 
     private static void StoreCollections(List<SavedCollection> list) => AppSettings.Set("Collections", list);
 
-    private static bool SameRoot(string a, string b) =>
-        string.Equals(a.TrimEnd('\\', '/'), b.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
+    // Ruta canónica: absoluta, sin barra final y resolviendo enlaces simbólicos o uniones, para que dos rutas distintas a la misma carpeta se detecten como iguales.
+    private static string Canonical(string path)
+    {
+        try
+        {
+            string full = Path.GetFullPath(path).TrimEnd('\\', '/');
+            var target = Directory.Exists(full) ? new DirectoryInfo(full).ResolveLinkTarget(returnFinalTarget: true) : null;
+            return (target?.FullName ?? full).TrimEnd('\\', '/');
+        }
+        catch { return path.TrimEnd('\\', '/'); }
+    }
+
+    private static bool SameRoot(string a, string b) => string.Equals(Canonical(a), Canonical(b), StringComparison.OrdinalIgnoreCase);
+
+    // Dos colecciones no pueden compartir la carpeta con la estructura ES-DE (gamelists y medios): se mezclarían al analizar, scrapear o borrar.
+    private static bool SharesEsDe(string a, string b) =>
+        SameRoot(a, b) || string.Equals(Canonical(Path.Combine(a, "ES-DE")), Canonical(Path.Combine(b, "ES-DE")), StringComparison.OrdinalIgnoreCase);
 
     private string CurrentRoot() => root.Text.Trim().Trim('"');
 
@@ -68,18 +83,52 @@ public sealed partial class RomCleanerForm
         collectionsMenu.DropDownItems.AddRange([create, save, edit, clone, summary, new ToolStripSeparator()]);
 
         var list = LoadCollections().OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        if (list.Count == 0)
-            collectionsMenu.DropDownItems.Add(new ToolStripMenuItem("(ninguna guardada)") { Enabled = false });
+        // Las colecciones guardadas van en un panel de ancho fijo: cabecera dorada y una tarjeta por colección (icono, nombre en negrita y cifras debajo),
+        // con la cargada resaltada. Así se distinguen del resto del menú y miden todas lo mismo, sea cual sea el nombre.
+        const int panelWidth = 400, cardHeight = 48, headerHeight = 24;
+        var panel = new Panel { Width = panelWidth, BackColor = RaUi.Body, Padding = new Padding(8, 0, 8, 6) };
+        var tips = new ToolTip { AutoPopDelay = 30000 };
+        var cards = new List<Control>();
         foreach (var collection in list)
         {
             string stats = collection.Roms is { } roms
                 ? $"{collection.Systems:N0} {Loc.T("sistemas")} · {roms:N0} ROMs · {FormatSize(collection.Bytes ?? 0)}"
                 : Loc.T("sin analizar");
-            var item = new ToolStripMenuItem($"{collection.Name}      {stats}") { Tag = "noloc", ToolTipText = CollectionTip(collection), Enabled = !busy };
-            item.Checked = activeCollection is not null && activeCollection.Name.Equals(collection.Name, StringComparison.OrdinalIgnoreCase);
-            item.Click += (_, _) => OpenSavedCollection(collection);
-            collectionsMenu.DropDownItems.Add(item);
+            bool active = activeCollection is not null && activeCollection.Name.Equals(collection.Name, StringComparison.OrdinalIgnoreCase);
+            var normal = active ? Color.FromArgb(255, 247, 222) : Color.White;
+            var hover = active ? Color.FromArgb(255, 238, 196) : Color.FromArgb(238, 240, 245);
+            var card = new Panel { Size = new Size(panelWidth - 16, cardHeight), BackColor = normal, Cursor = busy ? Cursors.Default : Cursors.Hand, Margin = Padding.Empty };
+            card.Paint += (_, e) =>
+            {
+                using var pen = new Pen(active ? RaUi.Gold : RaUi.Border);
+                e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
+                if (active) { using var bar = new SolidBrush(RaUi.Gold); e.Graphics.FillRectangle(bar, 0, 0, 5, card.Height); }
+            };
+            var icon = new PictureBox { Image = folderIcon ??= RaUi.FolderIcon(2), SizeMode = PictureBoxSizeMode.CenterImage, Location = new Point(12, 8), Size = new Size(32, 32), BackColor = Color.Transparent };
+            var name = new Label { Text = collection.Name, Tag = "noloc", Location = new Point(52, 5), Size = new Size(card.Width - 60, 20), AutoEllipsis = true, Font = new Font(Font, FontStyle.Bold), ForeColor = busy ? RaUi.Muted : RaUi.Dark, BackColor = Color.Transparent };
+            var detail = new Label { Text = stats, Tag = "noloc", Location = new Point(52, 25), Size = new Size(card.Width - 60, 18), AutoEllipsis = true, ForeColor = RaUi.Muted, BackColor = Color.Transparent };
+            card.Controls.AddRange([icon, name, detail]);
+            foreach (Control c in new Control[] { card, icon, name, detail })
+            {
+                tips.SetToolTip(c, CollectionTip(collection));
+                c.MouseEnter += (_, _) => { if (!busy) card.BackColor = hover; };
+                c.MouseLeave += (_, _) => { if (!card.ClientRectangle.Contains(card.PointToClient(Cursor.Position))) card.BackColor = normal; };
+                c.Click += (_, _) => { if (busy) return; collectionsMenu.DropDown.Close(); OpenSavedCollection(collection); };
+            }
+            cards.Add(card);
         }
+        var header = new Label
+        {
+            Text = Loc.T("Colecciones guardadas").ToUpperInvariant(), Tag = "noloc", Dock = DockStyle.Top, Height = headerHeight, TextAlign = ContentAlignment.MiddleLeft,
+            Font = new Font(Font, FontStyle.Bold), ForeColor = RaUi.Dark, BackColor = RaUi.Gold, Padding = new Padding(8, 0, 0, 0)
+        };
+        int top = headerHeight + 6;
+        if (cards.Count == 0)
+            cards.Add(new Label { Text = Loc.T("(ninguna guardada)"), Tag = "noloc", Size = new Size(panelWidth - 16, 24), ForeColor = RaUi.Muted, TextAlign = ContentAlignment.MiddleLeft });
+        foreach (var card in cards) { card.Location = new Point(8, top); top += card.Height + 4; panel.Controls.Add(card); }
+        panel.Height = top + 2;
+        panel.Controls.Add(header);
+        collectionsMenu.DropDownItems.Add(new ToolStripControlHost(panel) { AutoSize = false, Size = panel.Size, Margin = Padding.Empty, Padding = Padding.Empty });
 
         collectionsMenu.DropDownItems.Add(new ToolStripSeparator());
         var delete = new ToolStripMenuItem("Eliminar colección") { Enabled = !busy && list.Count > 0 };
@@ -91,6 +140,23 @@ public sealed partial class RomCleanerForm
         }
         collectionsMenu.DropDownItems.Add(delete);
     }
+
+    private bool AskSwitchToCreated(string name)
+    {
+        using var dialog = new CollectionCreatedDialog(name);
+        return dialog.ShowDialog(this) == DialogResult.OK;
+    }
+
+    // Subtítulo de la cabecera principal: la colección cargada con su ruta y la versión (o la invitación a crear o elegir una).
+    private void UpdateMainHeader()
+    {
+        if (mainBanner is null) return;
+        string version = AppVersion();
+        string what = activeCollection is { } c ? $"{Loc.T("Colección")} «{c.Name}»  ·  {c.Root}" : Loc.T("Crea o selecciona una colección");
+        mainBanner.Subtitle.Text = version.Length > 0 ? $"{what}  ·  {version}" : what;
+    }
+
+    private static Bitmap? folderIcon;
 
     // Crea una colección con la carpeta que hay en «Ruta raíz» y la deja como colección cargada. Devuelve false si se cancela.
     private bool CreateCollection(bool askToSwitch = true)
@@ -107,12 +173,17 @@ public sealed partial class RomCleanerForm
             suggestion = name; chosenRoot = rootPath; chosenComment = dialog.Comment;
             if (list.FirstOrDefault(c => SameRoot(c.Root, rootPath)) is { } sameFolder)
             {
-                QuietMessage.Show(this, "Crear colección", $"Esa carpeta ya pertenece a la colección «{sameFolder.Name}».");
+                RequirementDialog.Show(this, "Crear colección", "Carpeta ya en uso", $"Esa carpeta ya pertenece a la colección «{sameFolder.Name}».", ["Elige otra carpeta para la nueva colección."], ("Aceptar", DialogResult.OK));
+                continue;
+            }
+            if (list.FirstOrDefault(c => SharesEsDe(c.Root, rootPath)) is { } sameStructure)
+            {
+                RequirementDialog.Show(this, "Crear colección", "Carpeta ya en uso", $"La estructura ES-DE de esa carpeta ya la usa la colección «{sameStructure.Name}».", ["Elige otra carpeta para la nueva colección."], ("Aceptar", DialogResult.OK));
                 continue;
             }
             if (list.Any(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
             {
-                QuietMessage.Show(this, "Crear colección", $"Ya existe una colección llamada «{name}». Elige otro nombre.");
+                RequirementDialog.Show(this, "Crear colección", "Nombre ya en uso", $"Ya existe una colección llamada «{name}».", ["Elige otro nombre para la nueva colección."], ("Aceptar", DialogResult.OK));
                 continue;
             }
             var created = new SavedCollection(name, rootPath, dialog.Comment);
@@ -121,8 +192,7 @@ public sealed partial class RomCleanerForm
             trace.Add("collection_created", $"name={name}; root={rootPath}");
             status.Text = $"Colección «{name}» creada.";
             // Al crearla no se carga sola: se pregunta. Si se analiza una carpeta sin colección (askToSwitch = false) sí se carga, porque hace falta para seguir.
-            if (!askToSwitch || QuietMessage.Confirm(this, "Colección creada",
-                $"Colección «{name}» creada.\r\n\r\n¿Quieres cambiar a ella ahora? Se descargará la colección cargada y el formulario quedará vacío; el primer «Listar colección» lo preparará todo.", "Cambiar"))
+            if (!askToSwitch || AskSwitchToCreated(name))
                 SwitchToCollection(created);
             return true;
         }
@@ -207,7 +277,27 @@ public sealed partial class RomCleanerForm
 
     // Deja la colección indicada como la cargada. Si ya se había analizado, se recupera su análisis guardado; si no, empieza de cero y el primer
     // «Listar colección» lo prepara todo.
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern IntPtr SendRedrawMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    // Cambiar de colección enseña de golpe el formulario ya completo: mientras se prepara no se dibuja nada (WM_SETREDRAW) y al final se repinta todo a la vez,
+    // en lugar de ir apareciendo los controles uno a uno.
     private void SwitchToCollection(SavedCollection collection)
+    {
+        if (!IsHandleCreated) { SwitchToCollectionCore(collection); return; }
+        SuspendLayout();
+        SendRedrawMessage(Handle, 0x000B, IntPtr.Zero, IntPtr.Zero);
+        try { SwitchToCollectionCore(collection); }
+        finally
+        {
+            ResumeLayout(true);
+            SendRedrawMessage(Handle, 0x000B, (IntPtr)1, IntPtr.Zero);
+            Invalidate(true);
+            Update();
+        }
+    }
+
+    private void SwitchToCollectionCore(SavedCollection collection)
     {
         UnloadCollection();
         activeCollection = collection;
@@ -281,17 +371,46 @@ public sealed partial class RomCleanerForm
             try { if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true); } catch { }
         trace.Add("collection_unloaded", "");
     }
+    // Siempre se quita de la lista y se borran sus datos de la aplicación (análisis y temporales). Opcionalmente se borran también la carpeta de ROMs y/o la de ES-DE.
+    // El propio formulario de confirmación hace el borrado con su barra de progreso y avisa al terminar.
     private void DeleteSavedCollection(SavedCollection collection)
     {
-        if (!QuietMessage.Confirm(this, "Eliminar colección",
-            $"Se quitará «{collection.Name}» de la lista de colecciones guardadas.\r\n\r\nNo se borra ningún archivo de la colección.", "Eliminar")) return;
-        var list = LoadCollections();
-        list.RemoveAll(c => c.Name.Equals(collection.Name, StringComparison.OrdinalIgnoreCase));
-        StoreCollections(list);
-        CollectionCache.Delete(collection.Root); // su caché de análisis también se va
-        if (activeCollection is not null && activeCollection.Name.Equals(collection.Name, StringComparison.OrdinalIgnoreCase)) { activeCollection = null; UnloadCollection(); }
-        trace.Add("collection_removed", $"name={collection.Name}");
-        status.Text = $"Colección «{collection.Name}» quitada de la lista.";
+        string romsFolder = Path.Combine(collection.Root, "Roms"), esdeFolder = Path.Combine(collection.Root, "ES-DE");
+        string romsText = (collection.Roms is { } n ? $"{n:N0} ROMs · {FormatSize(collection.Bytes ?? 0)} · " : "") + romsFolder;
+
+        // Salvaguardas: no se borra desde la raíz de una unidad, ni si otra colección guardada comparte o contiene esa carpeta, ni a través de enlaces simbólicos.
+        string? Prepare(bool deleteRoms, bool deleteEsDe)
+        {
+            var folders = new List<string>();
+            if (deleteRoms) folders.Add(romsFolder);
+            if (deleteEsDe) folders.Add(esdeFolder);
+            if (folders.Count > 0)
+            {
+                string full = Path.GetFullPath(collection.Root);
+                if (string.Equals(Path.GetPathRoot(full), full, StringComparison.OrdinalIgnoreCase)) return "La carpeta de la colección es la raíz de una unidad: por seguridad no se borra desde ahí.";
+                if (LoadCollections().FirstOrDefault(c => !c.Name.Equals(collection.Name, StringComparison.OrdinalIgnoreCase)
+                    && (SameRoot(c.Root, collection.Root) || PathRules.Inside(Path.GetFullPath(c.Root), full) || PathRules.Inside(full, Path.GetFullPath(c.Root)))) is { } other)
+                    return $"La carpeta se solapa con la de la colección «{other.Name}»: por seguridad no se borra.";
+                if (folders.Any(f => Directory.Exists(f) && DeletionService.HasReparsePointInPath(f, collection.Root)))
+                    return "La carpeta contiene enlaces simbólicos o uniones: por seguridad no se borra.";
+            }
+            // Se descarga primero si es la cargada, para que nada (vídeo, miniaturas) mantenga archivos abiertos.
+            if (activeCollection is not null && activeCollection.Name.Equals(collection.Name, StringComparison.OrdinalIgnoreCase)) { activeCollection = null; UnloadCollection(); }
+            return null;
+        }
+
+        void Complete(bool deleteRoms, bool deleteEsDe, List<string> errors)
+        {
+            var list = LoadCollections();
+            list.RemoveAll(c => c.Name.Equals(collection.Name, StringComparison.OrdinalIgnoreCase));
+            StoreCollections(list);
+            CollectionCache.Delete(collection.Root); // su caché de análisis (base de datos) también se va
+            trace.Add("collection_removed", $"name={collection.Name}; roms_deleted={deleteRoms}; esde_deleted={deleteEsDe}; errors={errors.Count}");
+            status.Text = deleteRoms || deleteEsDe ? $"Colección «{collection.Name}» eliminada, con las carpetas marcadas." : $"Colección «{collection.Name}» quitada de la lista.";
+        }
+
+        using var dialog = new DeleteCollectionDialog(collection, romsText, esdeFolder, Prepare, Complete);
+        dialog.ShowDialog(this);
     }
 }
 

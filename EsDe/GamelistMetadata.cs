@@ -10,7 +10,7 @@ namespace ESDERomCleaner;
 internal sealed record GamelistMetadata(string Name, string Desc, string Rating, string ReleaseDate, string Developer, string Publisher, string Genre, string Players)
 {
     // Idioma en que se descargan los textos (descripción, categoría): el de la interfaz primero, para que los gamelists que se generen a partir de ahora salgan en ese idioma.
-    private static string[] Languages => Loc.English ? ["en", "es", "fr", "de", "it", "pt"] : ["es", "en", "fr", "de", "it", "pt"];
+    private static string[] Languages => new[] { Loc.Language, "es", "en", "fr", "de", "it", "pt" }.Distinct().ToArray();
 
     public IEnumerable<(string Field, string Value)> Fields()
     {

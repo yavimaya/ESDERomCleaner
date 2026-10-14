@@ -52,6 +52,7 @@ public sealed partial class RomCleanerForm
             foreach (var folder in missing) Directory.CreateDirectory(Path.Combine(rootPath, folder));
             // Cada carpeta de sistema lleva su systeminfo.txt con las extensiones que admite (si falta; ES-DE lo regenera al arrancar).
             foreach (var system in EsDeStructure.Systems) SystemFormats.EnsureSystemInfo(rootPath, system);
+            SystemFormats.EnsureSystemsList(rootPath, EsDeStructure.Systems); // y la lista de sistemas, como hace ES-DE al arrancar
         }
         catch (Exception ex)
         {

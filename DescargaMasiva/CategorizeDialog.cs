@@ -12,9 +12,7 @@ internal sealed class CategorizeDialog : LocalizedForm
     private readonly Label statusLabel = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
     private readonly Label summaryLabel = new() { AutoSize = false, TextAlign = ContentAlignment.TopLeft, ForeColor = SystemColors.GrayText, AutoEllipsis = true };
     private readonly ProgressBar bar = new() { Minimum = 0, Maximum = 100 };
-    // Peticiones de hoy a ScreenScraper y límite diario; se actualiza con cada petición.
-    private readonly Label quotaLabel = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, ForeColor = SystemColors.GrayText, Tag = "noloc" };
-    private readonly Button cancel = new() { Text = "Cancelar", Size = new Size(90, 28) };
+    private readonly Button cancel = new() { Text = "Cancelar", Size = new Size(110, 32) };
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 500 };
     private readonly CancellationTokenSource cts = new();
     private BulkMediaRunner? runner;
@@ -31,30 +29,25 @@ internal sealed class CategorizeDialog : LocalizedForm
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false; ControlBox = false;
         StartPosition = FormStartPosition.CenterParent;
         Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
-        ClientSize = new Size(520, 150);
-        statusLabel.Location = new Point(12, 12); statusLabel.Size = new Size(496, 22);
-        bar.Location = new Point(12, 40); bar.Size = new Size(496, 20);
-        summaryLabel.Location = new Point(12, 68); summaryLabel.Size = new Size(496, 36);
-        cancel.Location = new Point(418, 112);
-        quotaLabel.Location = new Point(12, 118); quotaLabel.Size = new Size(380, 20);
-        Controls.AddRange([statusLabel, bar, summaryLabel, quotaLabel, cancel]);
-        UpdateQuota();
-        ScreenScraperQuota.Changed += OnQuotaChanged;
-        FormClosed += (_, _) => ScreenScraperQuota.Changed -= OnQuotaChanged;
+        ClientSize = new Size(600, 256);
+        BackColor = RaUi.Body;
+        // Mismo aspecto que el resto de formularios nuevos: cabecera oscura con el papiro (la pluma escribe mientras se categoriza), pie con el botón y barra de CPU.
+        var banner = new RaHeader("Categorizar", "Descarga de ScreenScraper la categoría (y los idiomas) de las ROMs de los sistemas elegidos.", 68, 48, logo: false);
+        RaUi.AnimateIcon(banner.Icon, RaUi.ScrollWritingFrames());
+        statusLabel.Location = new Point(24, 84); statusLabel.Size = new Size(552, 22);
+        bar.Location = new Point(24, 112); bar.Size = new Size(552, 14);
+        summaryLabel.Location = new Point(24, 136); summaryLabel.Size = new Size(552, 38);
+        var footer = RaUi.Footer();
+        RaUi.StyleButton(cancel, false);
+        cancel.Location = new Point(600 - 24 - cancel.Width, 10);
+        footer.Controls.Add(cancel);
+        // Abajo del todo: peticiones de hoy a ScreenScraper a la izquierda y CPU a la derecha.
+        Controls.AddRange([banner, statusLabel, bar, summaryLabel, footer, new CpuUsageStrip(withQuota: true)]);
         CancelButton = cancel;
         cancel.Click += (_, _) => { cts.Cancel(); cancel.Enabled = false; statusLabel.Text = "Cancelando…"; };
         timer.Tick += (_, _) => RefreshProgress();
         Shown += async (_, _) => await RunAsync();
     }
-
-    private void OnQuotaChanged()
-    {
-        if (IsDisposed) return;
-        if (InvokeRequired) { try { BeginInvoke(UpdateQuota); } catch (InvalidOperationException) { } return; }
-        UpdateQuota();
-    }
-
-    private void UpdateQuota() => quotaLabel.Text = Loc.T(ScreenScraperQuota.TodayText());
 
     private int Percent(BulkSummary s) => plannedWork > 0 ? Math.Clamp(Math.Max(0, s.RomsFinished - s.AlreadyComplete) * 100 / plannedWork, 0, 100) : 0;
 
@@ -130,32 +123,68 @@ internal sealed class CategorizeDialog : LocalizedForm
     }
 }
 
-// Resumen de la categorización cuando a alguna ROM no se le encontró categoría en ScreenScraper: qué se hizo y cuáles siguen sin ella.
+// Resumen de la categorización cuando a alguna ROM no se le encontró categoría en ScreenScraper: qué se hizo y cuáles siguen sin ella. Con el formato de los
+// formularios nuevos: cabecera oscura, tarjetas con las cifras y una tabla con las ROMs (icono del sistema, sistema y nombre).
 internal sealed class CategorizeSummaryDialog : LocalizedForm
 {
+    private static readonly Color Ok = Color.FromArgb(34, 130, 70), Warn = Color.FromArgb(214, 100, 0), Bad = Color.FromArgb(170, 40, 40);
+
     public CategorizeSummaryDialog(int categorized, int noGenre, int notFound, int failed, string[] missing)
     {
         Text = "Categorizar";
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
         Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
-        ClientSize = new Size(520, 320);
-        var lines = new List<string> { $"Categorizadas: {categorized:N0}" };
-        if (noGenre > 0) lines.Add($"Sin categoría en ScreenScraper: {noGenre:N0}");
-        if (notFound > 0) lines.Add($"No encontradas en ScreenScraper: {notFound:N0}");
-        if (failed > 0) lines.Add($"Fallidas: {failed:N0}");
-        var summary = new Label { Location = new Point(12, 12), Size = new Size(496, 22 * lines.Count), AutoSize = false, Text = string.Join("\r\n", lines) };
-        var caption = new Label { Text = "ROMs que siguen sin categoría:", Location = new Point(12, 20 + 22 * lines.Count), Size = new Size(496, 22) };
-        int top = 44 + 22 * lines.Count;
-        // Los nombres de las ROMs no se traducen (Tag «noloc»).
-        var list = new TextBox
+        BackColor = RaUi.Body;
+        const int width = 660, headerHeight = 68, footerHeight = 52, tileHeight = 88;
+        ClientSize = new Size(width, 520);
+
+        var banner = new RaHeader("Categorizar", "Resultado de la categorización", headerHeight, 48, logo: false);
+        banner.Icon.Image = RaUi.ScrollIcon();
+
+        // Tarjetas con las cifras (solo las que no son cero, salvo las categorizadas).
+        var tiles = new List<(string Number, string Name, Color Color)> { (categorized.ToString("N0"), "Categorizadas", Ok) };
+        if (noGenre > 0) tiles.Add((noGenre.ToString("N0"), "Sin categoría en ScreenScraper", Warn));
+        if (notFound > 0) tiles.Add((notFound.ToString("N0"), "No encontradas en ScreenScraper", Warn));
+        if (failed > 0) tiles.Add((failed.ToString("N0"), "Fallidas", Bad));
+        int innerWidth = width - 48, gap = 10, tileWidth = (innerWidth - gap * (tiles.Count - 1)) / tiles.Count;
+        var tilePanel = new Panel { Location = new Point(24, headerHeight + 16), Size = new Size(innerWidth, tileHeight), BackColor = RaUi.Body };
+        for (int i = 0; i < tiles.Count; i++)
         {
-            Location = new Point(12, top), Size = new Size(496, 320 - top - 52), Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Tag = "noloc",
-            BackColor = SystemColors.Window,
-            Text = missing.Length == 0 ? "" : string.Join("\r\n", missing.Take(200)) + (missing.Length > 200 ? $"\r\n… (+{missing.Length - 200:N0})" : "")
+            var card = RaUi.Card(new Rectangle(i * (tileWidth + gap), 0, tileWidth, tileHeight));
+            card.Controls.Add(new Label { Text = tiles[i].Number, Tag = "noloc", Location = new Point(0, 8), Size = new Size(tileWidth, 38), TextAlign = ContentAlignment.MiddleCenter, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = tiles[i].Color });
+            card.Controls.Add(new Label { Text = tiles[i].Name, Location = new Point(4, 50), Size = new Size(tileWidth - 8, 34), TextAlign = ContentAlignment.TopCenter, Font = new Font(Font, FontStyle.Bold) });
+            tilePanel.Controls.Add(card);
+        }
+
+        var caption = new Label { Text = "ROMs que siguen sin categoría:", Location = new Point(24, headerHeight + 16 + tileHeight + 14), Size = new Size(innerWidth, 22), Font = new Font(Font, FontStyle.Bold) };
+        int gridTop = caption.Bottom + 4;
+        int gridHeight = ClientSize.Height - footerHeight - gridTop - 14;
+
+        // Los nombres de las ROMs no se traducen (Tag «noloc»); cada línea llega como «sistema: ROM».
+        var grid = new DataGridView
+        {
+            ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, AllowUserToResizeRows = false, AllowUserToResizeColumns = false, RowHeadersVisible = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false, Tag = "noloc", AutoGenerateColumns = false
         };
-        var ok = new Button { Text = "Aceptar", Size = new Size(90, 28), Location = new Point(418, 320 - 40), DialogResult = DialogResult.OK };
+        RaUi.StyleGrid(grid, 24, 26, selectionVisible: false);
+        grid.Columns.Add(new DataGridViewImageColumn { Width = 30, SortMode = DataGridViewColumnSortMode.NotSortable, ImageLayout = DataGridViewImageCellLayout.Zoom });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sistema", Width = 130, SortMode = DataGridViewColumnSortMode.NotSortable });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ROM", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, SortMode = DataGridViewColumnSortMode.NotSortable });
+        foreach (string entry in missing.Take(200))
+        {
+            int split = entry.IndexOf(": ", StringComparison.Ordinal);
+            string system = split > 0 ? entry[..split] : "", rom = split > 0 ? entry[(split + 2)..] : entry;
+            grid.Rows.Add(system.Length > 0 ? PixelSystemIcons.Get(system, 16) : null, system, rom);
+        }
+        if (missing.Length > 200) grid.Rows.Add(null, "", $"… (+{missing.Length - 200:N0})");
+        var frame = RaUi.Frame(grid, new Rectangle(24, gridTop, innerWidth, gridHeight));
+
+        var footer = RaUi.Footer(footerHeight);
+        var ok = RaUi.MakeButton("Aceptar", true, 110);
+        ok.DialogResult = DialogResult.OK; ok.Location = new Point(width - 20 - ok.Width, 10);
+        footer.Controls.Add(ok);
         AcceptButton = ok; CancelButton = ok;
-        Controls.AddRange([summary, caption, list, ok]);
+        Controls.Add(tilePanel); Controls.Add(caption); Controls.Add(frame); Controls.Add(footer); Controls.Add(banner);
     }
 }

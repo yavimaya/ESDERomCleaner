@@ -54,7 +54,38 @@ internal sealed record RaAchievement(int Id, string Title, string Description, i
 
 internal sealed record RaUserInfo(int HardcorePoints, int SoftcorePoints, int Rank, int TotalRanked);
 
-internal sealed record RaGameDetail(int Id, string Title, string ConsoleName, string Developer, string Genre, string Released, int Players, List<RaAchievement> Achievements);
+// Progreso del usuario en un juego: logros conseguidos (en cualquier modo), conseguidos en hardcore y el mayor premio de RetroAchievements
+// («mastered», «completed», «beaten-hardcore» o «beaten-softcore»; vacío si no tiene).
+internal sealed class RaGameProgress
+{
+    public int Awarded { get; set; }
+    public int Hardcore { get; set; }
+    public string Kind { get; set; } = "";
+    // Cuándo se leyó de RetroAchievements (para refrescarlo pasado un tiempo).
+    public DateTime FetchedAt { get; set; }
+
+    // Los que solo se han conseguido en softcore (los de hardcore ya cuentan en el otro grupo).
+    public int SoftcoreOnly => Math.Max(0, Awarded - Hardcore);
+
+    private static int Rank(string kind) => kind switch { "mastered" => 4, "completed" => 3, "beaten-hardcore" => 2, "beaten-softcore" => 1, _ => 0 };
+    public static string Best(string a, string b) => Rank(a) >= Rank(b) ? a : b;
+
+    // Calcula el progreso a partir de la lista de logros del juego con las fechas de este usuario.
+    public static RaGameProgress FromAchievements(IReadOnlyList<RaAchievement> list, string highestAward = "")
+    {
+        int total = list.Count, won = list.Count(a => a.Earned), hard = list.Count(a => a.Hardcore);
+        var progression = list.Where(a => a.Type == "progression").ToList();
+        var winConditions = list.Where(a => a.Type == "win_condition").ToList();
+        bool Beaten(Func<RaAchievement, bool> ok) => progression.Count + winConditions.Count > 0 && progression.All(ok) && (winConditions.Count == 0 || winConditions.Any(ok));
+        string kind = total > 0 && hard == total ? "mastered" : total > 0 && won == total ? "completed"
+            : Beaten(a => a.Hardcore) ? "beaten-hardcore" : Beaten(a => a.Earned) ? "beaten-softcore" : "";
+        // Si RetroAchievements ya dice qué premio tiene el usuario (mastered, beaten…), se respeta aunque los logros del juego no estén clasificados por tipo.
+        return new RaGameProgress { Awarded = won, Hardcore = hard, Kind = Best(kind, highestAward), FetchedAt = DateTime.Now };
+    }
+}
+
+// HighestAward es el premio que RetroAchievements da a este usuario en el juego («mastered», «completed», «beaten-hardcore», «beaten-softcore» o vacío).
+internal sealed record RaGameDetail(int Id, string Title, string ConsoleName, string Developer, string Genre, string Released, int Players, List<RaAchievement> Achievements, string HighestAward = "");
 
 // Cliente de la Web API de RetroAchievements (https://api-docs.retroachievements.org). Las claves de la consulta son «z» (usuario) y «y» (clave).
 internal sealed class RaClient
@@ -134,13 +165,13 @@ internal sealed class RaClient
         }
         achievements = achievements.OrderBy(a => a.Id).ToList();
         return new RaGameDetail(Int(root, "ID"), Str(root, "Title"), Str(root, "ConsoleName"), Str(root, "Developer"), Str(root, "Genre"), Str(root, "Released"),
-            Int(root, "NumDistinctPlayers"), achievements);
+            Int(root, "NumDistinctPlayers"), achievements, Str(root, "HighestAwardKind"));
     }
 
-    // Juegos de tu cuenta con los logros conseguidos en cada uno (idJuego → conseguidos).
-    public async Task<Dictionary<int, int>> GetUserProgressAsync(CancellationToken token)
+    // Juegos de tu cuenta con tu progreso en cada uno (idJuego → conseguidos, de ellos en hardcore, y mayor premio).
+    public async Task<Dictionary<int, RaGameProgress>> GetUserProgressAsync(CancellationToken token)
     {
-        var result = new Dictionary<int, int>();
+        var result = new Dictionary<int, RaGameProgress>();
         for (int offset = 0; ; offset += 500)
         {
             using var doc = await GetAsync("API_GetUserCompletionProgress.php", token, ("u", credentials.UserName), ("c", "500"), ("o", offset.ToString()));
@@ -150,8 +181,13 @@ internal sealed class RaClient
             {
                 count++;
                 int id = Int(g, "GameID");
-                // Si el juego aparece dos veces (softcore y hardcore) se queda con el mayor.
-                if (id > 0) result[id] = Math.Max(result.GetValueOrDefault(id), Int(g, "NumAwarded"));
+                // Si el juego aparece dos veces (softcore y hardcore) se queda con lo mayor de cada cosa.
+                if (id <= 0) continue;
+                var found = result.TryGetValue(id, out var previous) ? previous : new RaGameProgress();
+                found.Awarded = Math.Max(found.Awarded, Int(g, "NumAwarded"));
+                found.Hardcore = Math.Max(found.Hardcore, Int(g, "NumAwardedHardcore"));
+                found.Kind = RaGameProgress.Best(found.Kind, Str(g, "HighestAwardKind"));
+                result[id] = found;
             }
             if (count < 500 || offset > 20000) break;
         }
@@ -324,6 +360,9 @@ internal sealed class RaIndex
         public Dictionary<string, RaMatch> Matches { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, DateTime> Systems { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<int, int> Progress { get; set; } = new();
+        public Dictionary<int, RaGameProgress> Detail { get; set; } = new();
+        // Versión del formato del detalle: si es menor que la actual se descarta y se vuelve a leer de RetroAchievements al enfocar cada ROM.
+        public int DetailVersion { get; set; }
         public DateTime ProgressAt { get; set; }
     }
 
@@ -340,6 +379,7 @@ internal sealed class RaIndex
             {
                 loaded.Matches = new Dictionary<string, RaMatch>(loaded.Matches, StringComparer.OrdinalIgnoreCase);
                 loaded.Systems = new Dictionary<string, DateTime>(loaded.Systems, StringComparer.OrdinalIgnoreCase);
+                if (loaded.DetailVersion < 3 || loaded.Detail is null) { loaded.Detail = new(); loaded.DetailVersion = 3; loaded.ProgressAt = default; } // formato nuevo: se vuelve a leer el progreso de la cuenta
                 index.data = loaded;
             }
         }
@@ -348,10 +388,16 @@ internal sealed class RaIndex
     }
 
     public bool IsEmpty { get { lock (gate) return data.Systems.Count == 0; } }
+    // Fecha del último análisis (el más reciente de los sistemas cotejados); null si nunca se analizó.
+    public DateTime? LastScan { get { lock (gate) return data.Systems.Count == 0 ? null : data.Systems.Values.Max(); } }
     public bool SystemChecked(string system) { lock (gate) return data.Systems.ContainsKey(system); }
     public RaMatch? Match(RomRow row) { lock (gate) return data.Matches.GetValueOrDefault(RomKey.Of(row)); }
     public int? Awarded(int gameId) { lock (gate) return data.Progress.TryGetValue(gameId, out int n) ? n : null; }
+    // Progreso detallado del usuario en el juego (hardcore, softcore y premio); null si no se conoce.
+    public RaGameProgress? Progress(int gameId) { lock (gate) return data.Detail.TryGetValue(gameId, out var p) ? p : null; }
     public bool HasProgress { get { lock (gate) return data.ProgressAt != default; } }
+    // Cuándo se leyó por última vez el progreso de la cuenta (default si nunca).
+    public DateTime ProgressTime { get { lock (gate) return data.ProgressAt; } }
 
     public void SetMatch(string key, RaMatch? match)
     {
@@ -359,8 +405,18 @@ internal sealed class RaIndex
     }
 
     public void MarkSystem(string system) { lock (gate) data.Systems[system] = DateTime.Now; }
-    public void SetAwarded(int gameId, int count) { lock (gate) data.Progress[gameId] = count; }
-    public void SetProgress(Dictionary<int, int> progress) { lock (gate) { data.Progress = progress; data.ProgressAt = DateTime.Now; } }
+    public void SetGameProgress(int gameId, RaGameProgress progress) { lock (gate) { data.Progress[gameId] = progress.Awarded; data.Detail[gameId] = progress; data.DetailVersion = 3; } }
+    public void SetProgress(Dictionary<int, RaGameProgress> progress)
+    {
+        lock (gate)
+        {
+            foreach (var p in progress.Values) p.FetchedAt = DateTime.Now;
+            data.Detail = progress;
+            data.DetailVersion = 3;
+            data.Progress = progress.ToDictionary(p => p.Key, p => p.Value.Awarded);
+            data.ProgressAt = DateTime.Now;
+        }
+    }
 
     public void Save()
     {
@@ -394,10 +450,13 @@ internal sealed class RaIndex
 // Cotejo de las ROMs de la colección con los juegos de RetroAchievements: por hash cuando se puede y, si no, por el nombre.
 internal static class RaScanner
 {
+    // Diagnóstico del cotejo (se escribe en la traza); null si no se quiere.
+    public static Action<string>? Log { get; set; }
+
     public sealed record Result(int Systems, int Roms, int ByHash, int ByName, int WithoutAchievements, int Skipped);
 
     public static async Task<Result> RunAsync(IReadOnlyList<RomRow> rows, IReadOnlyList<string> systems, RaCredentials credentials, RaIndex index,
-        IProgress<string> report, IProgress<int> percent, CancellationToken token)
+        IProgress<string> report, IProgress<int> percent, CancellationToken token, IProgress<(int ByHash, int ByName, int None)>? live = null)
     {
         var client = new RaClient(credentials);
         int doneSystems = 0, totalRoms = 0, byHash = 0, byName = 0, without = 0, skipped = 0;
@@ -419,15 +478,18 @@ internal static class RaScanner
             }
 
             var systemRows = rows.Where(r => r.System.Equals(system, StringComparison.OrdinalIgnoreCase) && r.Status == RomStatus.Ok && r.Path.Length > 0).ToList();
-            int done = 0;
+            int done = 0, hashNull = 0, hashMiss = 0;
+            Log?.Invoke($"{system}: consola {consoleId}; juegos con logros={games.Count}; hashes de RA={byHashMap.Count}; ejemplo={string.Join(",", byHashMap.Keys.Take(3))}");
             await Parallel.ForEachAsync(systemRows, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Math.Min(4, Environment.ProcessorCount - 1)), CancellationToken = token },
                 (row, _) =>
                 {
                     RaGame? game = null; string by = "hash";
                     string? hash = RaHasher.Compute(consoleId, row.Path);
+                    if (hash is null) Interlocked.Increment(ref hashNull);
                     if (hash is not null && byHashMap.TryGetValue(hash, out var hit)) game = hit;
                     else
                     {
+                        if (hash is not null && Interlocked.Increment(ref hashMiss) <= 3) Log?.Invoke($"{system}: sin coincidencia de hash · {row.RomName} · {hash}");
                         by = "nombre";
                         game = UniqueByTitle(byTitle, row.GameName) ?? UniqueByTitle(byTitle, Path.GetFileNameWithoutExtension(row.RomName));
                         if (hash is null && game is null) Interlocked.Increment(ref skipped);
@@ -437,9 +499,12 @@ internal static class RaScanner
                     if (game is null) Interlocked.Increment(ref without);
                     else if (by == "hash") Interlocked.Increment(ref byHash); else Interlocked.Increment(ref byName);
                     int n = Interlocked.Increment(ref done);
-                    if (n % 25 == 0) report.Report($"{system}: {n:N0} de {systemRows.Count:N0} ROMs…");
+                    if (n % 5 == 0) live?.Report((Volatile.Read(ref byHash), Volatile.Read(ref byName), Volatile.Read(ref without)));
+                    if (n % 5 == 0) report.Report($"{system}: {n:N0} de {systemRows.Count:N0} ROMs…");
                     return ValueTask.CompletedTask;
                 });
+            live?.Report((byHash, byName, without));
+            Log?.Invoke($"{system}: ROMs={systemRows.Count}; hash no calculado={hashNull}; hash sin coincidencia={hashMiss}");
             totalRoms += systemRows.Count;
             index.MarkSystem(system);
             doneSystems++;

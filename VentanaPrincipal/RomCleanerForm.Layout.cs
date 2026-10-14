@@ -24,7 +24,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         if (welcomeLabel is null || welcomeShell is null) return;
         foreach (var c in welcomeParts) c.Visible = loaded;
         if (welcomeFooter is not null) welcomeFooter.Visible = loaded;
-        welcomeShell.RowStyles[4].Height = loaded ? 102 : 0;
+        welcomeShell.RowStyles[4].Height = loaded ? 144 : 0;
         welcomeLabel.Visible = !loaded;
     }
 
@@ -35,8 +35,8 @@ public sealed partial class RomCleanerForm : LocalizedForm
         shell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
         shell.RowStyles.Add(new RowStyle(SizeType.AutoSize)); shell.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         shell.RowStyles.Add(new RowStyle(SizeType.Absolute,0));
-        shell.RowStyles.Add(new RowStyle(SizeType.Percent,100)); shell.RowStyles.Add(new RowStyle(SizeType.Absolute,102));
-        var menu=new ClickThroughMenuStrip { Dock=DockStyle.Fill, AutoSize=true }; var tm=new ToolStripMenuItem("Trazabilidad"); tm.DropDownItems.Add("Ver registro de trazas…",null,(_,_)=>ShowTrace()); var optionsMenu = new ToolStripMenuItem("Opciones"); optionsMenu.DropDownItems.Add(createGamelists); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(backupOption); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(showVideos); optionsMenu.DropDownItems.Add(videoSound); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(showAccessory); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(dataFolderMenu); optionsMenu.DropDownItems.Add(tempFolderMenu); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(imageMenu); optionsMenu.DropDownItems.Add(languageMenu); menu.Items.Add(optionsMenu); menu.Items.Add(collectionsMenu); var romsMenu=new ToolStripMenuItem("Añadir ROMs"); romsMenu.DropDownItems.Add(addRoms); romsMenu.DropDownItems.Add(datManager); menu.Items.Add(romsMenu); var curationMenu=new ToolStripMenuItem("Curado"); curationMenu.DropDownItems.Add(curationRules); menu.Items.Add(curationMenu); var scrapeMenu=new ToolStripMenuItem("Scrapeo"); scrapeMenu.DropDownItems.Add(bulkMedia); menu.Items.Add(scrapeMenu); var raMenu=new ToolStripMenuItem("RetroAchievements") { Tag = "noloc" }; raMenu.DropDownItems.Add(raScan); raMenu.DropDownItems.Add(raOnlyWith); menu.Items.Add(raMenu); var credentialsMenu=new ToolStripMenuItem("Credenciales"); credentialsMenu.DropDownItems.Add(screenScraperCredentials); credentialsMenu.DropDownItems.Add(screenScraperSignUp); credentialsMenu.DropDownItems.Add(new ToolStripSeparator()); credentialsMenu.DropDownItems.Add(raCredentials); menu.Items.Add(credentialsMenu); collectionMenus = [romsMenu, scrapeMenu, raMenu, curationMenu]; menu.Items.Add(tm); menu.Items.Add(helpMenu); MainMenuStrip=menu; shell.Controls.Add(menu,0,0);
+        shell.RowStyles.Add(new RowStyle(SizeType.Percent,100)); shell.RowStyles.Add(new RowStyle(SizeType.Absolute,144));
+        var menu=new ClickThroughMenuStrip { Dock=DockStyle.Fill, AutoSize=true }; var tm=new ToolStripMenuItem("Trazabilidad"); tm.DropDownItems.Add("Ver registro de trazas…",null,(_,_)=>ShowTrace()); var optionsMenu = new ToolStripMenuItem("Opciones"); optionsMenu.DropDownItems.Add(createGamelists); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(backupOption); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(showVideos); optionsMenu.DropDownItems.Add(videoSound); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(showAccessory); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(dataFolderMenu); optionsMenu.DropDownItems.Add(tempFolderMenu); optionsMenu.DropDownItems.Add(new ToolStripSeparator()); optionsMenu.DropDownItems.Add(imageMenu); optionsMenu.DropDownItems.Add(languageMenu); menu.Items.Add(optionsMenu); menu.Items.Add(collectionsMenu); var romsMenu=new ToolStripMenuItem("Añadir ROMs"); romsMenu.DropDownItems.Add(addRoms); romsMenu.DropDownItems.Add(datManager); menu.Items.Add(romsMenu); var curationMenu=new ToolStripMenuItem("Curado"); curationMenu.Click += (_, _) => curationRules.PerformClick(); /* con una sola opción, el menú abre directamente las reglas de curado */ menu.Items.Add(curationMenu); var scrapeMenu=new ToolStripMenuItem("Scrapeo"); scrapeMenu.Click += (_, _) => bulkMedia.PerformClick(); /* con una sola opción, el menú abre directamente la descarga masiva */ menu.Items.Add(scrapeMenu); var raMenu=new ToolStripMenuItem("RetroAchievements") { Tag = "noloc" }; raMenu.DropDownItems.Add(raScan); raMenu.DropDownItems.Add(raOnlyWith); raMenu.DropDownItems.Add(raCustom); menu.Items.Add(raMenu); var credentialsMenu=new ToolStripMenuItem("Credenciales"); credentialsMenu.DropDownItems.Add(screenScraperCredentials); credentialsMenu.DropDownItems.Add(screenScraperSignUp); credentialsMenu.DropDownItems.Add(new ToolStripSeparator()); credentialsMenu.DropDownItems.Add(raCredentials); menu.Items.Add(credentialsMenu); collectionMenus = [romsMenu, scrapeMenu, raMenu, curationMenu]; menu.Items.Add(tm); menu.Items.Add(helpMenu); MainMenuStrip=menu; shell.Controls.Add(menu,0,0);
         var rootLine = new TableLayoutPanel { Dock = DockStyle.Fill, Height = 42, Padding = new Padding(10, 4, 10, 4), ColumnCount = 2, RowCount = 3, Margin = Padding.Empty };
         rootLine.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         rootLine.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -163,6 +163,8 @@ public sealed partial class RomCleanerForm : LocalizedForm
         selectionLabel.Text = "ROMs seleccionadas: 0\r\nTamaño: 0 B"; // dos líneas: se lee bien con cualquier ancho de ventana
         sb.Controls.Add(selectionLabel);
         selectionLabel.BringToFront();
+        selectionLabel.Cursor = Cursors.Hand;
+        selectionLabel.Click += (_, _) => ShowSelectedRoms(); // abre la lista de las ROMs seleccionadas
         headerGrid.Controls.Add(selectionBar, 2, 1);
                 var w=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(8,4,8,4),ColumnCount=3,RowCount=1,Margin=Padding.Empty};w.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,29));w.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,34));w.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,37));w.RowStyles.Add(new RowStyle(SizeType.Percent,100));categories.Dock=roms.Dock=details.Dock=description.Dock=preview.Dock=DockStyle.Fill;w.Controls.Add(Group("Categorías",categories),0,0);
         var rp = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = Padding.Empty, Margin = Padding.Empty };
@@ -212,6 +214,8 @@ public sealed partial class RomCleanerForm : LocalizedForm
         mediaLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         mediaLayout.Controls.Add(mediaSurface, 0, 0);
         miximageGroup.Controls.Add(mediaLayout);
+        // Insignia de RetroAchievements en la franja del título del panel, a la derecha: no quita sitio al medio (solo si la ROM tiene logros).
+        miximageGroup.Controls.Add(raBadge); raBadge.BringToFront();
         // Barra inferior del panel derecho: resumen de lo seleccionado, «Vaciar selección» y «Eliminar Seleccionadas» (cada palabra en una fila).
         var operationBar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Padding = Padding.Empty, Margin = Padding.Empty };
         operationBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -226,6 +230,19 @@ public sealed partial class RomCleanerForm : LocalizedForm
         deleteSelected.Dock = DockStyle.Fill;
         deleteSelected.Margin = new Padding(0, 2, 0, 2);
         deleteSelected.TextAlign = ContentAlignment.MiddleCenter;
+        // Botón destacado pero discreto: fondo rojizo suave, borde rojo y texto rojo oscuro en negrita. Desactivado vuelve al aspecto gris normal. No cambia de tamaño.
+        deleteSelected.FlatStyle = FlatStyle.Flat; deleteSelected.UseVisualStyleBackColor = false; deleteSelected.Font = new Font(deleteSelected.Font, FontStyle.Bold);
+        deleteSelected.FlatAppearance.BorderSize = 1;
+        deleteSelected.FlatAppearance.MouseOverBackColor = Color.FromArgb(255, 221, 221); deleteSelected.FlatAppearance.MouseDownBackColor = Color.FromArgb(250, 200, 200);
+        void PaintDelete()
+        {
+            bool on = deleteSelected.Enabled;
+            deleteSelected.BackColor = on ? Color.FromArgb(255, 236, 236) : SystemColors.Control;
+            deleteSelected.ForeColor = on ? Color.FromArgb(160, 32, 32) : SystemColors.GrayText;
+            deleteSelected.FlatAppearance.BorderColor = on ? Color.FromArgb(200, 70, 70) : Color.FromArgb(200, 200, 200);
+        }
+        deleteSelected.EnabledChanged += (_, _) => PaintDelete();
+        PaintDelete();
         operationBar.Controls.Add(sb, 0, 0);
         operationBar.Controls.Add(clearSelection, 1, 0);
         operationBar.Controls.Add(deleteSelected, 2, 0);
@@ -285,8 +302,9 @@ public sealed partial class RomCleanerForm : LocalizedForm
         welcomeShell = shell; welcomeParts = new Control[] { rootLine, w };
         shell.Controls.Add(body, 0, 3);
         status.AutoSize = false; status.Dock = DockStyle.Fill; status.AutoEllipsis = true;
-        var f = new TableLayoutPanel { Dock = DockStyle.Fill, Height = 102, Padding = new Padding(10, 2, 10, 2), ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
+        var f = new TableLayoutPanel { Dock = DockStyle.Fill, Height = 144, Padding = new Padding(10, 2, 10, 2), ColumnCount = 1, RowCount = 5, Margin = Padding.Empty };
         f.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        f.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         f.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
         f.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
         f.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
@@ -302,8 +320,9 @@ public sealed partial class RomCleanerForm : LocalizedForm
         var footerStats = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Anchor = AnchorStyles.None, Padding = Padding.Empty, Margin = Padding.Empty };
         footerStats.Controls.Add(liveCounters);
         footerStats.Controls.Add(extensionButton);
-        f.Controls.Add(footerStats, 0, 0);
-        f.Controls.Add(collectionGaps, 0, 1);
+        f.Controls.Add(headline, 0, 0);
+        f.Controls.Add(footerStats, 0, 1);
+        f.Controls.Add(collectionGaps, 0, 2);
         // La barra de progreso va en la última fila del formulario: ocupa el 96 % del ancho (un 2 % libre a cada lado) y es fina (8 px).
         var progressHost = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty, Padding = Padding.Empty };
         progress.Dock = DockStyle.None;
@@ -316,9 +335,19 @@ public sealed partial class RomCleanerForm : LocalizedForm
         }
         progressHost.Resize += (_, _) => LayoutProgress();
         LayoutProgress();
-        f.Controls.Add(status, 0, 2);
-        f.Controls.Add(progressHost, 0, 3);
-        shell.Controls.Add(f, 0, 4); Controls.Add(shell);
+        f.Controls.Add(status, 0, 3);
+        f.Controls.Add(progressHost, 0, 4);
+        shell.Controls.Add(f, 0, 4); Controls.Add(shell); var cpuStrip = new CpuUsageStrip(); Controls.Add(cpuStrip); // la barra de CPU va debajo del todo (se añade después para que el panel principal ocupe el resto)
+        // El autoescalado por fuente de esta ventana la dejaba más alta que en los otros formularios (22 px): se fija esa altura al mostrarla.
+        Shown += (_, _) => { cpuStrip.AutoSize = false; cpuStrip.Height = cpuStrip.LogicalToDeviceUnits(22); };
+        // Cabecera con el chip de la aplicación, el nombre y, debajo, la colección cargada, su ruta y la versión. Va encima del menú.
+        mainBanner = new RaHeader("ES-DE ROM Cleaner", "", 72, 48, logo: false);
+        mainBanner.Subtitle.Tag = "noloc";
+        try { using var chip = new Icon(Icon, 48, 48); mainBanner.Icon.Image = chip.ToBitmap(); } catch { }
+        Controls.Add(mainBanner);
+        Height += mainBanner.Height; MinimumSize = new Size(MinimumSize.Width, MinimumSize.Height + mainBanner.Height);
+        Loc.LanguageChanged += UpdateMainHeader;
+        UpdateMainHeader();
         welcomeFooter = f; ApplyWelcome();
     }
     private static GroupBox Group(string title, Control control) { var g = new GroupBox { Text = title, Dock = DockStyle.Fill, Padding = new Padding(6, 6, 6, 4) }; g.Controls.Add(control); return g; }

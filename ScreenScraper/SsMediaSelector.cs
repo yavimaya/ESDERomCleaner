@@ -74,7 +74,11 @@ internal static class SsSystemResolver
     private static readonly Dictionary<string, int> FolderIds = new(StringComparer.OrdinalIgnoreCase)
     {
         ["snes-msu1"] = 210,
-        ["arcade"] = 75, ["mame"] = 75, ["fba"] = 75, ["fbneo"] = 75, ["cps"] = 75, ["cps1"] = 75, ["cps2"] = 75, ["cps3"] = 75
+        ["arcade"] = 75, ["mame"] = 75, ["fba"] = 75, ["fbneo"] = 75, ["cps"] = 75, ["cps1"] = 75, ["cps2"] = 75, ["cps3"] = 75,
+        // Sistemas cuya carpeta de ES-DE no coincide con ningún nombre de RetroPie o Recalbox en ScreenScraper (se comprobó contra su lista de sistemas).
+        ["stv"] = 75, ["type-x"] = 75, ["gamecom"] = 121, ["arcadia"] = 94, ["astrocde"] = 44, ["atarijaguarcd"] = 171, ["atarixe"] = 43, ["cdimono1"] = 133, ["gmaster"] = 103,
+        ["n3ds"] = 17, ["n64dd"] = 122, ["ngage"] = 30, ["plus4"] = 99, ["psvita"] = 62, ["sgb"] = 127, ["switch"] = 225, ["trs-80"] = 144, ["xbox360"] = 33, ["xboxone"] = 34,
+        ["windows3x"] = 136, ["windows9x"] = 137, ["tanodragon"] = 91, ["ags"] = 78
     };
 
     // Deduce el sistema de ScreenScraper a partir del nombre de la carpeta de ES-DE (nombres de RetroPie, Recalbox o comunes, o un alias).

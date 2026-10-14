@@ -27,6 +27,23 @@ internal sealed class MirrorSyncDialog : LocalizedForm
     // Las líneas de Robocopy se muestran todas, volcadas por lotes para no saturar el cuadro de texto.
     private readonly ConcurrentQueue<string> outputQueue = new();
     private readonly System.Windows.Forms.Timer flushTimer = new() { Interval = 150 };
+    // Animación del icono de la cabecera mientras se clona.
+    private RaUi.FloppyAnimation? floppy;
+    private PictureBox? bannerIcon;
+    private readonly System.Windows.Forms.Timer iconTimer = new() { Interval = 110 };
+    private int floppyIndex;
+
+    private void StartIconAnimation()
+    {
+        if (floppy is null) return;
+        floppyIndex = 0; bannerIcon!.Image = floppy.Frames[0]; iconTimer.Interval = floppy.Durations[0]; iconTimer.Start();
+    }
+
+    private void StopIconAnimation()
+    {
+        iconTimer.Stop();
+        if (floppy is not null && bannerIcon is not null) bannerIcon.Image = floppy.Idle;
+    }
 
     public MirrorSyncDialog(string sourcePath, Action<string, string> trace)
     {
@@ -34,8 +51,8 @@ internal sealed class MirrorSyncDialog : LocalizedForm
         this.trace = trace;
         Text = "Clonar colección";
         StartPosition = FormStartPosition.CenterParent;
-        MinimumSize = new Size(560, 500);
-        ClientSize = new Size(640, 580);
+        MinimumSize = new Size(560, 548);
+        ClientSize = new Size(640, 628);
         BuildLayout();
         sourceBox.Text = this.sourcePath;
         sourceBrowseButton.Click += (_, _) => SelectSource();
@@ -54,7 +71,7 @@ internal sealed class MirrorSyncDialog : LocalizedForm
     {
         var shell = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(10), Margin = Padding.Empty, ColumnCount = 1, RowCount = 3 };
         shell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        shell.RowStyles.Add(new RowStyle(SizeType.Absolute, 160));
+        shell.RowStyles.Add(new RowStyle(SizeType.Absolute, 140));
         shell.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         shell.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
 
@@ -64,7 +81,7 @@ internal sealed class MirrorSyncDialog : LocalizedForm
         paths.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         paths.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
         paths.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-        paths.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
+        paths.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         paths.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         paths.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         foreach (var box in new[] { sourceBox, destinationBox }) { box.Dock = DockStyle.None; box.Anchor = AnchorStyles.Left | AnchorStyles.Right; box.Margin = new Padding(0, 4, 8, 0); }
@@ -119,6 +136,14 @@ internal sealed class MirrorSyncDialog : LocalizedForm
         footer.Controls.Add(progressHost, 0, 2);
         shell.Controls.Add(footer, 0, 2);
         Controls.Add(shell);
+        // Cabecera oscura como en los últimos formularios. El icono (un diskette que se copia a sí mismo) solo se anima mientras se clona.
+        var banner = new RaHeader("Clonar colección", "Copia la colección a otra carpeta o tarjeta SD; el destino queda como un espejo exacto del origen.", 68, 48, logo: false);
+        floppy = RaUi.FloppyFrames();
+        bannerIcon = banner.Icon;
+        bannerIcon.Image = floppy.Idle;
+        iconTimer.Tick += (_, _) => { floppyIndex = (floppyIndex + 1) % floppy.Frames.Length; bannerIcon.Image = floppy.Frames[floppyIndex]; iconTimer.Interval = floppy.Durations[floppyIndex]; };
+        FormClosed += (_, _) => iconTimer.Dispose();
+        Controls.Add(banner);
         AcceptButton = cloneButton;
         CancelButton = closeButton;
     }
@@ -130,10 +155,14 @@ internal sealed class MirrorSyncDialog : LocalizedForm
             UseDescriptionForTitle = true,
             ShowNewFolderButton = true
         };
+        // Empieza en el destino ya elegido o, si no hay, en el último que se usó. Antes arrancaba en la raíz de la unidad del origen: el campo «Carpeta» mostraba C:\ aunque
+        // la ventana se abriera en otra unidad, y además era justo la unidad que no se debe elegir como destino. Sin nada que proponer, se deja vacío.
+        string lastDestination = AppSettings.Get("CloneLastDestination", "");
         if (Directory.Exists(destinationBox.Text)) dialog.SelectedPath = destinationBox.Text;
-        else if (Directory.Exists(sourcePath)) dialog.SelectedPath = Path.GetPathRoot(sourcePath) ?? "";
+        else if (lastDestination.Length > 0 && Directory.Exists(lastDestination)) dialog.SelectedPath = lastDestination;
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
+        AppSettings.Set("CloneLastDestination", dialog.SelectedPath);
         destinationBox.Text = NormalizePath(dialog.SelectedPath);
         sdCardCheck.Checked = IsRemovableDrive(destinationBox.Text); // sugerencia: las unidades extraíbles se marcan como tarjeta SD (se puede cambiar)
         UpdateSelectionState();
@@ -263,7 +292,7 @@ internal sealed class MirrorSyncDialog : LocalizedForm
         startedAt = DateTime.Now;
         while (outputQueue.TryDequeue(out _)) { }
         cloneButton.Text = "Parar"; // mientras clona, el botón detiene Robocopy
-        arrow.Active = true; // el disquete parpadea mientras se copia
+        StartIconAnimation(); // el icono de la cabecera se anima mientras se copia
         cloneButton.Enabled = true;
         flushTimer.Start();
         sourceBrowseButton.Enabled = false;
@@ -308,8 +337,7 @@ internal sealed class MirrorSyncDialog : LocalizedForm
             AppendLine(result);
             status.Text = success ? $"Clonación terminada (código {exitCode})." : $"Clonación con errores (código {exitCode}).";
             trace(success ? "mirror_completed" : "mirror_failed", $"exitCode={exitCode}; source={sourcePath}; destination={destination}");
-            MessageBox.Show(this, result + "\r\n\r\nOrigen: " + sourcePath + "\r\nDestino: " + destination,
-                "Resultado de la clonación", MessageBoxButtons.OK, success ? MessageBoxIcon.None : MessageBoxIcon.Warning);
+            using (var resultDialog = new CloneResultDialog(lastRobocopyLines.ToArray(), exitCode, sourcePath, destination, DateTime.Now - startedAt)) resultDialog.ShowDialog(this);
         }
         catch (Exception ex)
         {
@@ -329,7 +357,7 @@ internal sealed class MirrorSyncDialog : LocalizedForm
             destinationBrowseButton.Enabled = true;
             destinationBox.Enabled = true;
             sdCardCheck.Enabled = true;
-            arrow.Active = false;
+            StopIconAnimation();
             cloneButton.Text = "Clonar";
             cloneButton.Enabled = false;
             flushTimer.Stop();
@@ -446,31 +474,12 @@ internal sealed class MirrorSyncDialog : LocalizedForm
     }
 }
 
-// Flecha hacia abajo con un disquete al lado: indica que se clona del origen (arriba) al destino (abajo).
-// Mientras «Active» es true, el disquete parpadea levemente (su opacidad sube y baja) para indicar que se está copiando.
+// Flecha hacia abajo: indica que se clona del origen (arriba) al destino (abajo).
 internal sealed class CloneArrow : Control
 {
-    private readonly System.Windows.Forms.Timer blink = new() { Interval = 60 };
-    private double phase;
-    private bool active;
-
     public CloneArrow()
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        blink.Tick += (_, _) => { phase += 0.28; Invalidate(); };
-    }
-
-    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public bool Active
-    {
-        get => active;
-        set { active = value; phase = 0; if (value) blink.Start(); else blink.Stop(); Invalidate(); }
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing) blink.Dispose();
-        base.Dispose(disposing);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -479,21 +488,8 @@ internal sealed class CloneArrow : Control
         var g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         int cx = Width / 2, top = 3, bottom = Height - 3;
-        // Flecha: tallo y punta, de arriba (origen) abajo (destino).
-        using (var pen = new Pen(Color.FromArgb(40, 110, 200), 5f) { StartCap = System.Drawing.Drawing2D.LineCap.Round })
-        {
-            pen.CustomEndCap = new System.Drawing.Drawing2D.AdjustableArrowCap(4.5f, 4.5f, true);
-            g.DrawLine(pen, cx, top, cx, bottom);
-        }
-        // Disquete (a la izquierda de la flecha): carcasa azul, ventana metálica arriba y etiqueta blanca abajo. Opacidad entre ~60 % y 100 % al parpadear.
-        int alpha = active ? (int)(255 * (0.8 + 0.2 * Math.Sin(phase))) : 255;
-        Color Fade(int r, int gr, int b) => Color.FromArgb(alpha, r, gr, b);
-        int size = 30, x = cx - 34 - size, y = (Height - size) / 2;
-        using (var body = new SolidBrush(Fade(40, 70, 160))) g.FillRectangle(body, x, y, size, size);
-        using (var cut = new SolidBrush(BackColor)) g.FillPolygon(cut, new[] { new Point(x + size - 6, y), new Point(x + size, y), new Point(x + size, y + 6) });
-        using (var metal = new SolidBrush(Fade(205, 210, 220))) g.FillRectangle(metal, x + 7, y, size - 15, 10);
-        using (var slot = new SolidBrush(Fade(60, 60, 80))) g.FillRectangle(slot, x + 18, y + 2, 4, 6);
-        using (var label = new SolidBrush(Fade(255, 255, 255))) g.FillRectangle(label, x + 5, y + 15, size - 10, size - 17);
-        using (var line = new Pen(Fade(150, 160, 190))) { g.DrawLine(line, x + 8, y + 19, x + size - 8, y + 19); g.DrawLine(line, x + 8, y + 23, x + size - 8, y + 23); }
+        using var pen = new Pen(Color.FromArgb(40, 110, 200), 5f) { StartCap = System.Drawing.Drawing2D.LineCap.Round };
+        pen.CustomEndCap = new System.Drawing.Drawing2D.AdjustableArrowCap(4.5f, 4.5f, true);
+        g.DrawLine(pen, cx, top, cx, bottom);
     }
 }

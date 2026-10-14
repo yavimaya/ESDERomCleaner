@@ -45,12 +45,13 @@ public sealed partial class RomCleanerForm
 
     private void UpdateGapLabels()
     {
-        systemIcon.Image = systems.SelectedItem is string selectedSystem ? PixelSystemIcons.Get(selectedSystem, 54) : PixelSystemIcons.Placeholder(54);
-        searchInSystem.Text = systems.SelectedItem is string scopeName ? scopeName : Loc.T("Este sistema"); // el botón de la búsqueda lleva el nombre del sistema
+        bool allScope = AllScope; // con la búsqueda en «Todos» no hay sistema: icono genérico y sin contadores del sistema
+        systemIcon.Image = systems.SelectedItem is string selectedSystem && !allScope ? PixelSystemIcons.Get(selectedSystem, 54) : PixelSystemIcons.Placeholder(54);
+        searchInSystem.Text = systems.SelectedItem is string scopeName && !allScope ? scopeName : Loc.T("Este sistema"); // el botón de la búsqueda lleva el nombre del sistema
         if (gaps is null)
         {
             bool any = all.Count > 0;
-            systemGaps.SetPlain(any ? "Calculando huecos…" : "");
+            systemGaps.SetPlain(any && !allScope ? "Calculando huecos…" : "");
             collectionGaps.SetPlain(any ? "Toda la colección: calculando huecos…" : "");
             return;
         }

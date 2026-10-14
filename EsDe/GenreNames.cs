@@ -18,7 +18,7 @@ internal static class GenreNames
     // Si la interfaz está en inglés, hay credenciales y la lista no está guardada (o tiene más de 90 días), la descarga y la aplica.
     public static async Task EnsureAsync(TraceLog trace, CancellationToken token = default)
     {
-        if (!Loc.English) return;
+        if (!Loc.Translating) return;
         try
         {
             bool fresh = File.Exists(CachePath) && DateTime.UtcNow - File.GetLastWriteTimeUtc(CachePath) < TimeSpan.FromDays(90);

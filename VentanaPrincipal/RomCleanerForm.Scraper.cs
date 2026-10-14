@@ -9,6 +9,7 @@ public sealed partial class RomCleanerForm
     // «onlyRows»: la descarga trabaja solo con esas ROMs (de uno o varios sistemas), todas marcadas; es el caso de las ROMs recién añadidas.
     private async Task OpenBulkMediaDialogAsync(IReadOnlyCollection<string>? preselected = null, IReadOnlyList<RomRow>? onlyRows = null, BulkPreset preset = BulkPreset.Saved)
     {
+        if (!await Requirements.CheckAsync(this, trace, "Descarga masiva de medios", Need.ScreenScraper | Need.Internet)) return;
         if (onlyRows is not null) preselected = onlyRows.Select(r => r.System).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (preselected is null)
         {
@@ -40,9 +41,11 @@ public sealed partial class RomCleanerForm
         ShowDetails();
     }
 
-    private void OpenScraperDialog()
+    private async Task OpenScraperDialogAsync()
     {
         if (roms.SelectedItem is not RomItem item) return;
+        if (!await Requirements.CheckAsync(this, trace, "Scrapear con ScreenScraper", Need.ScreenScraper | Need.Internet)) return;
+        if (roms.SelectedItem is not RomItem) return;
         StopVideoPlayback();
         trace.Add("screenscraper_dialog_opened", $"system={item.Row.System}; rom={item.Row.RomName}");
         using var dialog = new ScreenScraperDialog(item.Row, root.Text, trace, PreferNormalizedVideo(), createGamelistBackups);
@@ -63,6 +66,7 @@ public sealed partial class RomCleanerForm
     // progreso y lo que se está haciendo (sin el formulario de scrapeo). Al terminar se vuelve a analizar la colección.
     private async Task CategorizeAsync(IReadOnlyCollection<string> systemNames, bool onlyMissingCategory = false)
     {
+        if (!await Requirements.CheckAsync(this, trace, "Categorizar", Need.ScreenScraper | Need.Internet)) return;
         StopVideoPlayback();
         trace.Add("categorize_started", $"systems={string.Join(",", systemNames)}");
         var rows = ScrapableRows().Where(r => systemNames.Contains(r.System, StringComparer.OrdinalIgnoreCase) && (!onlyMissingCategory || NoCategory(r))).ToList();

@@ -90,8 +90,47 @@ public sealed partial class RomCleanerForm : LocalizedForm
         trace.Add("deletion_plan_ready", planSummary);
         var confirmData = new DeleteConfirmData(plan.Items.Count, FormatSize(plan.RomBytes), plan.Accessories.Count, FormatSize(plan.AccessoryBytes), plan.Media.Count,
             FormatSize(plan.MediaBytes), plan.Gamelists.Count, FormatSize(plan.RomBytes + plan.AccessoryBytes + plan.MediaBytes), backupsEnabledForOperation);
-        bool confirmed;
-        using (var confirm = new DeleteConfirmDialog(confirmData)) confirmed = confirm.ShowDialog(owner) == DialogResult.OK;
+        DialogResult confirmResult;
+        IReadOnlyList<RomRow> remaining;
+        HashSet<string> excludedPaths;
+        // El borrado lo ejecuta el propio formulario de confirmación (con la papelera animada) cuando se pulsa BORRAR; aquí se recoge su resultado.
+        DeletionResult? deletionResult = null;
+        Exception? deletionError = null;
+        Func<Task> runDeletion = async () =>
+        {
+            try
+            {
+                SetOperationUi(busy: true, canCancel: false);
+                progress.Style = ProgressBarStyle.Marquee;
+                Say("Eliminando archivos y actualizando gamelists…");
+                var executionProgress = new Progress<string>(message =>
+                {
+                    Say(message);
+                    trace.Add("deletion_progress", message);
+                });
+                deletionResult = await Task.Run(() => service.Execute(plan, executionProgress, backupsEnabledForOperation));
+            }
+            catch (Exception ex) { deletionError = ex; }
+        };
+        using (var confirm = new DeleteConfirmDialog(confirmData, plan.Items.Select(item => item.Row).ToList(), root.Text, FormatSize, runDeletion))
+        {
+            confirmResult = confirm.ShowDialog(owner);
+            remaining = confirm.RemainingRows; excludedPaths = confirm.ExcludedPaths;
+        }
+        if (confirmResult == DialogResult.Retry)
+        {
+            // Se han desmarcado ROMs en «Ver ficheros»: también salen de la selección de la ventana principal y el borrado se recalcula con las que quedan.
+            foreach (string path in excludedPaths) selected.Remove(path);
+            UpdateCategoryChecks(); UpdateSelection(); SyncVisibleRomChecks();
+            trace.Add("deletion_selection_changed", $"quitadas={excludedPaths.Count}; quedan={remaining.Count}");
+            if (remaining.Count == 0)
+            {
+                Say("Borrado cancelado; no se modificó ningún archivo.");
+                return null;
+            }
+            return await DeleteRowsAsync(remaining.ToArray(), dialogOwner, report);
+        }
+        bool confirmed = confirmResult == DialogResult.OK;
         if (!confirmed)
         {
             trace.Add("deletion_cancelled_by_user", $"roms={plan.Items.Count}");
@@ -101,21 +140,12 @@ public sealed partial class RomCleanerForm : LocalizedForm
 
         try
         {
-            SetOperationUi(busy: true, canCancel: false);
-            progress.Style = ProgressBarStyle.Marquee;
-            Say("Eliminando archivos y actualizando gamelists…");
-            var executionProgress = new Progress<string>(message =>
-            {
-                Say(message);
-                trace.Add("deletion_progress", message);
-            });
-
-            var result = await Task.Run(() => service.Execute(plan, executionProgress, backupsEnabledForOperation));
+            if (deletionError is not null) throw deletionError;
+            var result = deletionResult ?? throw new InvalidOperationException("El borrado no se ejecutó.");
             string finalSummary = BuildDeletionResultSummary(plan, result);
             details.Text = finalSummary;
             trace.Add("deletion_completed", finalSummary);
-            MessageBox.Show(owner, finalSummary, "Resultado de la eliminación", MessageBoxButtons.OK,
-                MessageBoxIcon.None);
+            using (var resultDialog = new DeleteResultDialog(result, FormatSize)) resultDialog.ShowDialog(owner);
             deletedPaths = plan.Items.Select(item => item.Row).Where(row => !File.Exists(row.Path) && !Directory.Exists(row.Path)).Select(row => row.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             selected.RemoveWhere(path => rowPaths.Contains(path));
@@ -284,6 +314,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
             systems.Items.Clear();
             foreach (string system in all.Select(row => row.System).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
                 systems.Items.Add(system);
+            AddCustomSystems();
             int systemIndex = systems.Items.IndexOf(previousSystem);
             if (systemIndex < 0 && systems.Items.Count > 0) systemIndex = 0;
             systems.SelectedIndex = systemIndex;
@@ -319,7 +350,8 @@ public sealed partial class RomCleanerForm : LocalizedForm
         int systemCount = all.Where(row => row.Status == RomStatus.Ok).Select(row => row.System).Distinct(StringComparer.OrdinalIgnoreCase).Count();
         int fileCount = systemFileCounts.Values.Sum();
         long romBytes = all.Where(row => row.Status == RomStatus.Ok).Sum(row => row.Size);
-        liveCounters.Text = $"Sistemas: {systemCount:N0} | ROMs: {identified:N0} | Ambiguas: {ambiguous:N0} | Ficheros: {fileCount:N0}\r\nROMS: {(sizesCalculating ? "calculando" : FormatSize(romBytes))} | Media: {(sizesCalculating ? "calculando" : FormatSize(mediaBytes))}";
+        headline.SetValues(systemCount.ToString("N0"), identified.ToString("N0"));
+        liveCounters.Text = $"Ambiguas: {ambiguous:N0} | Ficheros: {fileCount:N0}\r\nROMS: {(sizesCalculating ? "calculando" : FormatSize(romBytes))} | Media: {(sizesCalculating ? "calculando" : FormatSize(mediaBytes))}";
 
     }
     private IReadOnlyList<AccessoryFile> GetRelatedAccessoryFiles(RomRow rom)

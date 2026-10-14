@@ -44,7 +44,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
             videoView.Visible = true;
             videoView.BringToFront();
             preview.Visible = false;
-            miximageGroup.Text = $"Vídeo de {row.GameName}";
+            miximageGroup.Text = row.GameName;
             if (!mediaPlayer.Play(currentVideoMedia)) throw new InvalidOperationException("LibVLC no pudo iniciar la reproducción de este vídeo.");
             VideoVolume.Apply(mediaPlayer, () => videoSound.Checked && !mainMuted, text => trace.Add("video_audio", text));
             trace.Add("video_started", $"system={row.System}; rom={row.RomName}; path={path}");

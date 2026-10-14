@@ -38,7 +38,7 @@ internal sealed partial class ScreenScraperDialog
         candidatesGrid.RowHeadersVisible = false;
         candidatesGrid.MultiSelect = false;
         candidatesGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        candidatesGrid.BackgroundColor = SystemColors.Window;
+        RaUi.StyleGrid(candidatesGrid, CandidateRowHeight, 28);
         candidatesGrid.RowTemplate.Height = CandidateRowHeight;
         candidatesGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
         candidatesGrid.Columns.Add(new DataGridViewImageColumn { Name = "mix", HeaderText = "Miximage", Width = 170, ImageLayout = DataGridViewImageCellLayout.Zoom });

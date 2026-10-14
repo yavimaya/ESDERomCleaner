@@ -123,7 +123,7 @@ public sealed partial class RomCleanerForm
         if (version != previewVersion) { bitmap.Dispose(); return; }
         preview.Image?.Dispose();
         preview.Image = bitmap;
-        miximageGroup.Text = $"Imagen ({item.Title}) de {row.GameName}";
+        miximageGroup.Text = row.GameName;
     }
 
     private async Task OpenMediaViewerAsync()

@@ -76,9 +76,9 @@ internal sealed class MediaSaveConfirmDialog : LocalizedForm
 internal static class QuietMessage
 {
     // Pregunta con dos botones, sin icono ni sonido. Devuelve true si se pulsa el botón de aceptar.
-    public static bool Confirm(IWin32Window? owner, string title, string text, string okText = "Aceptar")
+    public static bool Confirm(IWin32Window? owner, string title, string text, string okText = "Aceptar", string cancelText = "Cancelar")
     {
-        title = Loc.T(title); text = Loc.T(text); okText = Loc.T(okText);
+        title = Loc.T(title); text = Loc.T(text); okText = Loc.T(okText); cancelText = Loc.T(cancelText);
         using var dialog = new Form
         {
             Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
@@ -87,7 +87,7 @@ internal static class QuietMessage
         };
         var label = new Label { Dock = DockStyle.Fill, Text = text, AutoSize = false, Padding = new Padding(14, 12, 14, 0) };
         var ok = new Button { Text = okText, DialogResult = DialogResult.OK, MinimumSize = new Size(110, 28), AutoSize = true };
-        var cancel = new Button { Text = Loc.T("Cancelar"), DialogResult = DialogResult.Cancel, MinimumSize = new Size(90, 28), AutoSize = true };
+        var cancel = new Button { Text = cancelText, DialogResult = DialogResult.Cancel, MinimumSize = new Size(90, 28), AutoSize = true };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 44, Padding = new Padding(8, 6, 8, 4) };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(ok);

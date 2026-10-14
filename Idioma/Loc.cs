@@ -4,8 +4,9 @@ using System.Text.RegularExpressions;
 
 namespace ESDERomCleaner;
 
-// Idioma de la interfaz (español o inglés), con cambio «al vuelo». El código fuente sigue escrito en español: los textos en español son las claves
-// y esta clase los traduce al inglés al mostrarlos. Se traduce con la tabla LocTable (textos exactos y plantillas con {0}, {1}…), frase a frase.
+// Idioma de la interfaz (español, inglés, francés, italiano o portugués), con cambio «al vuelo». El código fuente sigue escrito en español: los textos en español
+// son las claves y esta clase los traduce al mostrarlos. Se traduce con las tablas LocTable (inglés) y LocTableFr/It/Pt (textos exactos y plantillas con {0}, {1}…),
+// frase a frase; lo que falte en francés, italiano o portugués se muestra en inglés.
 //  - Los controles (etiquetas, botones, menús, títulos…) se enganchan con Attach: guardan su texto original en español y se retraducen al cambiar de idioma.
 //  - Los diálogos y mensajes pasan por T(...) (QuietMessage, MessageBox).
 //  - Un control, elemento de menú o lista con Tag = "noloc" no se traduce (p. ej. los nombres «Español» y «English» del propio menú de idioma).
@@ -14,7 +15,7 @@ internal static class Loc
     private sealed class Template
     {
         public Regex Pattern = null!;
-        public string English = "";
+        public string Target = "";
         public string Prefix = "";
         public string Suffix = "";
         public int Literal;
@@ -22,8 +23,8 @@ internal static class Loc
 
     private sealed class Original { public string? Text; public string? Tip; }
 
-    private static readonly Dictionary<string, string> Exact = new(StringComparer.Ordinal);
-    private static readonly List<Template> Templates = [];
+    private static Dictionary<string, string> Exact = new(StringComparer.Ordinal);
+    private static List<Template> Templates = [];
     private static readonly ConcurrentDictionary<string, string> Cache = new(StringComparer.Ordinal);
     private static readonly ConditionalWeakTable<object, Original> Originals = new();
     private static readonly ConditionalWeakTable<object, object> Attached = new();
@@ -33,27 +34,52 @@ internal static class Loc
 
     public static string Language { get; private set; } = "es";
     public static bool English => Language == "en";
+    // Idiomas que ofrece la interfaz (el español es el original, sin tabla).
+    public static readonly string[] Supported = ["es", "en", "fr", "it", "pt"];
+    // Verdadero si hay que traducir (cualquier idioma que no sea el español original).
+    public static bool Translating => Language != "es";
     public static event Action? LanguageChanged;
 
     static Loc()
     {
-        foreach (var (es, en) in LocTable.Pairs)
-        {
-            // Las claves se guardan sin espacios sobrantes: al traducir, los de los extremos del texto se conservan aparte.
-            string key = es.Trim(' ', '\t', '\r', '\n'), value = en.Trim(' ', '\t', '\r', '\n');
-            if (key.Length == 0) continue;
-            if (Regex.IsMatch(key, @"\{\d+\}")) AddTemplate(key, value);
-            else Exact[key] = value;
-        }
-        Templates.Sort((a, b) => b.Literal.CompareTo(a.Literal));
-        // Sin elección guardada se usa el idioma del sistema operativo (español) y, si no es español, inglés.
+        // Sin elección guardada se usa el idioma del sistema operativo si la interfaz lo ofrece y, si no, inglés.
         string saved = AppSettings.Get("Language", "system");
-        if (saved is "en" or "es" or "system") Setting = saved;
+        if (saved == "system" || Supported.Contains(saved)) Setting = saved;
         Language = Resolve(Setting);
+        BuildTables(Language);
         try { Extra = new Dictionary<string, string>(GenreNames.LoadCache(), StringComparer.OrdinalIgnoreCase); } catch { }
     }
 
-    private static void AddTemplate(string es, string en)
+    // Tablas del idioma: el inglés como base y, encima, las traducciones propias del idioma (si falta una, se queda la inglesa).
+    private static void BuildTables(string language)
+    {
+        var exact = new Dictionary<string, string>(StringComparer.Ordinal);
+        var templates = new List<Template>();
+        if (language != "es")
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            void Load(IEnumerable<(string Es, string Tr)> pairs)
+            {
+                foreach (var (es, tr) in pairs)
+                {
+                    // Las claves se guardan sin espacios sobrantes: al traducir, los de los extremos del texto se conservan aparte.
+                    string key = es.Trim(' ', '\t', '\r', '\n'), value = tr.Trim(' ', '\t', '\r', '\n');
+                    if (key.Length > 0 && value.Length > 0) map[key] = value;
+                }
+            }
+            Load(LocTable.Pairs.Select(p => (p.Es, p.En)));
+            Load(language switch { "fr" => LocTableFr.Pairs, "it" => LocTableIt.Pairs, "pt" => LocTablePt.Pairs, _ => [] });
+            foreach (var (key, value) in map)
+            {
+                if (Regex.IsMatch(key, @"\{\d+\}")) templates.Add(MakeTemplate(key, value));
+                else exact[key] = value;
+            }
+            templates.Sort((a, b) => b.Literal.CompareTo(a.Literal));
+        }
+        Exact = exact; Templates = templates;
+    }
+
+    private static Template MakeTemplate(string es, string en)
     {
         // «Se han añadido {0} ROM(s) de {1} sistemas» → expresión regular con un grupo por hueco.
         var parts = Regex.Split(es, @"(\{\d+\})");
@@ -67,11 +93,11 @@ internal static class Loc
         }
         pattern.Append('$');
         string prefix = parts[0], suffix = parts[^1].StartsWith('{') ? "" : parts[^1];
-        Templates.Add(new Template
+        return new Template
         {
             Pattern = new Regex(pattern.ToString(), RegexOptions.Singleline | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)),
-            English = en, Prefix = prefix, Suffix = suffix, Literal = literal
-        });
+            Target = en, Prefix = prefix, Suffix = suffix, Literal = literal
+        };
     }
 
     // Traducciones descargadas (nombres de género de ScreenScraper), aparte de las incorporadas en LocTable.
@@ -86,20 +112,25 @@ internal static class Loc
             if (form.IsHandleCreated) form.BeginInvoke(() => Refresh(form));
     }
 
-    // Elección del usuario: «system» (idioma del sistema operativo), «es» o «en».
+    // Elección del usuario: «system» (idioma del sistema operativo) o uno de los de Supported.
     public static string Setting { get; private set; } = "system";
 
-    private static string Resolve(string setting) => setting is "en" or "es" ? setting
-        : System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "es" ? "es" : "en";
+    private static string Resolve(string setting)
+    {
+        if (Supported.Contains(setting)) return setting;
+        string system = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName;
+        return Supported.Contains(system) ? system : "en";
+    }
 
     public static void SetLanguage(string code)
     {
-        if (code is not ("en" or "es" or "system") || code == Setting) return;
+        if (code != "system" && !Supported.Contains(code) || code == Setting) return;
         Setting = code;
         AppSettings.Set("Language", code);
         string effective = Resolve(code);
         if (effective == Language) return;
         Language = effective;
+        BuildTables(effective);
         Cache.Clear();
         DataCache.Clear();
         foreach (Form form in Application.OpenForms.Cast<Form>().ToList()) Refresh(form);
@@ -111,7 +142,7 @@ internal static class Loc
 
     public static string T(string spanish)
     {
-        if (!English || string.IsNullOrEmpty(spanish)) return spanish;
+        if (!Translating || string.IsNullOrEmpty(spanish)) return spanish;
         return Cache.GetOrAdd(spanish, Translate);
     }
 
@@ -122,7 +153,7 @@ internal static class Loc
 
     public static string TData(string spanish)
     {
-        if (!English || string.IsNullOrEmpty(spanish)) return spanish;
+        if (!Translating || string.IsNullOrEmpty(spanish)) return spanish;
         return DataCache.GetOrAdd(spanish, s => TranslateCore(s, 0));
     }
 
@@ -200,7 +231,7 @@ internal static class Loc
             try { m = t.Pattern.Match(s); } catch (RegexMatchTimeoutException) { continue; }
             if (!m.Success) continue;
             // Los valores de los huecos pueden ser texto traducible (p. ej. «normal», «rápida»).
-            return Regex.Replace(t.English, @"\{(\d+)\}", h =>
+            return Regex.Replace(t.Target, @"\{(\d+)\}", h =>
             {
                 var g = m.Groups["g" + h.Groups[1].Value];
                 if (!g.Success) return h.Value;
@@ -253,7 +284,7 @@ internal static class Loc
     {
         if (suppress || sender is not Control c) return;
         Originals.GetOrCreateValue(c).Text = c.Text;   // el texto nuevo lo ha puesto el programa, en español
-        if (English) Apply(c);
+        if (Translating) Apply(c);
     }
 
     private static void Apply(Control c)
@@ -285,7 +316,7 @@ internal static class Loc
             {
                 if (suppress) return;
                 Originals.GetOrCreateValue(item).Text = item.Text;
-                if (English) ApplyItem(item);
+                if (Translating) ApplyItem(item);
             };
         }
         if (item is ToolStripDropDownItem drop) AttachStrip(drop.DropDown);
@@ -315,7 +346,7 @@ internal static class Loc
         grid.ColumnAdded += (_, e) => Capture(e.Column!);
         grid.CellFormatting += (_, e) =>
         {
-            if (!English || IsNoLoc(grid) || e.Value is not string s || s.Length == 0) return;
+            if (!Translating || IsNoLoc(grid) || e.Value is not string s || s.Length == 0) return;
             string t = TData(s);
             if (!ReferenceEquals(t, s) && t != s) { e.Value = t; e.FormattingApplied = true; }
         };
@@ -327,7 +358,7 @@ internal static class Loc
         list.FormattingEnabled = true;
         list.Format += (_, e) =>
         {
-            if (!English || e.Value is null) return;
+            if (!Translating || e.Value is null) return;
             string s = e.Value.ToString() ?? "";
             string t = TData(s);
             if (t != s) e.Value = t;
@@ -386,6 +417,12 @@ public class LocalizedForm : Form
     public LocalizedForm()
     {
         if (AppIcon.Value is { } icon) Icon = icon;
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        DarkTitleBar.Apply(Handle); // barra de título oscura, del color de las cabeceras
     }
 
     protected override void OnLoad(EventArgs e)

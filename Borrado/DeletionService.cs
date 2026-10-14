@@ -47,6 +47,46 @@ internal sealed class DeletionService
         IgnoreWhitespace = false
     };
 
+    // Tamaño de los medios de ES-DE de cada ROM (ruta completa de la ROM → bytes), con las mismas reglas de emparejamiento que el borrado.
+    // Solo lee: no modifica nada ni valida el plan.
+    internal static Dictionary<string, long> MediaBytesByRom(string root, IEnumerable<RomRow> selectedRows, CancellationToken token)
+    {
+        root = Path.GetFullPath(root);
+        string romRoot = Path.Combine(root, "Roms");
+        string mediaRoot = Path.Combine(root, "ES-DE", "downloaded_media");
+        var rows = selectedRows.Where(r => r.Path.Length > 0).DistinctBy(r => Path.GetFullPath(r.Path), StringComparer.OrdinalIgnoreCase).ToArray();
+        var files = rows.ToDictionary(r => Path.GetFullPath(r.Path), _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
+        var sizeOf = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var systemGroup in rows.GroupBy(r => r.System, StringComparer.OrdinalIgnoreCase))
+        {
+            token.ThrowIfCancellationRequested();
+            string systemMediaRoot = Path.Combine(mediaRoot, systemGroup.Key);
+            if (!Directory.Exists(systemMediaRoot) || HasReparsePointInPath(systemMediaRoot, mediaRoot)) continue;
+            var targets = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in systemGroup)
+            {
+                string romKey = Path.GetFullPath(row.Path);
+                AddMediaTargetKeys(targets, romKey, PathRules.Relative(Path.GetRelativePath(Path.Combine(romRoot, row.System), row.Path)));
+                AddMediaTargetKeys(targets, romKey, row.GamelistPath);
+            }
+            foreach (string filePath in EnumerateFilesWithoutReparse(systemMediaRoot, token))
+            {
+                token.ThrowIfCancellationRequested();
+                string relative = PathRules.Relative(Path.GetRelativePath(systemMediaRoot, filePath));
+                string[] parts = relative.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                string gameMediaKey = parts.Length >= 2 ? string.Join('/', parts.Skip(1)) : relative;
+                var matches = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (targets.TryGetValue(gameMediaKey, out var exact)) matches.UnionWith(exact);
+                if (targets.TryGetValue(WithoutLastExtension(gameMediaKey), out var noExt)) matches.UnionWith(noExt);
+                if (matches.Count == 0) continue;
+                string full = Path.GetFullPath(filePath);
+                if (!sizeOf.ContainsKey(full)) sizeOf[full] = new FileInfo(filePath).Length;
+                foreach (string romKey in matches) files[romKey].Add(full);
+            }
+        }
+        return files.ToDictionary(p => p.Key, p => p.Value.Sum(f => sizeOf[f]), StringComparer.OrdinalIgnoreCase);
+    }
+
     public DeletionPlan BuildPlan(
         string root,
         IEnumerable<RomRow> selectedRows,

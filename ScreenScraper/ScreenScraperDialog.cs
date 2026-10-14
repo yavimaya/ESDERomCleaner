@@ -1,3 +1,4 @@
+using LibVLCSharp.Shared;
 using System.Diagnostics;
 using System.Text;
 
@@ -54,7 +55,8 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
         this.trace = trace;
         credentials = ScreenScraperCredentialStore.Load();
         Text = $"ScreenScraper — {row.RomName}";
-        Width = 1280; Height = 780; MinimumSize = new Size(900, 560);
+        Width = 1280; Height = 780 + 68; MinimumSize = new Size(900, 560 + 68);
+        BackColor = RaUi.Body;
         StartPosition = FormStartPosition.CenterParent;
         BuildLayout();
         InitCandidates();
@@ -69,6 +71,18 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
             if (!IsCached(gridRow)) await DownloadMediaAsync([gridRow]);
         };
         openMediaButton.Click += (_, _) => OpenSelectedMedia();
+        // Menú contextual de la tabla de medios y doble clic sobre la vista previa: abren el visor grande.
+        var mediaMenu = new ContextMenuStrip();
+        mediaMenu.Items.Add("Visualizar", null, async (_, _) => await ViewMediaAsync(all: false));
+        mediaMenu.Items.Add("Visualizar todos", null, async (_, _) => await ViewMediaAsync(all: true));
+        mediaGrid.ContextMenuStrip = mediaMenu;
+        mediaGrid.CellMouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Right || e.RowIndex < 0) return;
+            mediaGrid.ClearSelection(); mediaGrid.Rows[e.RowIndex].Selected = true; mediaGrid.CurrentCell = mediaGrid.Rows[e.RowIndex].Cells[0];
+        };
+        mediaMenu.Opening += (_, e) => e.Cancel = currentGame is null || cancelButton.Enabled || mediaGrid.Rows.Count == 0;
+        mediaPreview.ContentDoubleClick += async (_, _) => await ViewMediaAsync(all: false);
         videoSoundCheck.CheckedChanged += (_, _) => mediaPreview.Sound = videoSoundCheck.Checked;
         Shown += async (_, _) =>
         {
@@ -96,6 +110,7 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
     private void BuildLayout()
     {
         var top = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Padding = new Padding(6, 6, 6, 2) };
+        top.Controls.Add(new PictureBox { Size = new Size(28, 28), SizeMode = PictureBoxSizeMode.Zoom, Margin = new Padding(3, 0, 6, 0), Image = PixelSystemIcons.Get(row.System, 28) });
         top.Controls.Add(systemInfo);
         top.Controls.Add(systemPrompt);
         top.Controls.Add(systemCombo);
@@ -130,15 +145,17 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
         viewer.Controls.Add(mediaPreview);
         var viewerButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
         viewerButtons.Controls.Add(openMediaButton);
-        viewerButtons.Controls.Add(videoSoundCheck);
-        var previewPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+        var previewPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
         previewPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        previewPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         previewPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         previewPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
         previewPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        previewPanel.Controls.Add(viewer, 0, 0);
-        previewPanel.Controls.Add(mediaInfo, 0, 1);
-        previewPanel.Controls.Add(viewerButtons, 0, 2);
+        videoSoundCheck.Margin = new Padding(2, 4, 3, 0);
+        previewPanel.Controls.Add(videoSoundCheck, 0, 0);
+        previewPanel.Controls.Add(viewer, 0, 1);
+        previewPanel.Controls.Add(mediaInfo, 0, 2);
+        previewPanel.Controls.Add(viewerButtons, 0, 3);
 
         var mediaSplit = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, FixedPanel = FixedPanel.Panel2 };
         mediaSplit.Panel1.Controls.Add(mediaGrid);
@@ -185,6 +202,14 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
         layout.Controls.Add(statusRow, 0, 4);
         Controls.Add(layout);
         Controls.Add(new ScreenScraperQuotaStrip());
+        // Cabecera oscura como en los demás formularios: la lupa y el nombre de la ROM (sin más texto).
+        var banner = new RaHeader("Scrapear con ScreenScraper", row.RomName, 68, 48, logo: false);
+        banner.Subtitle.Tag = "noloc";
+        banner.Icon.Image = RaUi.MagnifierIcon();
+        Controls.Add(banner);
+        RaUi.StyleButton(searchButton, true); RaUi.StyleButton(cancelButton, false); RaUi.StyleButton(closeButton, false);
+        RaUi.StyleButton(downloadAllButton, false); RaUi.StyleButton(openMediaButton, false);
+        info.ForeColor = RaUi.Muted;
     }
 
     private static void ConfigureGrid(DataGridView grid)
@@ -196,7 +221,7 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
         grid.AllowUserToResizeRows = false;
         grid.RowHeadersVisible = false;
         grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        grid.BackgroundColor = SystemColors.Window;
+        RaUi.StyleGrid(grid, 24, 26);
     }
 
     private void SetBusy(bool busy)
@@ -577,6 +602,35 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
         if (tabs.SelectedTab != selectionTab) selectionPanel?.Deactivate();
         if (tabs.SelectedTab == mediaTab) { RefreshCacheStates(); ShowSelectedMedia(); }
         if (tabs.SelectedTab == selectionTab) selectionPanel?.Activate();
+    }
+
+    // Visor grande (el de la ventana principal). «Visualizar» muestra el medio seleccionado; «Visualizar todos», todos los que se pueden ver (imágenes y vídeos),
+    // empezando por el seleccionado. Lo que aún no está en la caché se descarga antes.
+    private async Task ViewMediaAsync(bool all)
+    {
+        if (currentGame is null || cancelButton.Enabled) return;
+        var selected = mediaGrid.SelectedRows.Count == 1 ? mediaGrid.SelectedRows[0] : null;
+        bool Viewable(DataGridViewRow r) => r.Tag is SsMedia m && SsMediaInfo.Kind(m.Format) is "image" or "video";
+        var rows = all ? AllMediaRows().Where(Viewable).ToList() : selected is not null && Viewable(selected) ? [selected] : [];
+        if (selected is not null && !all && !Viewable(selected) && IsCached(selected)) { OpenSelectedMedia(); return; }
+        if (rows.Count == 0) return;
+        var missing = rows.Where(r => !IsCached(r)).ToList();
+        if (missing.Count > 0) await DownloadMediaAsync(missing);
+        var items = new List<MediaItem>();
+        int start = 0;
+        foreach (var r in rows.Where(IsCached))
+        {
+            var media = (SsMedia)r.Tag!;
+            if (r == selected) start = items.Count;
+            items.Add(new MediaItem(media.Type, CachePath(r), SsMediaInfo.Kind(media.Format) == "video", false));
+        }
+        if (items.Count == 0 || IsDisposed) return;
+        mediaPreview.StopVideo();
+        LibVLC? vlc = null;
+        if (items.Any(i => i.IsVideo)) { try { vlc = MediaPreviewPane.SharedLibVlc.Value; } catch { } }
+        using (var viewer = new MediaViewerDialog(items, start, vlc, videoSoundCheck.Checked))
+            viewer.ShowDialog(this);
+        ShowSelectedMedia();
     }
 
     private void OpenSelectedMedia()

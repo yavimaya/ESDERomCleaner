@@ -193,7 +193,8 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         foldersGrid.RowHeadersVisible = false;
         foldersGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         foldersGrid.MultiSelect = true;
-        foldersGrid.BackgroundColor = SystemColors.Window;
+        RaUi.StyleGrid(foldersGrid, 26, 28);
+        RaUi.StyleButton(markAllButton, false); RaUi.StyleButton(clearButton, false); RaUi.StyleButton(closeButton, false); RaUi.StyleButton(saveButton, true);
         foldersGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "save", HeaderText = "Scrapear", Width = 70 });
         foreach (var (name, header, width) in new[] { ("folder", "Carpeta ES-DE", 105), ("desc", "Qué es", 150), ("chosen", "Elegido de ScreenScraper", 160), ("current", "En la colección", 170), ("action", "Acción", 150) })
             foldersGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = header, Width = width, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable });
@@ -237,8 +238,10 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         var info = new Label
         {
             Dock = DockStyle.Fill, Padding = new Padding(8, 0, 8, 0), TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true,
-            Text = $"Juego: {game.BestName}   ·   Región de la ROM: {(romRegions.Count > 0 ? string.Join(", ", romRegions) : "?")} ({romRegionsSource}); solo medios de esa región o sin región; si no hay, de wor, eu, us o jp, por ese orden   ·   Los medios se guardan con el nombre de la ROM en ES-DE/downloaded_media/{row.System}/<carpeta>/. Lo que se sustituye pasa a una copia de seguridad."
+            Text = $"Juego: {game.BestName}   ·   Región de la ROM: {(romRegions.Count > 0 ? string.Join(", ", romRegions) : "?")} ({romRegionsSource})"
         };
+        // El detalle de las reglas va en una ayuda emergente para que la línea no se corte.
+        Loc.SetToolTip(new ToolTip { AutoPopDelay = 30000 }, info, $"Solo medios de esa región o sin región; si no hay, de wor, eu, us o jp, por ese orden.\r\nLos medios se guardan con el nombre de la ROM en ES-DE/downloaded_media/{row.System}/<carpeta>/. Lo que se sustituye pasa a una copia de seguridad.");
 
         // Scrapear va centrado de verdad: las columnas de los lados miden lo mismo (50 %) y la del centro se ajusta al botón.
         var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty };

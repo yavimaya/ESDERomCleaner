@@ -12,6 +12,10 @@ internal sealed class CurationDialog : LocalizedForm
 
     private readonly List<RomRow> roms;
     private readonly bool gamelistBackups;
+    // Modo «Curar y añadir» (desde Añadir ROMs): las ROMs aún no están en la colección, así que «eliminar» pasa a ser «descartar de la lista de añadir», no se
+    // guarda ninguna exclusión ni regla marcada (las claves de estas ROMs podrían coincidir con las de la colección) y aparece el botón «Añadir a la colección».
+    private readonly bool addMode;
+    private readonly Button addNowButton = new() { Text = "Añadir a la colección", AutoSize = true, MinimumSize = new Size(170, 30), DialogResult = DialogResult.OK };
     // Es true si se han excluido ROMs de la colección (se han cambiado gamelists): la ventana principal debe volver a analizar.
     public bool CollectionChanged { get; private set; }
     // Las ROMs que se han excluido de la colección desde este formulario: la ventana principal las quita de su lista al cerrarlo.
@@ -70,13 +74,13 @@ internal sealed class CurationDialog : LocalizedForm
 
     private static string StorePath => Path.Combine(AppPaths.Data, "curation.json");
 
-    public CurationDialog(IReadOnlyList<RomRow> allRoms, TraceLog trace, bool gamelistBackups = false)
+    public CurationDialog(IReadOnlyList<RomRow> allRoms, TraceLog trace, bool gamelistBackups = false, bool addMode = false)
     {
-        this.gamelistBackups = gamelistBackups;
+        this.gamelistBackups = gamelistBackups; this.addMode = addMode;
         roms = allRoms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0).ToList();
         this.trace = trace;
-        Text = baseTitle = "Reglas de curado — análisis";
-        Width = 1280; Height = 780; MinimumSize = new Size(1040, 620);
+        Text = baseTitle = addMode ? "Curar y añadir — ROMs identificadas" : "Reglas de curado — análisis";
+        Width = 1280; Height = 848; MinimumSize = new Size(1040, 688);
         StartPosition = FormStartPosition.CenterParent;
         CancelButton = closeButton;
 
@@ -86,7 +90,7 @@ internal sealed class CurationDialog : LocalizedForm
         supraDefs = SupraStore.Load() ?? CurationRuleSet.Defaults(genreRules.Select(r => r.Title));
         BuildRules();
 
-        var state = LoadState();
+        var state = addMode ? null : LoadState();
         if (state is null) foreach (var def in supraDefs.Where(d => d.DefaultOn)) checkedIds.Add(def.Id);
         else
         {
@@ -126,8 +130,9 @@ internal sealed class CurationDialog : LocalizedForm
         var rowMenu = new ContextMenuStrip { ShowImageMargin = false };
         var excludeItem = new ToolStripMenuItem("Excluir de la colección (contador y multiscrapeo)…");
         excludeItem.Click += (_, _) => ExcludeSelected();
+        excludeItem.Visible = !addMode;
         rowMenu.Items.Add(excludeItem);
-        var deleteItem = new ToolStripMenuItem("Eliminar (ROM, accesorios y media)…") { ForeColor = Color.Firebrick };
+        var deleteItem = new ToolStripMenuItem(addMode ? "Descartar de la lista de añadir…" : "Eliminar (ROM, accesorios y media)…") { ForeColor = addMode ? SystemColors.ControlText : Color.Firebrick };
         deleteItem.Click += (_, _) => DeleteSelected();
         rowMenu.Items.Add(deleteItem);
         rowMenu.Opening += (_, e) => { if (candidatesGrid.SelectedRows.Count == 0) e.Cancel = true; };
@@ -233,8 +238,9 @@ internal sealed class CurationDialog : LocalizedForm
 
         var buttons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, Margin = Padding.Empty };
         buttons.Controls.Add(exportButton);
-        buttons.Controls.Add(excludeButton);
+        if (!addMode) buttons.Controls.Add(excludeButton);
         buttons.Controls.Add(deleteButton);
+        if (addMode) buttons.Controls.Add(addNowButton);
         buttons.Controls.Add(closeButton);
         var buttonBar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 1, Margin = Padding.Empty };
         buttonBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -266,6 +272,12 @@ internal sealed class CurationDialog : LocalizedForm
         layout.Controls.Add(note, 0, 3);
         layout.Controls.Add(buttonBar, 0, 4);
         Controls.Add(layout);
+        // Cabecera oscura como en los últimos formularios, con un embudo gris con su «visto» verde (filtrar y revisar).
+        var banner = new RaHeader(addMode ? "Curar y añadir" : "Curado", addMode
+            ? "Revisa las ROMs identificadas y descarta las que no quieras antes de añadirlas a la colección."
+            : "Analiza la colección con reglas por categoría, palabras del nombre e idioma, y descarta las ROMs que no quieras conservar.", 68, 48, logo: false);
+        banner.Icon.Image = RaUi.FunnelIcon();
+        Controls.Add(banner);
     }
 
     private static void Configure(DataGridView grid)
@@ -659,7 +671,7 @@ internal sealed class CurationDialog : LocalizedForm
         double percent = roms.Count > 0 ? union.Count * 100.0 / roms.Count : 0;
         summary.Text = $"Con lo marcado ({checkedIds.Count} reglas): {union.Count:N0} ROMs candidatas de {roms.Count:N0} ({percent:0.0} %) · espacio: {ScreenScraperDialog.FormatBytes(bytes)}";
         int genericSports = roms.Count(r => r.Genre.Equals("Deportes", StringComparison.OrdinalIgnoreCase));
-        deleteButton.Text = $"Eliminar {union.Count:N0} candidatas…";
+        deleteButton.Text = addMode ? $"Descartar {union.Count:N0} candidatas…" : $"Eliminar {union.Count:N0} candidatas…";
         deleteButton.Enabled = union.Count > 0;
         note.Text = $"Excluidas a mano: {excluded.Count:N0}   ·   Idioma conocido: {languageKnown:N0} de {roms.Count:N0}   ·   {genericSports:N0} ROMs tienen la categoría «Deportes» sin subgénero; solo las detectan las supracategorías de deportes por palabras del nombre.";
         FillSystems(union);
@@ -739,6 +751,7 @@ internal sealed class CurationDialog : LocalizedForm
 
     private void SaveState()
     {
+        if (addMode) return; // en «Curar y añadir» no se guarda nada (no se pisan las exclusiones de la colección)
         string? temp = null;
         try
         {

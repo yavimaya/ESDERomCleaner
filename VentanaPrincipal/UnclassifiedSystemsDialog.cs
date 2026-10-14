@@ -21,17 +21,19 @@ internal sealed class UnclassifiedSystemsDialog : LocalizedForm
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
         Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
-        const int rowHeight = 20, headerHeight = 22, width = 560;
+        BackColor = RaUi.Body;
+        const int rowHeight = 22, headerHeight = 24, width = 580, bannerHeight = 68, footerHeight = 52;
         int visibleRows = Math.Min(systems.Count, 8);
         int gridHeight = headerHeight + visibleRows * rowHeight + 2;
-        ClientSize = new Size(width, 10 + gridHeight + 8 + 20 + 20 + 4 + 40);
+        ClientSize = new Size(width, bannerHeight + 12 + gridHeight + 10 + 44 + 12 + footerHeight);
 
         var grid = new StaticGrid
         {
-            Location = new Point(10, 10), Size = new Size(width - 20, gridHeight),
+            Dock = DockStyle.Fill,
             ScrollBars = systems.Count > visibleRows ? ScrollBars.Vertical : ScrollBars.None
         };
         grid.ApplyInfoStyle(rowHeight, headerHeight);
+        RaUi.StyleGrid(grid, rowHeight, headerHeight, selectionVisible: false); // cabecera oscura y filas con fondos alternos, como en los demás formularios
         var center = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter };
         // El título de cada columna lleva entre paréntesis el número de elementos: sistemas, y el total de ROMs sin categoría, sin imagen y sin vídeo.
         grid.Columns.Add(SystemIconColumn.Create(28));
@@ -60,24 +62,32 @@ internal sealed class UnclassifiedSystemsDialog : LocalizedForm
         };
         FormClosed += (_, _) => { hoverTimer.Dispose(); HidePopup(); };
 
-        int y = 10 + gridHeight + 8;
+        // La tabla va dentro de un marco fino.
+        var frame = new Panel { Location = new Point(12, bannerHeight + 12), Size = new Size(width - 24, gridHeight), Padding = new Padding(1), BackColor = RaUi.Border };
+        frame.Controls.Add(grid);
+        int y = bannerHeight + 12 + gridHeight + 10;
         // Los dos textos de debajo de la tabla van centrados horizontalmente.
         var question = new Label { Text = "¿Desea categorizar esas ROMs, o categorizar y descargar también sus medios?", Location = new Point(10, y), Size = new Size(width - 20, 20), AutoSize = false, TextAlign = ContentAlignment.MiddleCenter };
         var hint = new Label { Text = "Puede hacerlo más adelante desde el menú de Scrapeo.", ForeColor = SystemColors.GrayText, Location = new Point(10, y + 20), Size = new Size(width - 20, 20), AutoSize = false, TextAlign = ContentAlignment.MiddleCenter };
 
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 40, Padding = new Padding(6, 8, 6, 2) };
-        Button Make(string text, UnclassifiedChoice choice, int minWidth, DialogResult result)
+        var footer = RaUi.Footer(footerHeight);
+        Button Make(string text, UnclassifiedChoice choice, int minWidth, DialogResult result, bool primary)
         {
-            var button = new Button { Text = text, DialogResult = result, MinimumSize = new Size(minWidth, 26), AutoSize = true };
+            var button = new Button { Text = text, DialogResult = result, MinimumSize = new Size(minWidth, 32), AutoSize = true };
             button.Click += (_, _) => Choice = choice;
+            RaUi.StyleButton(button, primary);
             return button;
         }
-        var cancel = Make("Ahora no", UnclassifiedChoice.None, 80, DialogResult.Cancel);
-        var both = Make("Categorizar y scrapear", UnclassifiedChoice.CategorizeAndScrape, 150, DialogResult.OK);
-        var categorize = Make("Categorizar", UnclassifiedChoice.Categorize, 90, DialogResult.OK);
-        buttons.Controls.Add(cancel); buttons.Controls.Add(both); buttons.Controls.Add(categorize);
+        var cancel = Make("Ahora no", UnclassifiedChoice.None, 90, DialogResult.Cancel, false);
+        var both = Make("Categorizar y scrapear", UnclassifiedChoice.CategorizeAndScrape, 170, DialogResult.OK, true);
+        var categorize = Make("Categorizar", UnclassifiedChoice.Categorize, 110, DialogResult.OK, false);
+        int buttonX = width - 20;
+        foreach (var button in new[] { cancel, both, categorize }) { button.Location = new Point(buttonX - button.PreferredSize.Width, 10); buttonX = button.Left - 8; footer.Controls.Add(button); }
         AcceptButton = categorize; CancelButton = cancel;
-        Controls.Add(grid); Controls.Add(question); Controls.Add(hint); Controls.Add(buttons);
+        // Cabecera oscura como en los últimos formularios, con las piezas de un puzle y una que falta.
+        var banner = new RaHeader("Huecos de la colección", "A estas ROMs les falta la categoría, la imagen o el vídeo; puedes completarlas con ScreenScraper.", bannerHeight, 48, logo: false);
+        banner.Icon.Image = RaUi.GapsIcon();
+        Controls.Add(frame); Controls.Add(question); Controls.Add(hint); Controls.Add(footer); Controls.Add(banner);
         Shown += (_, _) => categorize.Focus();
     }
 

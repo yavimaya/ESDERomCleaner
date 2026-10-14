@@ -39,6 +39,8 @@ internal sealed class AboutDialog : LocalizedForm
         new("Incluido en el programa", "System.IO.Hashing (Microsoft)", "Cálculo de CRC32", "MIT", "https://github.com/dotnet/runtime"),
         new("Incluido en el programa", "7-Zip (7za.exe)", "Crear archivos 7z", "LGPL", "https://www.7-zip.org/"),
         new("Incluido en el programa", "Iconos de los sistemas (libretro, dot-art)", "Resumen de la colección", "CC BY 4.0", "https://github.com/libretro/retroarch-assets"),
+        new("Incluido en el programa", "Logotipo de RetroAchievements", "Icono del sistema custom «RetroAchievements»", "Marca de RetroAchievements (solo para identificar su servicio)", "https://retroachievements.org/"),
+        new("Descargado al usarlo", "RetroAchievements (API web)", "Logros, puntos y progreso de los juegos", "Condiciones de la API de RetroAchievements (uso personal con tu clave)", "https://api-docs.retroachievements.org/"),
         new("Descargado al usarlo", "libretro-database", "DAT de No-Intro, Redump, TOSEC, MAME y FBNeo para identificar ROMs", "CC BY-SA 4.0", "https://github.com/libretro/libretro-database"),
         new("Descargado al usarlo", "ScreenScraper", "Metadatos y medios de los juegos", "Condiciones de la API de ScreenScraper (uso personal con tu cuenta)", "https://www.screenscraper.fr/"),
         new("Referencia", "ES-DE", "Estructura de carpetas, sistemas y extensiones", "MIT", "https://es-de.org/"),
@@ -74,22 +76,26 @@ internal sealed class AboutDialog : LocalizedForm
             Dock = DockStyle.Fill, AutoSize = false, ForeColor = SystemColors.GrayText, Padding = new Padding(10, 6, 10, 0),
             Text = "Pulsa el enlace de la última columna para abrir su web.\r\nLas imágenes, vídeos y textos que descargas de ScreenScraper son de sus propietarios: la aplicación solo los guarda en tu colección y no los redistribuye."
         };
-        var header = new LinkLabel { Dock = DockStyle.Fill, AutoSize = false, Padding = new Padding(10, 8, 10, 0), Tag = "noloc", Text = $"ESDERomCleaner {RomCleanerForm.AppVersion()} · GPL 3.0 · {RomCleanerForm.RepositoryUrl}" };
-        header.Links.Add(header.Text.IndexOf("https", StringComparison.Ordinal), RomCleanerForm.RepositoryUrl.Length, RomCleanerForm.RepositoryUrl);
-        header.LinkClicked += (_, e) => RomCleanerForm.OpenUrl(RomCleanerForm.RepositoryUrl);
-        var close = new Button { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 28), DialogResult = DialogResult.Cancel };
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8, 8, 8, 4) };
-        buttons.Controls.Add(close);
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
-        layout.Controls.Add(header, 0, 0);
-        layout.Controls.Add(grid, 0, 1);
-        layout.Controls.Add(note, 0, 2);
-        layout.Controls.Add(buttons, 0, 3);
-        Controls.Add(layout);
+        RaUi.StyleGrid(grid, 24, 26, selectionVisible: false);
+        note.BackColor = RaUi.Body;
+        var close = new Button { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 32), DialogResult = DialogResult.Cancel };
+        RaUi.StyleButton(close, true);
+        var footer = RaUi.Footer(52);
+        close.Location = new Point(960 - 20 - 90, 10);
+        close.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        footer.Controls.Add(close);
+        // Cabecera oscura con el nombre, la versión y la licencia; el enlace del repositorio va en el pie de la cabecera.
+        var banner = new RaHeader("ESDERomCleaner", $"{RomCleanerForm.AppVersion()} · GPL 3.0 · {RomCleanerForm.RepositoryUrl}", 68, 48, logo: false);
+        banner.Subtitle.Tag = "noloc"; banner.Subtitle.Cursor = Cursors.Hand;
+        banner.Subtitle.Click += (_, _) => RomCleanerForm.OpenUrl(RomCleanerForm.RepositoryUrl);
+        banner.Icon.Image = RaUi.InfoIcon();
+        var frame = RaUi.Frame(grid, dock: DockStyle.Fill);
+        var gridHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12, 12, 12, 6), BackColor = RaUi.Body };
+        gridHost.Controls.Add(frame);
+        note.Dock = DockStyle.Bottom; note.Height = 52;
+        Controls.Add(gridHost); Controls.Add(note); Controls.Add(footer); Controls.Add(banner);
+        BackColor = RaUi.Body;
+        ClientSize = new Size(960, 440 + 68);
         CancelButton = close;
     }
 }

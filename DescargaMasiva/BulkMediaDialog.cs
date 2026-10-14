@@ -52,6 +52,18 @@ internal sealed class BulkMediaDialog : LocalizedForm
     private readonly Button exportButton = new() { Text = "Exportar incidencias…", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
     private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 30), DialogResult = DialogResult.Cancel };
     private readonly ScreenScraperQuotaStrip quotaStrip = new(showPending: false);
+    // Animación del icono de la cabecera: la pala cava y va sacando imágenes (foto, vídeo, documento) en bucle mientras se descarga.
+    private RaUi.ShovelAnimation? shovel;
+    private PictureBox? bannerIcon;
+    private readonly System.Windows.Forms.Timer iconTimer = new() { Interval = 140 };
+    private DateTime digStartedAt;
+
+    private void AnimateShovel()
+    {
+        if (shovel is null || bannerIcon is null) return;
+        double seconds = (DateTime.Now - digStartedAt).TotalSeconds;
+        bannerIcon.Image = shovel.Frames[(int)(seconds * 7) % shovel.Frames.Length]; // unos 7 fotogramas por segundo, en bucle
+    }
     private readonly Label summaryLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
     private readonly Label statusLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
     private readonly ProgressBar progressBar = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 100 };
@@ -78,7 +90,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         Text = baseTitle = "Descarga masiva de medios — ScreenScraper";
         uiTimer.Tick += (_, _) => RefreshProgress();
         FormClosed += (_, _) => uiTimer.Dispose();
-        Width = 1220; Height = 790; MinimumSize = new Size(1000, 720);
+        Width = 1220; Height = 858; MinimumSize = new Size(1000, 788);
         StartPosition = FormStartPosition.CenterParent;
         CancelButton = closeButton;
         BuildLayout();
@@ -313,6 +325,15 @@ internal sealed class BulkMediaDialog : LocalizedForm
         layout.Controls.Add(buttons, 0, 5);
         Controls.Add(layout);
         Controls.Add(quotaStrip);
+        // Cabecera oscura como en los últimos formularios, con una pala en pixel art: quieta mientras no se descarga; al scrapear empieza a cavar y va sacando
+        // imágenes en bucle.
+        var banner = new RaHeader("Descarga masiva de medios", "Elige sistemas y medios: se descargan de ScreenScraper con los hilos que permite tu membresía.", 68, 48, logo: false);
+        shovel = RaUi.ShovelFrames();
+        bannerIcon = banner.Icon;
+        bannerIcon.Image = shovel.Idle;
+        iconTimer.Tick += (_, _) => AnimateShovel();
+        FormClosed += (_, _) => iconTimer.Dispose();
+        Controls.Add(banner);
     }
 
     private void ApplySettings(BulkMediaSettings settings)
@@ -537,8 +558,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
             statusLabel.Text = "No hay nada pendiente: lo pedido ya está en destino (o en el índice de idiomas).";
             return;
         }
-        using (var confirmDialog = new BulkConfirmDialog(rows, footer, "Scrapear", confirm: true))
-            if (confirmDialog.ShowDialog(this) != DialogResult.OK) { statusLabel.Text = "Descarga cancelada: no se ha pedido nada."; return; }
+        // Sin formulario de confirmación: al pulsar «Scrapear» la descarga empieza directamente.
 
         cts?.Dispose();
         cts = new CancellationTokenSource();
@@ -660,6 +680,8 @@ internal sealed class BulkMediaDialog : LocalizedForm
     private void SetRunning(bool value, bool planning = false)
     {
         running = value && !planning;
+        if (running && !iconTimer.Enabled) { digStartedAt = DateTime.Now; iconTimer.Start(); }
+        else if (!running && iconTimer.Enabled) { iconTimer.Stop(); if (shovel is not null && bannerIcon is not null) bannerIcon.Image = shovel.Idle; }
         bool locked = value;
         systemsGrid.Enabled = !locked;
         selectAllButton.Enabled = selectNoneButton.Enabled = !locked;

@@ -13,6 +13,7 @@ public sealed partial class RomCleanerForm
     {
         if (cts != null) return;
         if (!EnsureCollectionRoot()) return;
+        if (!await Requirements.CheckAsync(this, trace, "Añadir ROMs", Need.Dats)) return;
         StopVideoPlayback();
         trace.Add("add_roms_dialog_opened", root.Text);
         bool changed, scrapeRequested;

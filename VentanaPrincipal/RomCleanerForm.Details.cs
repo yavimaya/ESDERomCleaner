@@ -118,7 +118,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         preview.Visible = true;
         preview.Image?.Dispose();
         preview.Image = null;
-        miximageGroup.Text = $"Imagen de {row.GameName}";
+        miximageGroup.Text = row.GameName;
         try
         {
             string? imagePath = await Task.Run(() => FindImage(root.Text, row, ImageSettings.Folder) ?? ImageSettings.Fallbacks.Select(f => FindImage(root.Text, row, f)).FirstOrDefault(p => p is not null));
@@ -171,6 +171,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
     }
     private void UpdateDataPanel()
     {
+        UpdateRaBadge();
         string genre = (categories.SelectedItem as CategoryItem)?.Genre ?? "—";
         var rows = current.Where(r => Genre(r).Equals(genre, StringComparison.OrdinalIgnoreCase)).ToArray();
         int selectedCount = rows.Count(r => r.Path.Length > 0 && selected.Contains(r.Path));

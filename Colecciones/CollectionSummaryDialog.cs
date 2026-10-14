@@ -23,8 +23,9 @@ internal sealed class CollectionSummaryDialog : LocalizedForm
         FormBorderStyle = FormBorderStyle.Sizable; MaximizeBox = true; MinimizeBox = false; ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
         Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
-        ClientSize = new Size(680, 760);
-        MinimumSize = new Size(420, 520);
+        ClientSize = new Size(680, 760 + 68);
+        MinimumSize = new Size(420, 520 + 68);
+        BackColor = RaUi.Body;
 
         // La propia tarjeta (la que se guarda como imagen) es lo que se ve en la ventana, ajustada a su tamaño.
         card = DrawCard();
@@ -33,11 +34,13 @@ internal sealed class CollectionSummaryDialog : LocalizedForm
         var close = new Button { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 28), DialogResult = DialogResult.Cancel };
         var image = new Button { Text = "Copiar imagen", AutoSize = true, MinimumSize = new Size(120, 28) };
         var copy = new Button { Text = "Copiar texto", AutoSize = true, MinimumSize = new Size(120, 28) };
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8, 6, 8, 4) };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8, 8, 8, 4), BackColor = RaUi.FooterBack };
+        buttons.Paint += (_, e) => { using var pen = new Pen(RaUi.Border); e.Graphics.DrawLine(pen, 0, 0, buttons.Width, 0); };
+        RaUi.StyleButton(close, true); RaUi.StyleButton(image, false); RaUi.StyleButton(copy, false);
         buttons.Controls.AddRange([close, image, copy]);
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
         // Pestañas: la tarjeta (lo que se guarda como imagen) y el detalle en tablas.
         var tabs = new TabControl { Dock = DockStyle.Fill };
         var cardPage = new TabPage("Tarjeta") { Padding = Padding.Empty };
@@ -49,6 +52,11 @@ internal sealed class CollectionSummaryDialog : LocalizedForm
         layout.Controls.Add(tabs, 0, 0);
         layout.Controls.Add(buttons, 0, 1);
         Controls.Add(layout);
+        // Cabecera oscura con un gráfico de barras, como en los demás formularios.
+        var banner = new RaHeader("Resumen de la colección", $"{s.Roms:N0} ROMs · {s.Systems:N0} {Loc.T("Sistemas").ToLowerInvariant()} · {SizeText(s.RomBytes)}", 68, 48, logo: false);
+        banner.Subtitle.Tag = "noloc";
+        banner.Icon.Image = RaUi.ChartIcon();
+        Controls.Add(banner);
         CancelButton = close;
 
         copy.Click += (_, _) =>
@@ -116,6 +124,7 @@ internal sealed class CollectionSummaryDialog : LocalizedForm
     {
         var grid = new StaticGrid { Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
         grid.ApplyInfoStyle(22, 24);
+        RaUi.StyleGrid(grid, 22, 24, selectionVisible: false);
         return grid;
     }
 
@@ -173,7 +182,7 @@ internal sealed class CollectionSummaryDialog : LocalizedForm
         return i == 0 ? $"{n:N0} B" : $"{x:0.##} {u[i]}";
     }
 
-    private static string T(string es, string en) => Loc.English ? en : es;
+    private static string T(string es, string en) => Loc.Translating ? en : es;
 
     // Texto corto con emojis, pensado para pegar en una red social.
     private string ShareText()

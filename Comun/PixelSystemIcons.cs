@@ -47,7 +47,7 @@ internal static class PixelSystemIcons
         ["triforce"] = "Namco, Sega, Nintendo - TriForce (Cartridges)", ["uzebox"] = "Uzebox", ["vectrex"] = "GCE - Vectrex", ["vic20"] = "Commodore - VIC-20",
         ["videopac"] = "Philips - Videopac+", ["virtualboy"] = "Nintendo - Virtual Boy", ["vsmile"] = "VTech - V.Smile", ["wii"] = "Nintendo - Wii", ["wiiu"] = "Nintendo - Wii U",
         ["wonderswan"] = "Bandai - WonderSwan", ["wonderswancolor"] = "Bandai - WonderSwan Color", ["x1"] = "Sharp - X1", ["x68000"] = "Sharp - X68000",
-        ["xbox"] = "Microsoft - Xbox", ["xbox360"] = "Microsoft - Xbox 360", ["xboxone"] = "Microsoft - Xbox One", ["zx81"] = "Sinclair - ZX 81", ["zxspectrum"] = "Sinclair - ZX Spectrum"
+        ["xbox"] = "Microsoft - Xbox", ["xbox360"] = "Microsoft - Xbox 360", ["xboxone"] = "Microsoft - Xbox One", ["zx81"] = "Sinclair - ZX 81", ["zxspectrum"] = "Sinclair - ZX Spectrum", ["★ RetroAchievements"] = "custom-retroachievements"
     };
 
     private static readonly HashSet<string> Handhelds = new(StringComparer.OrdinalIgnoreCase)

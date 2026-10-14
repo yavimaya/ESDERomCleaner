@@ -48,7 +48,9 @@ public sealed partial class RomCleanerForm : LocalizedForm
     private readonly TextBox description = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, WordWrap = true };
     private readonly Label systemSummary = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleCenter, Text = "Selecciona un sistema tras analizar." };
     private readonly Label status = new() { AutoSize = true, Text = "Elige la carpeta raíz y analiza la colección." }, selectionLabel = new() { AutoSize = true, Text = "Seleccionadas: 0" };
-    private readonly Label liveCounters = new() { Dock = DockStyle.Fill, AutoEllipsis = true, Text = "Sistemas: 0 | ROMs: 0 | Ambiguas: 0 | Ficheros: 0" };
+    private readonly Label liveCounters = new() { Dock = DockStyle.Fill, AutoEllipsis = true, Text = "Ambiguas: 0 | Ficheros: 0" };
+    private readonly CollectionHeadline headline = new();
+    private RaHeader? mainBanner;
     private readonly NotebookButton extensionButton = new();
     private readonly ProgressBar progress = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 100 };
     private readonly HashSet<string> selected = new(StringComparer.OrdinalIgnoreCase);
@@ -142,7 +144,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
 
     public RomCleanerForm()
     {
-        Text = $"ES-DE ROM Cleaner {AppVersion()}"; Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application; MinimumSize = new Size(1000, 680); Size = new Size(1060, 720); StartPosition = FormStartPosition.CenterScreen;
+        Text = "ES-DE ROM Cleaner"; Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application; MinimumSize = new Size(1000, 680); Size = new Size(1060, 720); StartPosition = FormStartPosition.CenterScreen;
         var options = LoadOptions();
         createGamelistBackups = options.CreateGamelistBackups;
         backupOption.Checked = createGamelistBackups;
@@ -227,11 +229,12 @@ public sealed partial class RomCleanerForm : LocalizedForm
             BeginInvoke(new Action(() => ApplyRomCheck(path, isChecked)));
         };
         roms.DoubleClick += (_, _) => ToggleFocused(); roms.SelectedIndexChanged += (_, _) => { if (!changing) ShowDetails(); };
-        search.TextChanged += (_, _) => RefreshList(); searchInAll.CheckedChanged += (_, _) => RefreshList();
+        search.TextChanged += (_, _) => RefreshList(); searchInAll.CheckedChanged += (_, _) => { ApplySearchScope(); RefreshList(); };
+        systems.EnabledChanged += (_, _) => { if (AllScope && systems.Enabled) systems.Enabled = false; }; // con «Todos» el selector de sistema sigue desactivado aunque acabe un análisis
         roms.MouseDown += (_, e) => { if (e.Button == MouseButtons.Right) { int i = roms.IndexFromPoint(e.Location); if (i >= 0) roms.SelectedIndex = i; } };
         roms.ContextMenuStrip = new ContextMenuStrip { ShowImageMargin = false }; roms.ContextMenuStrip.Items.Add(selectContext);
         roms.ContextMenuStrip.Items.Add("Editar metadatos…", null, (_, _) => EditMetadata());
-        roms.ContextMenuStrip.Items.Add("Scrapear con ScreenScraper…", null, (_, _) => OpenScraperDialog());
+        roms.ContextMenuStrip.Items.Add("Scrapear con ScreenScraper…", null, async (_, _) => await OpenScraperDialogAsync());
         roms.ContextMenuStrip.Opening += (_, e) => { if (roms.SelectedItem is not RomItem item) e.Cancel = true; else selectContext.Text = selected.Contains(item.Row.Path) ? "Quitar de selección" : "Añadir a selección"; };
         selectContext.Click += (_, _) => ToggleFocused();        videoPreviewTimer.Tick += async (_, _) => await StartFocusedVideoAsync();
         videoMonitorTimer.Tick += (_, _) => CheckVideoPlayback();
@@ -242,7 +245,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
             {
                 videoPreviewTimer.Stop();
                 StopVideoPlayback();
-                miximageGroup.Text = pendingVideoRow is null ? "Imagen de la ROM enfocada" : $"Imagen de {pendingVideoRow.GameName}";
+                miximageGroup.Text = pendingVideoRow is null ? "Imagen de la ROM enfocada" : pendingVideoRow.GameName;
             }
             else if (pendingVideoRow is not null) ScheduleVideoPreview(pendingVideoRow, pendingVideoVersion);
         };

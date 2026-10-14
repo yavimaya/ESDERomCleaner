@@ -36,10 +36,10 @@ public sealed partial class RomCleanerForm
             QuietMessage.Show(this, "Excluir seleccionados", "Las ROMs seleccionadas no tienen entrada en ningún gamelist.xml, así que no se pueden marcar.");
             return;
         }
-        string message = $"Se van a excluir {rows.Count:N0} ROMs del contador y del multiscrapeo de ES-DE (nogamecount y nomultiscrape en true en su gamelist.xml).\r\n\r\n"
+        string message = "Se marcan nogamecount y nomultiscrape en true en su gamelist.xml.\r\n\r\n"
             + "Dejarán de aparecer en esta lista y en los contadores. No se toca ningún archivo de ROM y se puede revertir editando el gamelist.xml."
             + (withoutEntry > 0 ? $"\r\n\r\n{withoutEntry:N0} de las seleccionadas no tienen entrada en un gamelist y se ignoran." : "");
-        if (!QuietMessage.Confirm(this, "Excluir seleccionados", message, "Excluir")) return;
+        if (!RaConfirmDialog.Ask(this, "Excluir seleccionados", $"Se van a excluir {rows.Count:N0} ROMs del contador y del multiscrapeo de ES-DE.", message, RaUi.FunnelIcon(), "Excluir")) return;
 
         trace.Add("exclude_started", $"roms={rows.Count}; systems={string.Join(",", rows.Select(r => r.System).Distinct(StringComparer.OrdinalIgnoreCase))}");
         status.Text = "Excluyendo las ROMs seleccionadas…";

@@ -108,11 +108,14 @@ public sealed partial class RomCleanerForm
 
 public sealed partial class RomCleanerForm
 {
-    // Opciones › Idioma: español o inglés, con cambio inmediato (sin reiniciar). Los nombres de los idiomas no se traducen.
+    // Opciones › Idioma: español, inglés, francés, italiano o portugués, con cambio inmediato (sin reiniciar). Los nombres de los idiomas no se traducen.
     private readonly ToolStripMenuItem languageMenu = new("Idioma");
     private readonly ToolStripMenuItem systemItem = new("Predeterminado del sistema");
     private readonly ToolStripMenuItem spanishItem = new("Español") { Tag = "noloc", CheckOnClick = false };
     private readonly ToolStripMenuItem englishItem = new("English") { Tag = "noloc", CheckOnClick = false };
+    private readonly ToolStripMenuItem frenchItem = new("Français") { Tag = "noloc", CheckOnClick = false };
+    private readonly ToolStripMenuItem italianItem = new("Italiano") { Tag = "noloc", CheckOnClick = false };
+    private readonly ToolStripMenuItem portugueseItem = new("Português") { Tag = "noloc", CheckOnClick = false };
 
     private void WireLanguageMenu()
     {
@@ -120,13 +123,18 @@ public sealed partial class RomCleanerForm
         languageMenu.DropDownItems.Add(new ToolStripSeparator());
         languageMenu.DropDownItems.Add(spanishItem);
         languageMenu.DropDownItems.Add(englishItem);
-        void UpdateChecks() { systemItem.Checked = Loc.Setting == "system"; spanishItem.Checked = Loc.Setting == "es"; englishItem.Checked = Loc.Setting == "en"; }
+        languageMenu.DropDownItems.Add(frenchItem);
+        languageMenu.DropDownItems.Add(italianItem);
+        languageMenu.DropDownItems.Add(portugueseItem);
+        void UpdateChecks() { systemItem.Checked = Loc.Setting == "system"; spanishItem.Checked = Loc.Setting == "es"; englishItem.Checked = Loc.Setting == "en"; frenchItem.Checked = Loc.Setting == "fr"; italianItem.Checked = Loc.Setting == "it"; portugueseItem.Checked = Loc.Setting == "pt"; }
         UpdateChecks();
         roms.Tag = "noloc"; // la lista de ROMs muestra nombres de juegos, no texto de la interfaz
-        systemItem.Click += (_, _) => { Loc.SetLanguage("system"); UpdateChecks(); trace.Add("language_changed", "system"); if (Loc.English) _ = GenreNames.EnsureAsync(trace); };
+        systemItem.Click += (_, _) => { Loc.SetLanguage("system"); UpdateChecks(); trace.Add("language_changed", "system"); if (Loc.Translating) _ = GenreNames.EnsureAsync(trace); };
         spanishItem.Click += (_, _) => { Loc.SetLanguage("es"); UpdateChecks(); trace.Add("language_changed", "es"); };
-        englishItem.Click += (_, _) => { Loc.SetLanguage("en"); UpdateChecks(); trace.Add("language_changed", "en"); _ = GenreNames.EnsureAsync(trace); };
+        // Los idiomas que no son el español usan los nombres de género descargados (en inglés).
+        foreach (var (item, code) in new[] { (englishItem, "en"), (frenchItem, "fr"), (italianItem, "it"), (portugueseItem, "pt") })
+            item.Click += (_, _) => { Loc.SetLanguage(code); UpdateChecks(); trace.Add("language_changed", code); _ = GenreNames.EnsureAsync(trace); };
         // Con la interfaz ya en inglés al arrancar, se completa la lista de géneros si falta.
-        Shown += (_, _) => { if (Loc.English) _ = GenreNames.EnsureAsync(trace); };
+        Shown += (_, _) => { if (Loc.Translating) _ = GenreNames.EnsureAsync(trace); };
     }
 }

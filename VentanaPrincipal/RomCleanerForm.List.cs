@@ -32,7 +32,8 @@ public sealed partial class RomCleanerForm : LocalizedForm
         scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = deleteSelected.Enabled = false; cancel.Enabled = true; progress.Style = ProgressBarStyle.Blocks; progress.Value = 0;
         trace.Add("scan_started", root.Text);
         sizesCalculating = true;
-        liveCounters.Text = "Sistemas: calculando | ROMs: calculando | Ambiguas: calculando | Ficheros: calculando\r\nROMS: calculando | Media: calculando";
+        headline.SetValues("…", "…");
+        liveCounters.Text = "Ambiguas: calculando | Ficheros: calculando\r\nROMS: calculando | Media: calculando";
         Task<long> mediaSizeTask = Task.Run(() => CollectionScanner.CalculateMediaBytes(root.Text, token), token);
         try
         {
@@ -83,7 +84,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         else if (skipUnclassifiedOffer) skipUnclassifiedOffer = false;
         else if (offerUnclassified && unclassified is { Count: > 0 })
         {
-            if (gapsTask is not null) { status.Text = "Calculando huecos…"; try { await gapsTask; } catch { } }
+            if (gapsTask is not null && !gapsTask.IsCompleted) { string previousStatus = status.Text; status.Text = "Calculando huecos…"; try { await gapsTask; } catch { } status.Text = previousStatus; } // el aviso se quita al terminar
             var listed = unclassified.Select(s => (s, all.Count(r => r.Status == RomStatus.Ok && r.System.Equals(s, StringComparison.OrdinalIgnoreCase) && NoCategory(r)),
                 gaps is not null && gaps.TryGetValue(s, out var gap) ? gap.NoImage : 0, gaps is not null && gaps.TryGetValue(s, out var gap2) ? gap2.NoVideo : 0)).ToList();
             UnclassifiedChoice choice;
@@ -98,7 +99,16 @@ public sealed partial class RomCleanerForm : LocalizedForm
             using (var dialog = new UnclassifiedSystemsDialog(listed, GapNames)) { dialog.ShowDialog(this); choice = dialog.Choice; }
             // «Categorizar» solo descarga los metadatos (que traen la categoría), con una ventana de progreso y sin abrir el scrapeo; «Categorizar y scrapear» abre la descarga masiva con los medios elegidos la última vez.
             if (choice == UnclassifiedChoice.Categorize) await CategorizeAsync(unclassified, onlyMissingCategory: true);
-            else if (choice == UnclassifiedChoice.CategorizeAndScrape) await OpenBulkMediaDialogAsync(onlyRows: all.Where(r => r.Status == RomStatus.Ok && NoCategory(r) && unclassified.Contains(r.System, StringComparer.OrdinalIgnoreCase)).ToList(), preset: BulkPreset.WithMetadata);
+            else if (choice == UnclassifiedChoice.CategorizeAndScrape)
+            {
+                // Se scrapean todas las ROMs a las que les falte la categoría, la imagen o el vídeo (no solo las que no tienen categoría), de los sistemas del aviso.
+                var candidates = ScrapableRows().Where(r => unclassified.Contains(r.System, StringComparer.OrdinalIgnoreCase)).ToList();
+                string gapsRoot = root.Text;
+                var gap = await Task.Run(() => MediaGaps.Rows(gapsRoot, candidates));
+                var rows = candidates.Where(r => gap.NoMetadata.Contains(r.Path) || gap.NoImage.Contains(r.Path) || gap.NoVideo.Contains(r.Path)).ToList();
+                trace.Add("scrape_missing", $"scope=unclassified_offer; kind=any; roms={rows.Count}");
+                if (rows.Count > 0) await OpenBulkMediaDialogAsync(onlyRows: rows, preset: BulkPreset.WithMetadata);
+            }
         }
     }
     // La ruta raíz debe ser la carpeta que contiene Roms y ES-DE\gamelists. Se comprueba antes de empezar para dar un mensaje claro.
@@ -137,11 +147,40 @@ public sealed partial class RomCleanerForm : LocalizedForm
     // (así no se consultan, por ejemplo, las pistas .pcm de MSU-1 que alguna vez se colaron en un gamelist).
     private IEnumerable<RomRow> ScrapableRows() => all.Where(r => IsVisibleSystem(r.System) && EsDeSystemExtensions.IsGameFile(r.System, r.Path));
 
+    private bool AllScope => searchInAll.Checked;
+    private string? scopeSystem;   // sistema que se estaba viendo antes de elegir «Todos», para volver a él
+
+    // Con la búsqueda en «Todos» no importa el sistema: se vacían y desactivan el selector de sistema, las categorías y los contadores del
+    // sistema (la colección entera sigue contando). Al volver a «este sistema» se recupera el que se estaba viendo.
+    private void ApplySearchScope()
+    {
+        if (AllScope)
+        {
+            if (systems.SelectedItem is string chosen) scopeSystem = chosen;
+            changing = true;
+            try { systems.SelectedIndex = -1; categories.Items.Clear(); current = new(); }
+            finally { changing = false; }
+            systems.Enabled = false; categories.Enabled = false;
+            systemSummary.Text = "";
+            UpdateGapLabels();
+            return;
+        }
+        systems.Enabled = true; categories.Enabled = true;
+        if (systems.Items.Count == 0) return;
+        int index = scopeSystem is null ? -1 : systems.Items.IndexOf(scopeSystem);
+        if (index < 0) index = 0;
+        changing = true;
+        try { systems.SelectedIndex = index; }
+        finally { changing = false; }
+        ChangeSystem();
+    }
+
     // Rellena la lista de sistemas; si el sistema que se estaba viendo sigue disponible, se conserva sin recargar nada.
     private void RefreshSystemsList()
     {
         string? keep = systems.SelectedItem as string;
         var names = all.Select(r => r.System).Distinct(StringComparer.OrdinalIgnoreCase).Where(IsVisibleSystem).OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+        names.AddRange(CustomSystemNames());
         bool keepSelection = keep is not null && names.Contains(keep, StringComparer.OrdinalIgnoreCase);
         changing = keepSelection;
         try
@@ -158,8 +197,9 @@ public sealed partial class RomCleanerForm : LocalizedForm
     // Tras un nuevo análisis, vuelve a cargar las ROMs y categorías del sistema que se estaba viendo (conservando la categoría enfocada).
     private void ReloadCurrentSystem(string system)
     {
+        if (AllScope) { ApplySearchScope(); return; }
         string? previousCategory = (categories.SelectedItem as CategoryItem)?.Genre;
-        current = all.Where(r => r.System.Equals(system, StringComparison.OrdinalIgnoreCase)).OrderBy(r => r.RomName, StringComparer.OrdinalIgnoreCase).ToList();
+        current = RowsOfSystem(system);
         systemSummary.Text = $"ROMs encontradas: {current.Count(r => r.Status == RomStatus.Ok):N0}";
         UpdateGapLabels();
         changing = true;
@@ -181,8 +221,9 @@ public sealed partial class RomCleanerForm : LocalizedForm
     private static string Genre(RomRow r) => string.IsNullOrWhiteSpace(r.Genre) ? "Sin categoría" : r.Genre;
     private void ChangeSystem()
     {
+        if (AllScope) { ApplySearchScope(); return; }
         if (systems.SelectedItem is not string s) return;
-        current = all.Where(r => r.System.Equals(s, StringComparison.OrdinalIgnoreCase)).OrderBy(r => r.RomName, StringComparer.OrdinalIgnoreCase).ToList();
+        current = RowsOfSystem(s);
         int identified = current.Count(r => r.Status == RomStatus.Ok);
         systemSummary.Text = $"ROMs encontradas: {identified:N0}";
         UpdateGapLabels();
@@ -291,6 +332,28 @@ public sealed partial class RomCleanerForm : LocalizedForm
         UpdateSelection();
         trace.Add(add ? "select_visible" : "deselect_visible", $"count={roms.Items.Count}");
     }
+    // Lista de las ROMs seleccionadas (por sistema), con casilla para quitar de la selección las que no se quieran.
+    private void ShowSelectedRoms()
+    {
+        var rows = all.Where(r => r.Path.Length > 0 && selected.Contains(r.Path)).ToList();
+        if (rows.Count == 0) { QuietMessage.Show(this, "ROMs seleccionadas", "No hay ROMs seleccionadas."); return; }
+        trace.Add("selected_roms_opened", $"roms={rows.Count}");
+        using var dialog = new SelectedRomsDialog(root.Text, rows, FormatSize, (row, on) =>
+        {
+            ApplyRomCheck(row.Path, on);
+            SyncVisibleRomChecks();
+        });
+        dialog.ShowDialog(this);
+    }
+
+    // La lista de la ventana principal refleja la selección sin reconstruirse (para no interrumpir el medio que se esté viendo).
+    private void SyncVisibleRomChecks()
+    {
+        changing = true;
+        try { for (int i = 0; i < roms.Items.Count; i++) if (roms.Items[i] is RomItem item && item.Row.Path.Length > 0) roms.SetItemChecked(i, selected.Contains(item.Row.Path)); }
+        finally { changing = false; }
+    }
+
     private void ApplyRomCheck(string path, bool isChecked)
     {
         if (isChecked) selected.Add(path);

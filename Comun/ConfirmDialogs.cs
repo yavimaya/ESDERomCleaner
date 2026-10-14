@@ -7,7 +7,13 @@ internal sealed record DeleteConfirmData(int Roms, string RomSize, int Accessori
 // (el segundo es el predeterminado, para que un Intro no borre nada).
 internal sealed class DeleteConfirmDialog : LocalizedForm
 {
-    public DeleteConfirmDialog(DeleteConfirmData data)
+    // ROMs que quedan si en «Ver ficheros» se han desmarcado algunas (la confirmación se cierra con DialogResult.Retry para recalcular el borrado).
+    public IReadOnlyList<RomRow> RemainingRows { get; private set; } = [];
+    public HashSet<string> ExcludedPaths { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    // Con «rows» (las ROMs del plan), la confirmación lleva un botón «Ver ficheros» que abre su lista (con los tamaños de ROM y de medios) y permite desmarcar ROMs.
+    // Con «runDeletion», al pulsar BORRAR el formulario no se cierra: se queda con la papelera animada y avisando mientras se borra, y se cierra con OK al terminar.
+    public DeleteConfirmDialog(DeleteConfirmData data, IReadOnlyList<RomRow>? rows = null, string root = "", Func<long, string>? formatSize = null, Func<Task>? runDeletion = null)
     {
         Text = "Confirmar eliminación";
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
@@ -18,15 +24,19 @@ internal sealed class DeleteConfirmDialog : LocalizedForm
 
         // Cabecera roja con el mensaje principal.
         var header = new Panel { Location = new Point(0, 0), Size = new Size(640, 92), BackColor = danger };
-        header.Controls.Add(new Label
+        header.Paint += (_, ev) => RaUi.PaintHeaderTexture(ev.Graphics, header.ClientRectangle, header.BackColor);
+        // Papelera de grises a la que van cayendo un cartucho, una hoja, una imagen y un vídeo.
+        var trashIcon = new PictureBox { Location = new Point(20, 14), Size = new Size(64, 64), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent };
+        header.Controls.Add(trashIcon);
+        header.Controls.Add(new ShadowLabel
         {
-            Text = "Eliminación permanente", Location = new Point(24, 14), Size = new Size(592, 32), AutoSize = false,
+            Text = "Eliminación permanente", Location = new Point(96, 14), Size = new Size(520, 32), AutoSize = false,
             Font = new Font(Font.FontFamily, 16f, FontStyle.Bold), ForeColor = Color.White, BackColor = Color.Transparent
         });
-        header.Controls.Add(new Label
+        header.Controls.Add(new ShadowLabel
         {
             Text = "Se van a borrar de tu colección y del almacenamiento. No pasan por la Papelera y no se pueden recuperar.",
-            Location = new Point(24, 50), Size = new Size(592, 36), AutoSize = false, ForeColor = Color.FromArgb(255, 226, 226), BackColor = Color.Transparent
+            Location = new Point(96, 50), Size = new Size(520, 36), AutoSize = false, ForeColor = Color.FromArgb(255, 226, 226), BackColor = Color.Transparent
         });
 
         // Cuatro tarjetas con lo que se va a borrar (sin tabla).
@@ -74,9 +84,50 @@ internal sealed class DeleteConfirmDialog : LocalizedForm
         };
         erase.FlatAppearance.BorderSize = 0;
         AcceptButton = cancel; CancelButton = cancel;
+
+        // La papelera está quieta mientras se pide la confirmación y solo se anima mientras se borra.
+        var drop = RaUi.TrashDropFrames();
+        trashIcon.Image = drop[0];
+        int dropFrame = 0;
+        bool running = false;
+        var dropTimer = new System.Windows.Forms.Timer { Interval = 55 };
+        dropTimer.Tick += (_, _) => { dropFrame = (dropFrame + 1) % drop.Length; trashIcon.Image = drop[dropFrame]; };
+        FormClosed += (_, _) => dropTimer.Dispose();
+        if (runDeletion is not null) erase.DialogResult = DialogResult.None;
+        erase.Click += async (_, _) =>
+        {
+            if (runDeletion is null) return;
+            running = true;
+            foreach (var button in Controls.OfType<Button>()) button.Enabled = false;
+            var labels = header.Controls.OfType<ShadowLabel>().ToList();
+            labels[0].Text = Loc.T("Eliminando…"); labels[0].Tag = "noloc";
+            labels[1].Text = Loc.T("No cierres la aplicación hasta que termine."); labels[1].Tag = "noloc";
+            dropTimer.Start();
+            await runDeletion();
+            dropTimer.Stop(); running = false;
+            DialogResult = DialogResult.OK;
+        };
+        FormClosing += (_, e) => { if (running) e.Cancel = true; };
+
         Controls.Add(header);
         Controls.AddRange(tiles);
         Controls.AddRange([total, note, erase, cancel]);
+        if (rows is { Count: > 0 } && formatSize is not null)
+        {
+            var viewFiles = new Button { Text = "Ver ficheros", Size = new Size(120, 36), Location = new Point(24, 334) };
+            viewFiles.Click += (_, _) =>
+            {
+                var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                using (var list = new SelectedRomsDialog(root, rows, formatSize, (row, on) => { if (on) excluded.Remove(row.Path); else excluded.Add(row.Path); },
+                    "Desmarca las ROMs que no quieras eliminar; al cerrar este formulario se vuelve a calcular lo que se borra."))
+                    list.ShowDialog(this);
+                if (excluded.Count == 0) return;
+                ExcludedPaths.UnionWith(excluded);
+                RemainingRows = rows.Where(r => !excluded.Contains(r.Path)).ToList();
+                DialogResult = DialogResult.Retry; // se cierra la confirmación: el borrado se recalcula con las que quedan y se vuelve a confirmar
+            };
+            Controls.Add(viewFiles);
+        }
         Shown += (_, _) => cancel.Focus();
     }
 }
@@ -95,12 +146,13 @@ internal sealed class CloneConfirmDialog : LocalizedForm
         var danger = Color.FromArgb(150, 30, 30);
 
         var header = new Panel { Location = new Point(0, 0), Size = new Size(640, 96), BackColor = danger };
-        header.Controls.Add(new Label
+        header.Paint += (_, ev) => RaUi.PaintHeaderTexture(ev.Graphics, header.ClientRectangle, header.BackColor);
+        header.Controls.Add(new ShadowLabel
         {
             Text = "Se borrará contenido del destino", Location = new Point(24, 14), Size = new Size(592, 32), AutoSize = false,
             Font = new Font(Font.FontFamily, 16f, FontStyle.Bold), ForeColor = Color.White, BackColor = Color.Transparent
         });
-        header.Controls.Add(new Label
+        header.Controls.Add(new ShadowLabel
         {
             Text = "El destino quedará como una copia exacta del origen: todo lo que no exista en el origen se eliminará de la carpeta de destino, sin Papelera y sin posibilidad de recuperarlo.",
             Location = new Point(24, 50), Size = new Size(592, 42), AutoSize = false, ForeColor = Color.FromArgb(255, 226, 226), BackColor = Color.Transparent

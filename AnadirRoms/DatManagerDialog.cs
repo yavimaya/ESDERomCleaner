@@ -63,12 +63,12 @@ internal sealed class DatManagerDialog : LocalizedForm
             x += width;
         }
 
-        grid.Location = new Point(10, 80); grid.Size = new Size(620, 296);
+        grid.Dock = DockStyle.Fill;
         grid.ReadOnly = true; grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.AllowUserToResizeRows = false;
         grid.AllowUserToResizeColumns = false; grid.RowHeadersVisible = false; grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        grid.MultiSelect = false; grid.BackgroundColor = SystemColors.Window; grid.BorderStyle = BorderStyle.FixedSingle;
+        grid.MultiSelect = false;
         grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing; grid.ColumnHeadersHeight = 22;
-        grid.RowTemplate.Height = 20;
+        RaUi.StyleGrid(grid, 22, 24);
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Origen", Width = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sistema", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, SortMode = DataGridViewColumnSortMode.NotSortable });
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Estado", Width = 210, SortMode = DataGridViewColumnSortMode.NotSortable });
@@ -76,13 +76,21 @@ internal sealed class DatManagerDialog : LocalizedForm
         progress.Location = new Point(10, 384); progress.Size = new Size(620, 18);
         info.Location = new Point(10, 406); info.Size = new Size(620, 22);
 
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 44, Padding = new Padding(6, 8, 6, 2) };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 52, Padding = new Padding(8, 10, 8, 2), BackColor = RaUi.FooterBack };
+        buttons.Paint += (_, e) => { using var pen = new Pen(RaUi.Border); e.Graphics.DrawLine(pen, 0, 0, buttons.Width, 0); };
+        foreach (var button in new[] { close, removeButton, importButton, updateAll, downloadMissing }) { button.MinimumSize = new Size(button.MinimumSize.Width, 32); RaUi.StyleButton(button, button == downloadMissing); }
         buttons.Controls.Add(close);
         buttons.Controls.Add(removeButton);
         buttons.Controls.Add(importButton);
         buttons.Controls.Add(updateAll);
         buttons.Controls.Add(downloadMissing);
-        Controls.Add(header); Controls.Add(useLabel); Controls.Add(grid); Controls.Add(progress); Controls.Add(info); Controls.Add(buttons);
+        var gridFrame = RaUi.Frame(grid, new Rectangle(10, 80, 620, 296));
+        Controls.Add(header); Controls.Add(useLabel); Controls.Add(gridFrame); Controls.Add(progress); Controls.Add(info); Controls.Add(buttons);
+        // Cabecera oscura como en los demás formularios; el texto explicativo pasa a ser su subtítulo.
+        var banner = new RaHeader("Bases de datos de ROMs", "Los DAT identifican tus ROMs: se descargan de libretro-database o se importan.", 68, 48, logo: false);
+        banner.Icon.Image = RaUi.DatabaseIcon();
+        header.Location = new Point(10, 10); header.Size = new Size(620, 36); header.ForeColor = RaUi.Muted;
+        RaUi.WrapWithHeader(this, banner);
 
         downloadMissing.Click += async (_, _) => await DownloadAsync(onlyMissing: true);
         updateAll.Click += async (_, _) => await DownloadAsync(onlyMissing: false);
@@ -220,6 +228,7 @@ internal sealed class DatManagerDialog : LocalizedForm
     {
         var list = shown.Where(s => !s.Imported && settings.Kinds.Contains(s.Kind) && (!onlyMissing || !RomDatabase.IsInstalled(s))).ToList();
         if (list.Count == 0) return;
+        if (!await Requirements.CheckAsync(this, trace, "Descargar bases de datos", Need.Internet, "raw.githubusercontent.com")) return;
 
         jobCount = list.Count;
         received = new long[jobCount]; totals = new long[jobCount]; lastSample = new long[jobCount];

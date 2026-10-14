@@ -90,6 +90,20 @@ internal static class SystemFormats
         }
         catch { }
     }
+
+    // Crea Roms\systems.txt si falta: la lista «carpeta: nombre completo» de todos los sistemas que ES-DE genera al crear la estructura (orden alfabético, un sistema por línea).
+    public static void EnsureSystemsList(string root, IEnumerable<string> folders)
+    {
+        try
+        {
+            string file = Path.Combine(root, "Roms", "systems.txt");
+            if (File.Exists(file)) return;
+            var lines = folders.Where(f => EsDeSystemInfo.BySystem.TryGetValue(f, out var i) && i.FullName.Length > 0)
+                .OrderBy(f => f, StringComparer.Ordinal).Select(f => f + ": " + EsDeSystemInfo.BySystem[f].FullName);
+            File.WriteAllText(file, string.Join((char)10, lines) + (char)10, new UTF8Encoding(false));
+        }
+        catch { }
+    }
 }
 
 internal static class RomStorage

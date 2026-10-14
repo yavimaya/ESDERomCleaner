@@ -76,6 +76,7 @@ internal static class CollectionTitle
     // Engancha un formulario: pone el título al mostrarse, al cambiar de tamaño o de texto y cuando cambia la colección.
     public static void Attach(Form form)
     {
+        if (form is RomCleanerForm) return; // la ventana principal lleva la colección en su cabecera y el título es solo el nombre
         void Refresh() { if (!form.IsDisposed && form.IsHandleCreated) Apply(form); }
         void OnChanged() { if (!form.IsDisposed && form.IsHandleCreated) try { form.BeginInvoke(Refresh); } catch (InvalidOperationException) { } }
         form.Shown += (_, _) => Refresh();
@@ -140,8 +141,9 @@ internal sealed class CollectionDialog : LocalizedForm
         if (canChooseFolder)
         {
             folderBox.Size = new Size(296, 23);
-            var browse = new Button { Text = "Examinar…", Location = new Point(412, 45), Size = new Size(96, 27) };
+            var browse = new Button { Text = "Examinar…", Location = new Point(412, 44), Size = new Size(96, 28) };
             browse.Click += (_, _) => BrowseFolder();
+            RaUi.StyleButton(browse, false);
             Controls.Add(browse);
         }
         else
@@ -149,6 +151,12 @@ internal sealed class CollectionDialog : LocalizedForm
             // En una colección ya creada la carpeta no se puede cambiar: solo se muestra.
             folderBox.Size = new Size(398, 23);
         }
+        RaUi.StyleButton(ok, true); RaUi.StyleButton(cancel, false);
+        // Cabecera oscura como en los demás formularios; la carpeta solo se elige al crear la colección.
+        string subtitle = canChooseFolder ? "La carpeta se elige ahora y después no se puede cambiar." : "La carpeta de una colección ya creada no se puede cambiar.";
+        var banner = new RaHeader(title, subtitle, 68, 48, logo: false);
+        banner.Icon.Image = RaUi.FolderIcon();
+        RaUi.WrapWithHeader(this, banner);
         nameBox.TextChanged += (_, _) => { if (nameBox.Focused) nameEdited = true; UpdateOk(); };
         UpdateOk();
         Shown += (_, _) => { nameBox.Focus(); nameBox.SelectAll(); };

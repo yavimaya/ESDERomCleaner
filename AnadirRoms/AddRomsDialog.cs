@@ -6,7 +6,6 @@ internal sealed class AddRomsDialog : LocalizedForm
 {
     private readonly string root;
     private readonly TraceLog trace;
-    private readonly Label dropZone = new();
     private readonly DataGridView grid;      // identificadas: listas para añadir
     private readonly DataGridView doubtGrid; // con dudas: hay que elegir la carpeta
     private readonly Label doubtLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.BottomLeft, Font = null };
@@ -42,6 +41,7 @@ internal sealed class AddRomsDialog : LocalizedForm
     private readonly Label status = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft };
     private readonly CheckBox moveFiles = new() { Text = "Mover los archivos en lugar de copiarlos", AutoSize = true };
     private readonly Button addButton = new() { Text = "Añadir a la colección", AutoSize = true, MinimumSize = new Size(150, 28), Enabled = false };
+    private readonly Button curateButton = new() { Text = "Curar y añadir", AutoSize = true, MinimumSize = new Size(130, 28), Enabled = false };
     private readonly Button browseButton = new() { Text = "Examinar…", AutoSize = true, MinimumSize = new Size(100, 28) };
     private readonly Button removeButton = new() { Text = "Quitar seleccionadas", AutoSize = true, MinimumSize = new Size(130, 28), Enabled = false };
     private readonly Button clearButton = new() { Text = "Vaciar listas", AutoSize = true, MinimumSize = new Size(100, 28) };
@@ -181,14 +181,10 @@ internal sealed class AddRomsDialog : LocalizedForm
         Text = "Añadir ROMs";
         Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(900, 620); MinimumSize = new Size(760, 480);
+        ClientSize = new Size(960, 680); MinimumSize = new Size(800, 520);
+        BackColor = RaUi.Body;
         AllowDrop = true;
         CancelButton = closeButton;
-
-        dropZone.Text = "Arrastra aquí las ROMs (archivos o carpetas)\r\nDe las carpetas se recorren como máximo 2 niveles de subcarpetas";
-        dropZone.Dock = DockStyle.Top; dropZone.Height = 56; dropZone.TextAlign = ContentAlignment.MiddleCenter;
-        dropZone.BorderStyle = BorderStyle.FixedSingle; dropZone.BackColor = SystemColors.ControlLight; dropZone.AllowDrop = true;
-        dropZone.Font = new Font(Font.FontFamily, Font.Size + 1, FontStyle.Bold);
 
         grid = MakeGrid();
         doubtGrid = MakeGrid();
@@ -199,27 +195,39 @@ internal sealed class AddRomsDialog : LocalizedForm
         // Tercera lista, oculta por defecto: las ROMs que ya existen en la colección (no se añaden). Se muestra con el botón de «prohibido».
         dupGrid = new StaticGrid { Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
         dupGrid.ApplyInfoStyle(18, 20);
+        RaUi.StyleGrid(dupGrid, 22, 22, selectionVisible: false);
         const DataGridViewAutoSizeColumnMode fill = DataGridViewAutoSizeColumnMode.Fill;
         dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Archivo nuevo", AutoSizeMode = fill, FillWeight = 28, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
         dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ROM", AutoSizeMode = fill, FillWeight = 24, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
         dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Carpeta", AutoSizeMode = fill, FillWeight = 10, MinimumWidth = 70, SortMode = DataGridViewColumnSortMode.NotSortable });
         dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Ya existe como", AutoSizeMode = fill, FillWeight = 28, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
         dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Coincide por", AutoSizeMode = fill, FillWeight = 14, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
+        dupGrid.Columns[2].DefaultCellStyle.Padding = new Padding(28, 0, 6, 0);
+        dupGrid.CellPainting += (_, e) => { if (e.RowIndex >= 0 && e.ColumnIndex == 2) { e.Paint(e.ClipBounds, DataGridViewPaintParts.All); if (e.Value is string { Length: > 0 } f) e.Graphics!.DrawImage(PixelSystemIcons.Get(f, 18), new Rectangle(e.CellBounds.X + 5, e.CellBounds.Y + (e.CellBounds.Height - 18) / 2, 18, 18)); e.Handled = true; } };
         dupLabel.Dock = DockStyle.Fill; dupLabel.TextAlign = ContentAlignment.BottomLeft; dupLabel.Visible = false; dupGrid.Visible = false;
         dupLabel.Text = "Ya existen en la colección (no se añaden): se comparan por nombre de fichero y por nombre de ROM";
+        foreach (var caption in new[] { identifiedLabel, doubtLabel, dupLabel })
+        {
+            caption.Font = new Font(Font, FontStyle.Bold); caption.ForeColor = RaUi.Dark; caption.Padding = new Padding(4, 0, 0, 3);
+        }
 
-        middle = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6 };
+        middle = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, BackColor = RaUi.Body, Padding = new Padding(10, 6, 10, 4) };
         middle.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-        middle.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
+        middle.RowStyles.Add(new RowStyle(SizeType.Percent, 72));
         middle.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-        middle.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
+        middle.RowStyles.Add(new RowStyle(SizeType.Percent, 28));
         middle.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
         middle.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
-        middle.Controls.Add(identifiedLabel, 0, 0); middle.Controls.Add(grid, 0, 1);
-        middle.Controls.Add(doubtLabel, 0, 2); middle.Controls.Add(doubtGrid, 0, 3);
-        middle.Controls.Add(dupLabel, 0, 4); middle.Controls.Add(dupGrid, 0, 5);
+        middle.Controls.Add(identifiedLabel, 0, 0); middle.Controls.Add(Framed(grid), 0, 1);
+        middle.Controls.Add(doubtLabel, 0, 2); middle.Controls.Add(Framed(doubtGrid), 0, 3);
+        middle.Controls.Add(dupLabel, 0, 4); middle.Controls.Add(Framed(dupGrid), 0, 5);
 
-        var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 128, ColumnCount = 1, RowCount = 4 };
+        var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 134, ColumnCount = 1, RowCount = 4, BackColor = RaUi.FooterBack, Padding = new Padding(10, 0, 10, 0) };
+        bottom.Paint += (_, e) => { using var pen = new Pen(RaUi.Border); e.Graphics.DrawLine(pen, 0, 0, bottom.Width, 0); };
+        RaUi.StyleButton(addButton, true, Color.FromArgb(84, 208, 112)); // el mismo verde que el «+» del icono
+        RaUi.StyleButton(curateButton, true);                               // naranja (el dorado de la marca)
+        foreach (var plain in new[] { browseButton, removeButton, clearButton, closeButton }) RaUi.StyleButton(plain, false);
+        RaUi.StyleButton(dupButton, false);
         bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 16));
         bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
@@ -233,7 +241,7 @@ internal sealed class AddRomsDialog : LocalizedForm
         status.Dock = DockStyle.Fill;
         progress.Dock = DockStyle.Fill; progress.Margin = new Padding(6, 2, 6, 2); progress.Minimum = 0; progress.Maximum = 1000; progress.Visible = false;
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(6, 4, 6, 4) };
-        buttons.Controls.Add(closeButton); buttons.Controls.Add(addButton);
+        buttons.Controls.Add(closeButton); buttons.Controls.Add(addButton); buttons.Controls.Add(curateButton);
         buttons.Controls.Add(clearButton); buttons.Controls.Add(removeButton); buttons.Controls.Add(browseButton);
         // Botón de «prohibido el paso» con el número de duplicadas al lado: muestra u oculta la lista de las que ya existen.
         buttons.Controls.Add(dupCount); buttons.Controls.Add(dupButton); buttons.Controls.Add(moveFiles);
@@ -241,7 +249,16 @@ internal sealed class AddRomsDialog : LocalizedForm
         dupButton.Click += (_, _) => ToggleDuplicates();
         bottom.Controls.Add(status, 0, 0); bottom.Controls.Add(progress, 0, 1); bottom.Controls.Add(storageSummary, 0, 2); bottom.Controls.Add(buttons, 0, 3);
 
-        Controls.Add(middle); Controls.Add(bottom); Controls.Add(dropZone);
+        // Cabecera oscura como en el formulario de ROMs seleccionadas, con un cartucho en pixel art.
+        var banner = new RaHeader("Añadir ROMs", "Arrastra las ROMs o elígelas con «Examinar…»: se identifican y se guardan en la carpeta de su sistema.\r\nDe las carpetas se recorren como máximo 2 niveles de subcarpetas", 80, 48, logo: false);
+        // El chip de la aplicación con un «+»: queda quieto y solo late mientras se están añadiendo las ROMs.
+        chipFrames = RaUi.ChipPlusFrames();
+        chipBox = banner.Icon;
+        chipBox.Image = chipFrames[0];
+        chipTimer = new System.Windows.Forms.Timer { Interval = 75 };
+        chipTimer.Tick += (_, _) => { chipFrame = (chipFrame + 1) % chipFrames.Length; chipBox.Image = chipFrames[chipFrame]; };
+        chipBox.Disposed += (_, _) => chipTimer.Dispose();
+        Controls.Add(middle); Controls.Add(bottom); Controls.Add(banner); Controls.Add(new CpuUsageStrip()); // barra de CPU debajo del todo, como en el resto de formularios
 
         // Menú superior: las bases de datos de ROMs se gestionan desde aquí.
         var menuBar = new ClickThroughMenuStrip();
@@ -252,7 +269,7 @@ internal sealed class AddRomsDialog : LocalizedForm
         MainMenuStrip = menuBar;
         Controls.Add(menuBar);
 
-        foreach (var control in new Control[] { this, dropZone, grid, doubtGrid, middle })
+        foreach (var control in new Control[] { this, grid, doubtGrid, middle })
         {
             control.DragEnter += (_, e) => e.Effect = e.Data?.GetDataPresent(DataFormats.FileDrop) == true ? DragDropEffects.Copy : DragDropEffects.None;
             control.DragDrop += async (_, e) => { if (e.Data?.GetData(DataFormats.FileDrop) is string[] paths) await HandleDropAsync(paths); };
@@ -273,6 +290,7 @@ internal sealed class AddRomsDialog : LocalizedForm
         removeButton.Click += (_, _) => RemoveSelected();
         clearButton.Click += (_, _) => ClearLists();
         addButton.Click += async (_, _) => await AddAsync();
+        curateButton.Click += async (_, _) => await CurateAndAddAsync();
         FormClosing += (_, _) => cts.Cancel();
         CleanLeftovers();
         FormClosed += (_, _) => CleanTemp();
@@ -291,6 +309,25 @@ internal sealed class AddRomsDialog : LocalizedForm
         else status.Text = "No hay bases de datos descargadas: sin ellas solo se identifica por extensión. Descárgalas en Opciones › Bases de datos de ROMs.";
     }
 
+    // Marco fino de color alrededor de una tabla.
+    private static Panel Framed(Control content)
+    {
+        var frame = new Panel { Dock = DockStyle.Fill, Padding = new Padding(1), BackColor = RaUi.Border, Margin = new Padding(0, 0, 0, 4) };
+        content.Dock = DockStyle.Fill;
+        frame.Controls.Add(content);
+        return frame;
+    }
+
+    // Icono del sistema de destino dentro de la celda de su carpeta (la columna deja sitio a la izquierda con su relleno).
+    private static void PaintFolderIcon(DataGridView host, string columnName, DataGridViewCellPaintingEventArgs e)
+    {
+        if (e.RowIndex < 0 || host.Columns[columnName] is not { } column || e.ColumnIndex != column.Index) return;
+        e.Paint(e.ClipBounds, DataGridViewPaintParts.All);
+        if (e.Value is string { Length: > 0 } folder)
+            e.Graphics!.DrawImage(PixelSystemIcons.Get(folder, 18), new Rectangle(e.CellBounds.X + 5, e.CellBounds.Y + (e.CellBounds.Height - 18) / 2, 18, 18));
+        e.Handled = true;
+    }
+
     // Tabla compacta, sin foco ni selección visibles; el doble clic (salvo en el desplegable de la carpeta) quita la fila.
     private DataGridView MakeGrid()
     {
@@ -301,16 +338,14 @@ internal sealed class AddRomsDialog : LocalizedForm
             BorderStyle = BorderStyle.FixedSingle, EditMode = DataGridViewEditMode.EditOnEnter, EnableHeadersVisualStyles = false,
             ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing, ColumnHeadersHeight = 22
         };
-        g.RowTemplate.Height = 20;
-        g.ColumnHeadersDefaultCellStyle.SelectionBackColor = g.ColumnHeadersDefaultCellStyle.BackColor = SystemColors.Control;
-        g.ColumnHeadersDefaultCellStyle.SelectionForeColor = g.ColumnHeadersDefaultCellStyle.ForeColor = SystemColors.ControlText;
+        RaUi.StyleGrid(g, 22, 22);
         // Las columnas se reparten el ancho de la ventana según su peso (se ven bien también maximizada) y se pueden ajustar a mano.
         g.AllowUserToResizeColumns = true;
         const DataGridViewAutoSizeColumnMode fill = DataGridViewAutoSizeColumnMode.Fill;
         g.Columns.Add(new DataGridViewTextBoxColumn { Name = "file", HeaderText = "Archivo", AutoSizeMode = fill, FillWeight = 30, MinimumWidth = 90, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable });
         g.Columns.Add(new DataGridViewTextBoxColumn { Name = "game", HeaderText = "Juego", AutoSizeMode = fill, FillWeight = 26, MinimumWidth = 90, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable });
         g.Columns.Add(new DataGridViewTextBoxColumn { Name = "method", HeaderText = "Identificación", AutoSizeMode = fill, FillWeight = 22, MinimumWidth = 90, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable });
-        g.Columns.Add(new DataGridViewComboBoxColumn { Name = "folder", HeaderText = "Carpeta de destino", AutoSizeMode = fill, FillWeight = 12, MinimumWidth = 90, FlatStyle = FlatStyle.Flat, DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox, SortMode = DataGridViewColumnSortMode.NotSortable });
+        g.Columns.Add(new DataGridViewComboBoxColumn { Name = "folder", HeaderText = "Destino", AutoSizeMode = fill, FillWeight = 12, MinimumWidth = 90, FlatStyle = FlatStyle.Flat, DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox, SortMode = DataGridViewColumnSortMode.NotSortable });
         g.Columns.Add(new DataGridViewTextBoxColumn { Name = "state", HeaderText = "Estado", AutoSizeMode = fill, FillWeight = 10, MinimumWidth = 90, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable });
         // Las dos tablas mantienen las mismas proporciones: al ajustar una columna en una, se copia el ancho a la otra.
         g.ColumnWidthChanged += (_, e) =>
@@ -322,6 +357,8 @@ internal sealed class AddRomsDialog : LocalizedForm
             finally { syncingColumns = false; }
         };
 
+        g.Columns["folder"]!.DefaultCellStyle.Padding = new Padding(28, 0, 6, 0);
+        g.CellPainting += (_, e) => PaintFolderIcon(g, "folder", e);
         g.CurrentCellDirtyStateChanged += (_, _) => { if (g.IsCurrentCellDirty) g.CommitEdit(DataGridViewDataErrorContexts.Commit); };
         g.DataError += (_, e) => e.ThrowException = false;
         g.SelectionChanged += (_, _) => UpdateRemoveButton();
@@ -679,7 +716,9 @@ internal sealed class AddRomsDialog : LocalizedForm
             catch (OperationCanceledException) { return; }
             finally { tick.Stop(); }
             int doubts = doubtGrid.Rows.Count;
-            status.Text = $"{items.Count} archivo(s)." + (lastIgnored > 0 ? $" {lastIgnored} ignorado(s) por no ser ROMs." : "") + (doubts > 0 ? $" {doubts} sin decidir: elige su carpeta." : " Pulsa «Añadir a la colección».");
+            long itemBytes = 0;
+            foreach (var item in items) { try { itemBytes += new FileInfo(item.Path).Length; } catch { } }
+            status.Text = $"{items.Count} archivo(s) · {ScreenScraperDialog.FormatBytes(itemBytes)} (tamaño original)." + (lastIgnored > 0 ? $" {lastIgnored} ignorado(s) por no ser ROMs." : "") + (doubts > 0 ? $" {doubts} sin decidir: elige su carpeta." : "");
         }
         finally { working = false; if (!IsDisposed) { progress.Visible = false; progress.Style = ProgressBarStyle.Blocks; UpdateAddButton(); } }
     }
@@ -760,7 +799,7 @@ internal sealed class AddRomsDialog : LocalizedForm
         if (string.IsNullOrEmpty(folder))
         {
             row.Cells["state"].Value = identity.Candidates.Count > 1 ? "Elige la carpeta" : "No identificada: elige la carpeta";
-            row.DefaultCellStyle.BackColor = Color.LightGoldenrodYellow;
+            row.DefaultCellStyle.BackColor = Color.FromArgb(255, 244, 205);
         }
         else
         {
@@ -774,7 +813,7 @@ internal sealed class AddRomsDialog : LocalizedForm
             string destination = Path.Combine(root, "Roms", folder, targetName);
             string how = " · " + RomStorage.Describe(format, CurrentStorage.Level) + (note.Length > 0 ? $" ({note})" : "");
             row.Cells["state"].Value = File.Exists(destination) ? "Ya existe en la carpeta" : (created ? "Lista (se creará la carpeta)" : "Lista") + how;
-            row.DefaultCellStyle.BackColor = SystemColors.Window;
+            row.DefaultCellStyle.BackColor = Color.Empty; // sin color propio: vale el fondo alterno de la tabla
         }
         UpdateAddButton();
     }
@@ -782,6 +821,65 @@ internal sealed class AddRomsDialog : LocalizedForm
     private void UpdateAddButton()
     {
         addButton.Enabled = !working && grid.Rows.Cast<DataGridViewRow>().Any(r => r.Cells["state"].Value is string s && s.StartsWith("Lista", StringComparison.Ordinal));
+        curateButton.Enabled = addButton.Enabled;
+    }
+
+    // «Curar y añadir»: abre el formulario de curado solo con las ROMs identificadas (las que están listas para añadir). Descartar candidatas las quita de la
+    // lista de añadir (no se borra ningún archivo) y «Añadir a la colección» cierra el curado y añade las que queden.
+    private readonly Dictionary<string, string> temporaryGenres = new(StringComparer.OrdinalIgnoreCase); // categoría temporal de cada ROM (ruta de origen → categoría)
+
+    private async Task CurateAndAddAsync()
+    {
+        var ready = grid.Rows.Cast<DataGridViewRow>().Where(r => r.Tag is RomIdentity && r.Cells["state"].Value is string s && s.StartsWith("Lista", StringComparison.Ordinal)).ToList();
+        if (ready.Count == 0) { QuietMessage.Show(this, "Curar y añadir", "No hay ROMs identificadas listas para curar."); return; }
+        // La comprobación de requisitos (cuenta, conexión) puede tardar un par de segundos: mientras tanto el botón lo indica para que se vea que se ha pulsado.
+        string curateText = curateButton.Text;
+        curateButton.Enabled = false; curateButton.Text = "Comprobando…"; UseWaitCursor = true; status.Text = "Preparando el curado…";
+        bool requirementsMet;
+        try { requirementsMet = await Requirements.CheckAsync(this, trace, "Curar y añadir", Need.ScreenScraper | Need.Internet); }
+        finally { UseWaitCursor = false; curateButton.Text = curateText; UpdateAddButton(); }
+        if (!requirementsMet) return;
+        // Las ROMs aún no tienen gamelist, así que su categoría se consulta antes a ScreenScraper (solo en memoria, sin escribir nada) para poder curarlas.
+        var request = ready.Select(r => new TemporaryCategorizer.Item(((RomIdentity)r.Tag!).Path, (string)r.Cells["folder"].Value!, Path.GetFileName(((RomIdentity)r.Tag!).Path))).ToList();
+        if (!await TemporaryCategorizer.RunAsync(this, trace, request, temporaryGenres)) return;
+        // Cada ROM identificada se presenta al curado como una ROM más de su sistema de destino, con su categoría temporal.
+        var pseudoRows = ready.Select(r =>
+        {
+            var identity = (RomIdentity)r.Tag!;
+            long size = 0;
+            try { size = new FileInfo(identity.Path).Length; } catch { }
+            return new RomRow((string)r.Cells["folder"].Value!, identity.Path, Path.GetFileName(identity.Path), size, identity.Game, temporaryGenres.GetValueOrDefault(identity.Path, ""), "", RomStatus.Ok, "", "");
+        }).ToList();
+        trace.Add("curate_and_add_opened", $"roms={pseudoRows.Count}");
+        bool addNow;
+        using (var curation = new CurationDialog(pseudoRows, trace, addMode: true))
+        {
+            curation.DeleteHandler = (rows, owner, _) =>
+            {
+                if (!QuietMessage.Confirm(owner, "Descartar candidatas", $"Se van a descartar {rows.Length:N0} ROMs de la lista de añadir. No se borra ningún archivo: solo dejan de añadirse.", "Descartar"))
+                    return Task.FromResult<HashSet<string>?>(null);
+                var paths = rows.Select(r => r.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var discard = grid.Rows.Cast<DataGridViewRow>().Where(r => r.Tag is RomIdentity id && paths.Contains(id.Path)).ToList();
+                RemoveRows(grid, discard);
+                trace.Add("curate_and_add_discarded", $"roms={paths.Count}");
+                return Task.FromResult<HashSet<string>?>(paths);
+            };
+            addNow = curation.ShowDialog(this) == DialogResult.OK;
+        }
+        UpdateAddButton(); UpdateDoubtLabel();
+        if (addNow) await AddAsync();
+    }
+
+    private Bitmap[]? chipFrames;
+    private PictureBox? chipBox;
+    private System.Windows.Forms.Timer? chipTimer;
+    private int chipFrame;
+
+    private void SetBeating(bool on)
+    {
+        if (chipTimer is null || chipBox is null || chipFrames is null || IsDisposed) return;
+        chipFrame = 0; chipBox.Image = chipFrames[0];
+        if (on) chipTimer.Start(); else chipTimer.Stop();
     }
 
     private async Task AddAsync()
@@ -789,7 +887,8 @@ internal sealed class AddRomsDialog : LocalizedForm
         var ready = grid.Rows.Cast<DataGridViewRow>().Where(r => r.Cells["state"].Value is string s && s.StartsWith("Lista", StringComparison.Ordinal)).ToList();
         if (ready.Count == 0) return;
         bool move = moveFiles.Checked;
-        working = true; addButton.Enabled = false; UpdateRemoveButton();
+        working = true; addButton.Enabled = false; curateButton.Enabled = false; UpdateRemoveButton();
+        SetBeating(true);
         int added = 0, failed = 0, done = 0;
         progress.Style = ProgressBarStyle.Blocks; progress.Value = 0; progress.Visible = true;
 
@@ -827,7 +926,7 @@ internal sealed class AddRomsDialog : LocalizedForm
                         {
                             folderIndexes.Remove(folder); // la carpeta ha cambiado: se vuelve a indexar la próxima vez
                             row.Cells["state"].Value = (move ? "Movida" : "Copiada") + " · " + RomStorage.Describe(format, options.Level);
-                            row.DefaultCellStyle.BackColor = Color.Honeydew;
+                            row.DefaultCellStyle.BackColor = Color.FromArgb(226, 244, 231);
                             row.Cells["folder"].ReadOnly = true;
                         });
                     }, ct);
@@ -847,7 +946,7 @@ internal sealed class AddRomsDialog : LocalizedForm
             });
         }
         catch (OperationCanceledException) { }
-        finally { tick.Stop(); working = false; if (!IsDisposed) { progress.Visible = false; UpdateAddButton(); UpdateRemoveButton(); } }
+        finally { tick.Stop(); working = false; SetBeating(false); if (!IsDisposed) { progress.Visible = false; UpdateAddButton(); UpdateRemoveButton(); } }
         if (added > 0) CollectionChanged = true; // aunque se haya cerrado el formulario, las ROMs ya añadidas deben pasar a los gamelists
         if (IsDisposed) return;
         status.Text = $"{added} ROM(s) añadidas a la colección" + (failed > 0 ? $", {failed} con error" : "") + ". Al cerrar se actualizarán los gamelists.";
@@ -856,9 +955,8 @@ internal sealed class AddRomsDialog : LocalizedForm
         if (added > 0)
         {
             int systems = AddedPaths.Select(p => Path.GetFileName(Path.GetDirectoryName(p)) ?? "").Distinct(StringComparer.OrdinalIgnoreCase).Count();
-            if (QuietMessage.Confirm(this, "Scrapear las ROMs añadidas",
-                $"Se han añadido {added:N0} ROM(s) de {systems:N0} sistema(s).\r\n\r\n¿Quieres categorizarlas y descargar sus medios con ScreenScraper?\r\nSe abrirá la descarga masiva solo con esas ROMs.",
-                "Scrapear"))
+            if (RaConfirmDialog.Ask(this, "Scrapear las ROMs añadidas", $"Se han añadido {added:N0} ROM(s) de {systems:N0} sistema(s).",
+                "¿Quieres categorizarlas y descargar sus medios con ScreenScraper?\r\nSe abrirá la descarga masiva solo con esas ROMs.", RaUi.MagnifierIcon(), "Scrapear"))
             {
                 ScrapeRequested = true;
                 Close();
