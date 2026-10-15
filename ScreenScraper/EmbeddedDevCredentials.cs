@@ -1,11 +1,14 @@
 using System.Reflection;
+using System.Text;
 
 namespace ESDERomCleaner;
 
 // Credenciales de desarrollador de ScreenScraper incrustadas al compilar (ver DevCredentials.props.example). Van como metadatos
-// del ensamblado, en claro: se pueden extraer del exe. Si no se incrustaron, el usuario las escribe a mano.
+// del ensamblado con XOR + base64 (la clave debe coincidir con la tarea SsObfuscate del csproj): ofuscación, no protección, porque
+// se pueden extraer del exe. Si no se incrustaron, el usuario las escribe a mano.
 internal static class EmbeddedDevCredentials
 {
+    private static readonly byte[] Key = Encoding.UTF8.GetBytes("esde-rom-cleaner/ss");
     private static readonly Dictionary<string, string> Values = Read();
 
     public static string DevId => Get("ssd");
@@ -21,7 +24,13 @@ internal static class EmbeddedDevCredentials
         foreach (var attribute in typeof(EmbeddedDevCredentials).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>())
         {
             if (attribute.Key is not ("ssd" or "ssp" or "sss") || string.IsNullOrEmpty(attribute.Value)) continue;
-            result[attribute.Key] = attribute.Value;
+            try
+            {
+                byte[] data = Convert.FromBase64String(attribute.Value);
+                for (int i = 0; i < data.Length; i++) data[i] ^= Key[i % Key.Length];
+                result[attribute.Key] = Encoding.UTF8.GetString(data);
+            }
+            catch { }
         }
         return result;
     }

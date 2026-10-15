@@ -16,27 +16,38 @@
   </PropertyGroup>
 
   <!-- Credenciales de desarrollador de ScreenScraper: se leen de DevCredentials.props (local, ignorado por git; ver DevCredentials.props.example)
-       o de las variables de entorno SS_DEVID, SS_DEVPASSWORD y SS_SOFTNAME, y se incrustan en el exe como metadatos del ensamblado (en claro: no es cifrado). -->
+       o de las variables de entorno SS_DEVID, SS_DEVPASSWORD y SS_SOFTNAME, y se incrustan en el exe como metadatos del ensamblado (ofuscados, no cifrados). -->
   <Import Project="DevCredentials.props" Condition="Exists('DevCredentials.props')" />
   <PropertyGroup>
     <SsDevId Condition="'$(SsDevId)' == ''">$(SS_DEVID)</SsDevId>
     <SsDevPassword Condition="'$(SsDevPassword)' == ''">$(SS_DEVPASSWORD)</SsDevPassword>
     <SsSoftName Condition="'$(SsSoftName)' == ''">$(SS_SOFTNAME)</SsSoftName>
   </PropertyGroup>
-  <ItemGroup Condition="'$(SsDevId)' != '' And '$(SsDevPassword)' != ''">
-    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
-      <_Parameter1>ssd</_Parameter1>
-      <_Parameter2>$(SsDevId)</_Parameter2>
-    </AssemblyAttribute>
-    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
-      <_Parameter1>ssp</_Parameter1>
-      <_Parameter2>$(SsDevPassword)</_Parameter2>
-    </AssemblyAttribute>
-    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
-      <_Parameter1>sss</_Parameter1>
-      <_Parameter2>$(SsSoftName)</_Parameter2>
-    </AssemblyAttribute>
-  </ItemGroup>
+  <!-- XOR con la clave de EmbeddedDevCredentials.cs y base64: evita que salgan en claro con «strings»; no es protección real. -->
+  <UsingTask TaskName="SsObfuscate" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Input ParameterType="System.String" Required="true" />
+      <Output ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        byte[] key = System.Text.Encoding.UTF8.GetBytes("esde-rom-cleaner/ss");
+        byte[] data = System.Text.Encoding.UTF8.GetBytes(Input);
+        for (int i = 0; i < data.Length; i++) data[i] ^= key[i % key.Length];
+        Output = System.Convert.ToBase64String(data);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="EmbedScreenScraperDevCredentials" BeforeTargets="CreateGeneratedAssemblyInfoInputsCacheFile;GenerateAssemblyInfo" Condition="'$(SsDevId)' != '' And '$(SsDevPassword)' != ''">
+    <SsObfuscate Input="$(SsDevId)"><Output TaskParameter="Output" PropertyName="SsDevIdX" /></SsObfuscate>
+    <SsObfuscate Input="$(SsDevPassword)"><Output TaskParameter="Output" PropertyName="SsDevPasswordX" /></SsObfuscate>
+    <SsObfuscate Input="$(SsSoftName)"><Output TaskParameter="Output" PropertyName="SsSoftNameX" /></SsObfuscate>
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute"><_Parameter1>ssd</_Parameter1><_Parameter2>$(SsDevIdX)</_Parameter2></AssemblyAttribute>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute"><_Parameter1>ssp</_Parameter1><_Parameter2>$(SsDevPasswordX)</_Parameter2></AssemblyAttribute>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute"><_Parameter1>sss</_Parameter1><_Parameter2>$(SsSoftNameX)</_Parameter2></AssemblyAttribute>
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <Compile Remove="Entrega_ESDERomCleaner\**\*.cs" />
