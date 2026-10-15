@@ -92,7 +92,7 @@ internal static class TemporaryCategorizer
     private sealed class ProgressDialog : LocalizedForm
     {
         private readonly ProgressBar bar = new() { Minimum = 0 };
-        private readonly Label status = new() { AutoSize = false, AutoEllipsis = true, Tag = "noloc" };
+        private readonly Label status = new() { AutoSize = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleCenter, Tag = "noloc" };
         private readonly int total;
         private bool finished;
         public event Action? CancelRequested;

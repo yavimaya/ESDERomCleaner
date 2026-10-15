@@ -65,7 +65,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         bannerIcon.Image = shovel.Frames[(int)(seconds * 7) % shovel.Frames.Length]; // unos 7 fotogramas por segundo, en bucle
     }
     private readonly Label summaryLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
-    private readonly Label statusLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
+    private readonly Label statusLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, AutoEllipsis = true };
     private readonly ProgressBar progressBar = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 100 };
     private readonly DataGridView issuesGrid = new();
 

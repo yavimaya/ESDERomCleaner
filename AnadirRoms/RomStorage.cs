@@ -123,8 +123,6 @@ internal static class RomStorage
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "7-Zip", "7z.exe")
         ];
         foreach (var path in candidates) if (File.Exists(path)) return path;
-        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
-            try { string path = Path.Combine(dir.Trim(), "7z.exe"); if (File.Exists(path)) return path; } catch { }
         return null;
     }
 
@@ -237,16 +235,17 @@ internal static class RomStorage
     private static void ExtractAll(string archive, string directory, CancellationToken token, List<string>? created = null)
     {
         Directory.CreateDirectory(directory);
+        long budget = ArchiveExpander.MaxExtractBytes;
         void Write(string name, Func<Stream> open)
         {
             token.ThrowIfCancellationRequested();
             string target = Path.Combine(directory, Path.GetFileName(name));
-            if (Path.GetFileName(name).Length == 0 || File.Exists(target)) return;
+            if (Path.GetFileName(name).Length == 0 || ArchiveExpander.IsBlocked(name) || File.Exists(target)) return;
             string temp = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
                 using (var from = open())
-                using (var to = File.Create(temp, 1 << 20)) from.CopyTo(to, 1 << 20);
+                using (var to = File.Create(temp, 1 << 20)) ArchiveExpander.CopyLimited(from, to, ref budget);
                 File.Move(temp, target);
                 created?.Add(target);
             }

@@ -227,6 +227,9 @@ internal sealed class ScreenScraperClient
     public async Task DownloadMediaAsync(SsMedia media, string target, IProgress<long>? progress, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(media.Url)) throw new ScreenScraperException(0, "ScreenScraper no indica la dirección de descarga de este medio.");
+        if (!Uri.TryCreate(media.Url, UriKind.Absolute, out var mediaUri) || mediaUri.Scheme != Uri.UriSchemeHttps
+            || !(mediaUri.Host.Equals("screenscraper.fr", StringComparison.OrdinalIgnoreCase) || mediaUri.Host.EndsWith(".screenscraper.fr", StringComparison.OrdinalIgnoreCase)))
+            throw new ScreenScraperException(0, "La dirección de descarga del medio no pertenece a screenscraper.fr.");
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         string temp = target + "." + Guid.NewGuid().ToString("N") + ".part";
         for (int attempt = 1; ; attempt++)

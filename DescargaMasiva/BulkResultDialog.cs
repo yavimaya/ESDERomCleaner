@@ -1,28 +1,25 @@
 namespace ESDERomCleaner;
 
 // Resumen final de una descarga masiva: contadores y, por cada tipo de medio, el espacio que ha ganado o perdido la colección.
+// Mismo aspecto que los formularios nuevos: cabecera oscura, contenido sobre fondo claro y pie con el botón. Si no se ha guardado ningún medio,
+// no hay tabla y el formulario queda reducido a los contadores.
 internal sealed class BulkResultDialog : LocalizedForm
 {
     public BulkResultDialog(string headline, string counters, BulkSummary summary)
     {
         Text = "Resumen de la descarga masiva";
-        FormBorderStyle = FormBorderStyle.Sizable;
-        MinimizeBox = false;
-        ShowInTaskbar = false;
+        ShowInTaskbar = false; ControlBox = true;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(820, 520);
-        MinimumSize = new Size(640, 420);
         Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
-
-        var title = new Label { Dock = DockStyle.Fill, Text = headline, Font = new Font(Font, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
-        var counts = new Label { Dock = DockStyle.Fill, Text = counters.Replace(" · ", "   ·   "), AutoSize = false };
+        BackColor = RaUi.Body;
 
         var grid = new DataGridView
         {
             Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, AllowUserToResizeRows = false,
             RowHeadersVisible = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false,
-            BackgroundColor = SystemColors.Window, BorderStyle = BorderStyle.FixedSingle
+            BackgroundColor = SystemColors.Window, BorderStyle = BorderStyle.None
         };
+        RaUi.StyleGrid(grid, 26, 28);
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Tipo de medio", Width = 190 });
         foreach (string header in new[] { "Guardados", "Sustituidos", "Antes", "Ahora", "Diferencia" })
             grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = header, Width = header == "Diferencia" ? 130 : 95, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
@@ -36,47 +33,48 @@ internal sealed class BulkResultDialog : LocalizedForm
             AddRow(grid, $"{folder.Description} ({folder.Folder})", s.Files, s.Replaced, s.BytesBefore, s.BytesAfter, bold: false);
             totalBefore += s.BytesBefore; totalAfter += s.BytesAfter; totalFiles += s.Files; totalReplaced += s.Replaced;
         }
-        // Si no se ha guardado nada no hay tabla que enseñar: el resumen queda reducido a los contadores.
         bool nothingSaved = grid.Rows.Count == 0;
         if (!nothingSaved) AddRow(grid, "TOTAL", totalFiles, totalReplaced, totalBefore, totalAfter, bold: true);
         grid.ClearSelection();
 
-        var note = new Label
-        {
-            Dock = DockStyle.Fill, TextAlign = ContentAlignment.TopLeft,
-            Text = "«Antes» es lo que ocupaban los archivos que se han sustituido y «Ahora» lo que ocupan los nuevos. " +
-                   "En verde, la colección ocupa menos; en naranja, ocupa más. Los medios añadidos donde no había nada cuentan como aumento."
-        };
+        int width = nothingSaved ? 640 : 820;
+        var banner = new RaHeader("Resumen de la descarga masiva", nothingSaved ? headline + " " + "No se guardó ningún medio." : headline, 68, 48, logo: false);
+        banner.Icon.Image = RaUi.ChartIcon();
+        var counts = new Label { Text = counters.Replace(" · ", "   ·   "), AutoSize = false, Location = new Point(20, 80), Size = new Size(width - 40, nothingSaved ? 60 : 44) };
+        var ok = new Button { Text = "Cerrar", DialogResult = DialogResult.OK, MinimumSize = new Size(100, 32), AutoSize = true };
+        RaUi.StyleButton(ok, true);
+        AcceptButton = ok; CancelButton = ok;
+        var footer = RaUi.Footer();
+        // El pie se estira al acoplarse: el botón se recoloca contra el borde derecho cada vez que cambia su ancho (un Anchor mal calculado lo sacaba de la vista).
+        footer.Resize += (_, _) => ok.Location = new Point(footer.Width - 20 - ok.Width, 10);
+        ok.Location = new Point(width - 20 - ok.Width, 10);
+        footer.Controls.Add(ok);
 
-        var ok = new Button { Text = "Aceptar", DialogResult = DialogResult.OK, AutoSize = true, MinimumSize = new Size(100, 30) };
-        AcceptButton = ok;
-        CancelButton = ok;
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
-        buttons.Controls.Add(ok);
-
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, Padding = new Padding(12, 8, 12, 8) };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
         if (nothingSaved)
         {
-            title.Text = headline + " " + Loc.T("No se guardó ningún medio.");
-            layout.RowStyles[2].SizeType = SizeType.Absolute; layout.RowStyles[2].Height = 0;
-            layout.RowStyles[3].Height = 0;
-            grid.Visible = false; note.Visible = false;
-            FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
-            ClientSize = new Size(820, 8 + 28 + 64 + 40 + 8);
-            MinimumSize = Size;
+            FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false;
+            ClientSize = new Size(width, 68 + 12 + 60 + 12 + footer.Height);
+            Controls.AddRange([counts, footer, banner]);
         }
-        layout.Controls.Add(title, 0, 0);
-        layout.Controls.Add(counts, 0, 1);
-        layout.Controls.Add(grid, 0, 2);
-        layout.Controls.Add(note, 0, 3);
-        layout.Controls.Add(buttons, 0, 4);
-        Controls.Add(layout);
+        else
+        {
+            MinimizeBox = false;
+            ClientSize = new Size(width, 520);
+            MinimumSize = new Size(640, 420);
+            counts.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            var note = new Label
+            {
+                Dock = DockStyle.Bottom, Height = 46, Padding = new Padding(20, 6, 20, 0), TextAlign = ContentAlignment.TopLeft,
+                Text = "«Antes» es lo que ocupaban los archivos que se han sustituido y «Ahora» lo que ocupan los nuevos. " +
+                       "En verde, la colección ocupa menos; en naranja, ocupa más. Los medios añadidos donde no había nada cuentan como aumento."
+            };
+            var frame = new Panel { Dock = DockStyle.Fill, Padding = new Padding(1), BackColor = RaUi.Border };
+            frame.Controls.Add(grid);
+            var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20, 132, 20, 8) };
+            body.Controls.Add(frame);
+            Controls.AddRange([body, counts, note, footer, banner]);
+            counts.BringToFront();
+        }
     }
 
     private void AddRow(DataGridView grid, string name, int files, int replaced, long before, long after, bool bold)

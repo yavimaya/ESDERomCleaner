@@ -137,6 +137,8 @@ internal static class LocTable
         ("Descarga terminada.", "Download finished."),
         ("ROMs {0}/{1}", "ROMs {0}/{1}"),
         ("archivos guardados {0}", "files saved {0}"),
+        ("descargado {0}", "downloaded {0}"),
+        ("metadatos {0}", "metadata {0}"),
         (" ({0} sustituidos)", " ({0} replaced)"),
         ("ya completas {0}", "already complete {0}"),
         (" ({0} fallidos)", " ({0} failed)"),

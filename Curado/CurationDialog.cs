@@ -28,7 +28,7 @@ internal sealed class CurationDialog : LocalizedForm
     // Devuelve las rutas de las ROMs borradas (null si se canceló). Sin él, las filas se entregan a la ventana principal al cerrar.
     [System.ComponentModel.Browsable(false), System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public Func<RomRow[], IWin32Window, Action<string>, Task<HashSet<string>?>>? DeleteHandler { get; set; }
-    private bool deleting;
+    private bool deleting, focusNextAfterDelete;
     // Las supracategorías son editables (botón «Editar supracategorías…»); sus definiciones se guardan aparte.
     private List<SupraDefinition> supraDefs = new();
     private CurationRule[] supra = Array.Empty<CurationRule>();
@@ -74,9 +74,9 @@ internal sealed class CurationDialog : LocalizedForm
 
     private static string StorePath => Path.Combine(AppPaths.Data, "curation.json");
 
-    public CurationDialog(IReadOnlyList<RomRow> allRoms, TraceLog trace, bool gamelistBackups = false, bool addMode = false)
+    public CurationDialog(IReadOnlyList<RomRow> allRoms, TraceLog trace, bool gamelistBackups = false, bool addMode = false, IEnumerable<string>? initialChecked = null, string? collectionRoot = null)
     {
-        this.gamelistBackups = gamelistBackups; this.addMode = addMode;
+        this.gamelistBackups = gamelistBackups; this.addMode = addMode; this.collectionRoot = collectionRoot;
         roms = allRoms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0).ToList();
         this.trace = trace;
         Text = baseTitle = addMode ? "Curar y añadir — ROMs identificadas" : "Reglas de curado — análisis";
@@ -90,13 +90,10 @@ internal sealed class CurationDialog : LocalizedForm
         supraDefs = SupraStore.Load() ?? CurationRuleSet.Defaults(genreRules.Select(r => r.Title));
         BuildRules();
 
+        // Al abrir no hay ninguna categoría ni supracategoría marcada, salvo las que indique quien abre el formulario.
         var state = addMode ? null : LoadState();
-        if (state is null) foreach (var def in supraDefs.Where(d => d.DefaultOn)) checkedIds.Add(def.Id);
-        else
-        {
-            foreach (string id in state.Checked.Where(ruleById.ContainsKey)) checkedIds.Add(id);
-            foreach (string key in state.Excluded) excluded.Add(key);
-        }
+        if (initialChecked is not null) foreach (string id in initialChecked.Where(ruleById.ContainsKey)) checkedIds.Add(id);
+        if (state is not null) foreach (string key in state.Excluded) excluded.Add(key);
 
         if (state?.HiddenColumns is { } hiddenSaved) foreach (string column in hiddenSaved) hiddenColumns.Add(column);
         else hiddenColumns.Add("rom");
@@ -150,6 +147,16 @@ internal sealed class CurationDialog : LocalizedForm
         profiles = CurationProfileStore.Load();
         RefillProfiles();
         candidatesGrid.CellDoubleClick += (_, e) => ToggleExcluded(e.RowIndex);
+        // Supr elimina las candidatas que tengan el foco (las seleccionadas o, si no hay selección, la fila actual).
+        candidatesGrid.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Delete || deleting) return;
+            e.Handled = e.SuppressKeyPress = true;
+            focusNextAfterDelete = true;
+            DeleteSelected();
+            focusNextAfterDelete = false; // el borrado ya lo ha leído de forma síncrona; si no llegó a empezar, no debe quedar activo
+        };
+        SetUpImageHover();
         FormClosed += (_, _) => strikeFont?.Dispose();
         Shown += (_, _) => RefreshAll();
     }
@@ -449,7 +456,10 @@ internal sealed class CurationDialog : LocalizedForm
             QuietMessage.Show(this, "Eliminar candidatas", "Las ROMs seleccionadas están excluidas a mano de la selección (tachadas), así que no se tocan.");
             return;
         }
+        // Borrado de las candidatas seleccionadas (Supr o menú contextual): el foco pasa a la siguiente de debajo.
+        focusNextAfterDelete = true;
         RequestDeletionOf(rows);
+        focusNextAfterDelete = false; // ya se leyó de forma síncrona; si el borrado no llegó a empezar, no debe quedar activo
     }
 
     private void RequestDeletionOf(IReadOnlyList<RomRow> rowsToDelete)
@@ -475,6 +485,17 @@ internal sealed class CurationDialog : LocalizedForm
         deleting = true;
         deleteButton.Enabled = false;
         string previousNote = note.Text;
+        // Con Supr, el foco pasa a la primera candidata de debajo de las que se borran.
+        bool focusNext = focusNextAfterDelete; focusNextAfterDelete = false;
+        string? nextKey = null;
+        if (focusNext)
+        {
+            var doomed = rowsToDelete.Select(KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            int last = candidatesGrid.Rows.Cast<DataGridViewRow>().Where(r => r.Tag is string k && doomed.Contains(k)).Select(r => r.Index).DefaultIfEmpty(-1).Max();
+            if (last >= 0)
+                nextKey = candidatesGrid.Rows.Cast<DataGridViewRow>().Skip(last + 1).Select(r => r.Tag as string).FirstOrDefault(k => k is not null && !doomed.Contains(k))
+                    ?? candidatesGrid.Rows.Cast<DataGridViewRow>().Take(last).Select(r => r.Tag as string).LastOrDefault(k => k is not null && !doomed.Contains(k));
+        }
         try
         {
             trace.Add("curation_deletion_requested", $"roms={rowsToDelete.Count}; bytes={rowsToDelete.Sum(r => r.Size)}");
@@ -482,14 +503,23 @@ internal sealed class CurationDialog : LocalizedForm
             if (IsDisposed) return;
             if (deleted is { Count: > 0 })
             {
-                roms.RemoveAll(r => deleted.Contains(r.Path));
+                var deletedKeys = rowsToDelete.Where(r => deleted.Contains(r.Path)).Select(KeyOf).ToList();
                 foreach (var row in rowsToDelete) excluded.Remove(KeyOf(row));
                 CollectionChanged = true;
-                BuildRules();
-                FillSupra();
-                FillGenres();
-                RefreshAll();
+                RemoveDeletedInPlace(deleted, deletedKeys);
                 SaveState();
+                if (nextKey is not null)
+                {
+                    var next = candidatesGrid.Rows.Cast<DataGridViewRow>().FirstOrDefault(r => r.Tag as string == nextKey);
+                    var firstVisible = candidatesGrid.Columns.GetFirstColumn(DataGridViewElementStates.Visible);
+                    if (next is not null && firstVisible is not null)
+                    {
+                        candidatesGrid.ClearSelection();
+                        candidatesGrid.CurrentCell = next.Cells[firstVisible.Index];
+                        next.Selected = true;
+                    }
+                }
+                if (focusNext) candidatesGrid.Focus();
             }
             else note.Text = previousNote;
         }
@@ -667,6 +697,50 @@ internal sealed class CurationDialog : LocalizedForm
     private void RefreshAll()
     {
         var union = Union();
+        RefreshSummary(union);
+        FillSystems(union);
+        RefreshCandidates();
+    }
+
+    // Tras un borrado: quita los registros borrados de las listas sin reconstruirlas, para no cambiar su orden ni la posición de desplazamiento.
+    private void RemoveDeletedInPlace(HashSet<string> deletedPaths, IEnumerable<string> deletedKeys)
+    {
+        var keys = deletedKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        roms.RemoveAll(r => deletedPaths.Contains(r.Path));
+        hits.RemoveAll(h => deletedPaths.Contains(h.Row.Path));
+        counts.Clear();
+        foreach (var group in hits.GroupBy(h => h.Rule.Id)) counts[group.Key] = group.Count();
+        languageKnown = roms.Count(r => LanguageResolver.Resolve(r, languageIndex, languageSettings.UseFilename).Languages.Count > 0);
+
+        // Contadores de las reglas, en su sitio.
+        foreach (var grid in new[] { supraGrid, genresGrid })
+            foreach (DataGridViewRow gridRow in grid.Rows)
+                if (gridRow.Tag is string id) gridRow.Cells[2].Value = counts.GetValueOrDefault(id);
+
+        // Candidatas: se quitan las filas borradas y el resto se queda donde estaba.
+        candidatesGrid.SuspendLayout();
+        for (int i = candidatesGrid.Rows.Count - 1; i >= 0; i--)
+            if (candidatesGrid.Rows[i].Tag is string key && keys.Contains(key)) candidatesGrid.Rows.RemoveAt(i);
+        candidatesGrid.ResumeLayout();
+
+        // Resumen por sistema, en su sitio (sin reordenar).
+        var union = Union();
+        var candidates = union.GroupBy(p => p.Row.System, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => (Count: g.Count(), Bytes: g.Sum(p => p.Row.Size)), StringComparer.OrdinalIgnoreCase);
+        for (int i = systemsGrid.Rows.Count - 1; i >= 0; i--)
+        {
+            string system = systemsGrid.Rows[i].Cells[1].Value?.ToString() ?? "";
+            int total = roms.Count(r => r.System.Equals(system, StringComparison.OrdinalIgnoreCase));
+            if (total == 0) { systemsGrid.Rows.RemoveAt(i); continue; }
+            var (count, size) = candidates.GetValueOrDefault(system);
+            var cells = systemsGrid.Rows[i].Cells;
+            cells[2].Value = total.ToString("N0"); cells[3].Value = count.ToString("N0");
+            cells[4].Value = (count * 100.0 / total).ToString("0.0"); cells[5].Value = size > 0 ? ScreenScraperDialog.FormatBytes(size) : "—";
+        }
+        RefreshSummary(union);
+    }
+
+    private void RefreshSummary(List<(RomRow Row, List<Hit> Hits)> union)
+    {
         long bytes = union.Sum(p => p.Row.Size);
         double percent = roms.Count > 0 ? union.Count * 100.0 / roms.Count : 0;
         summary.Text = $"Con lo marcado ({checkedIds.Count} reglas): {union.Count:N0} ROMs candidatas de {roms.Count:N0} ({percent:0.0} %) · espacio: {ScreenScraperDialog.FormatBytes(bytes)}";
@@ -674,8 +748,6 @@ internal sealed class CurationDialog : LocalizedForm
         deleteButton.Text = addMode ? $"Descartar {union.Count:N0} candidatas…" : $"Eliminar {union.Count:N0} candidatas…";
         deleteButton.Enabled = union.Count > 0;
         note.Text = $"Excluidas a mano: {excluded.Count:N0}   ·   Idioma conocido: {languageKnown:N0} de {roms.Count:N0}   ·   {genericSports:N0} ROMs tienen la categoría «Deportes» sin subgénero; solo las detectan las supracategorías de deportes por palabras del nombre.";
-        FillSystems(union);
-        RefreshCandidates();
     }
 
     private void FillSystems(List<(RomRow Row, List<Hit> Hits)> union)
@@ -688,6 +760,88 @@ internal sealed class CurationDialog : LocalizedForm
             int total = group.Count();
             systemsGrid.Rows.Add(SystemIconColumn.Icon(group.Key, 18), group.Key, total.ToString("N0"), count.ToString("N0"), (total > 0 ? count * 100.0 / total : 0).ToString("0.0"), size > 0 ? ScreenScraperDialog.FormatBytes(size) : "—");
         }
+    }
+
+    // Vista previa: con un clic en una candidata se muestra su captura de pantalla; si no tiene, la miximage y, si tampoco, las imágenes de reserva.
+    private readonly string? collectionRoot;
+    private ImageHoverPopup? hoverPopup;
+    private bool keyboardNavigation;
+    private int hoverVersion;
+
+    private void SetUpImageHover()
+    {
+        if (collectionRoot is null || addMode) return;
+        // Con los cursores, DataGridView muestra el texto de la celda actual en un globo (el nombre del sistema, por ejemplo) que estorba a la imagen.
+        candidatesGrid.ShowCellToolTips = false;
+        // Clic simple en una fila: se muestra su imagen; se oculta al apartar el ratón de la tabla, al hacer scroll o al cambiar de fila con el teclado.
+        candidatesGrid.CellMouseClick += async (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left || e.RowIndex < 0) return;
+            await ShowHoverImageAsync(e.RowIndex);
+        };
+        // Con el teclado (cursores): la imagen de la fila actual sale al instante, junto a esa fila.
+        candidatesGrid.CurrentCellChanged += async (_, _) =>
+        {
+            HideHoverPopup();
+            // Solo si el cambio de fila lo ha provocado el teclado (no al ordenar por una columna, por ejemplo).
+            if (!keyboardNavigation || MouseButtons != MouseButtons.None || ActiveControl != candidatesGrid || candidatesGrid.CurrentRow is not { } current) return;
+            var cell = candidatesGrid.GetCellDisplayRectangle(candidatesGrid.Columns.GetFirstColumn(DataGridViewElementStates.Visible)?.Index ?? 0, current.Index, false);
+            await ShowHoverImageAsync(current.Index, candidatesGrid.PointToScreen(new Point(cell.Left + 24, cell.Bottom - 4)));
+        };
+        candidatesGrid.MouseLeave += (_, _) => HideHoverPopup();
+        candidatesGrid.KeyDown += (_, _) => { HideHoverPopup(); keyboardNavigation = true; };
+        candidatesGrid.CellMouseDown += (_, _) => keyboardNavigation = false;
+        candidatesGrid.ColumnHeaderMouseClick += (_, _) => { keyboardNavigation = false; HideHoverPopup(); };
+        candidatesGrid.MouseWheel += (_, _) => HideHoverPopup();
+        candidatesGrid.Scroll += (_, _) => HideHoverPopup();
+        FormClosed += (_, _) => HideHoverPopup();
+    }
+
+    private async Task ShowHoverImageAsync(int row, Point? at = null)
+    {
+        {
+            HideHoverPopup();
+            int version = hoverVersion;
+            if (row < 0 || row >= candidatesGrid.Rows.Count || candidatesGrid.Rows[row].Tag is not string key) return;
+            var rom = roms.FirstOrDefault(r => KeyOf(r) == key);
+            if (rom is null) return;
+            string rootPath = collectionRoot;
+            Bitmap? bitmap = await Task.Run(() =>
+            {
+                try
+                {
+                    string? path = new[] { "screenshots", "miximages" }.Concat(ImageSettings.Fallbacks).Select(f => RomCleanerForm.FindImage(rootPath, rom, f)).FirstOrDefault(p => p is not null);
+                    if (path is null) return null;
+                    using var image = Image.FromFile(path);
+                    return new Bitmap(image);
+                }
+                catch { return null; }
+            });
+            if (bitmap is null) return;
+            if (version != hoverVersion || IsDisposed) { bitmap.Dispose(); return; }
+            // Siempre en la misma zona: a la derecha del panel izquierdo, entre las supracategorías y las categorías.
+            var area = new Rectangle(supraGrid.PointToScreen(new Point(supraGrid.Width - 221, supraGrid.Height - 25)), new Size(230, 203));
+            var popup = new ImageHoverPopup(bitmap, area.Size);
+            hoverPopup = popup;
+            // La imagen se cierra sola a los 5 s como máximo.
+            int shown = hoverVersion;
+            _ = Task.Delay(5000).ContinueWith(_ => { if (!IsDisposed && !popup.IsDisposed) BeginInvoke(() => { if (shown == hoverVersion) HideHoverPopup(); }); }, TaskScheduler.Default);
+            try
+            {
+                popup.ShowCentered(this, area);
+                // La ventanita no debe quedarse con el foco: se devuelve a la tabla para seguir moviéndose con los cursores.
+                if (!IsDisposed && ActiveForm != this) Activate();
+                if (!candidatesGrid.IsDisposed && (at is not null || candidatesGrid.Focused)) candidatesGrid.Focus();
+            }
+            catch (ObjectDisposedException) { hoverPopup = null; }
+        }
+    }
+
+    private void HideHoverPopup()
+    {
+        hoverVersion++;
+        var popup = hoverPopup; hoverPopup = null;
+        if (popup is { IsDisposed: false }) popup.Close(); // Close ya libera la ventana
     }
 
     private void RefreshCandidates()

@@ -24,7 +24,7 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
     private readonly Button cancelButton = new() { Text = "Cancelar", AutoSize = true, Enabled = false };
     // Cerrar para las pestañas que no lo tienen propio (la de «Elegir y guardar» lleva el suyo junto a Scrapear).
     private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 26), Margin = new Padding(3, 1, 6, 1) };
-    private readonly Label statusLabel = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly Label statusLabel = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleCenter };
     private readonly ProgressBar progressBar = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 100 };
     private readonly DataGridView metadataGrid = new();
     private readonly DataGridView mediaGrid = new();

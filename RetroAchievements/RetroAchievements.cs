@@ -232,7 +232,7 @@ internal sealed class RaClient
     // Descarga (una vez) la insignia de un logro a la caché y devuelve su ruta; null si no se puede.
     public static async Task<string?> GetBadgeAsync(string badgeName, bool locked, CancellationToken token)
     {
-        if (badgeName.Length == 0) return null;
+        if (badgeName.Length == 0 || !badgeName.All(char.IsAsciiLetterOrDigit)) return null;
         string folder = Path.Combine(AppPaths.Data, "media_cache", "retroachievements");
         string file = Path.Combine(folder, badgeName + (locked ? "_lock" : "") + ".png");
         if (File.Exists(file)) return file;

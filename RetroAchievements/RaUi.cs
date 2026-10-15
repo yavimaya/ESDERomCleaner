@@ -84,42 +84,40 @@ internal static class RaUi
 
     private static readonly string[] CartridgeSprite = Overlay(CartridgeBase, PlusSprite, 9, 8);
 
-    // Papiro medio enrollado (el rollo arriba y la hoja con líneas de texto debajo) con una pluma que escribe en él, en diagonal desde arriba a la derecha.
+    // Hoja de papiro (alta, sin rollo) con líneas de texto y un lápiz que escribe en ella, en diagonal desde arriba a la derecha.
     private static readonly string[] ScrollBase =
     [
         "................",
-        ".OOOOOOOOOOOO...",
-        "OWLLLLLLLLLLRO..",
-        "OLRRRRRRRRRRDO..",
-        ".ODDDDDDDDDDO...",
-        "..OLLLLLLLLLO...",
-        "..OLDDDDDDDLO...",
-        "..OLLLLLLLLLO...",
-        "..OLDDDDDLLLO...",
-        "..OLLLLLLLLLO...",
-        "..OLDDDDDDLLO...",
-        "..OLLLLLLLLLO...",
-        "..OOOOOOOOOOO...",
-        "................",
-        "................",
-        "................"
+        "OOOOOOOOOOOO....",
+        "OWLLLLLLLLLO....",
+        "OLLLLLLLLLLO....",
+        "OLLLLLLLLLLO....",
+        "OLLLLLLLLLLO....",
+        "OLLLLLLLLLLO....",
+        "OLLLLLLLLLLO....",
+        "OLLLLLLLLLLO....",
+        "OLLLLLLLLLLO....",
+        "OLLLLLLLLLLO....",
+        "OLLLLLLLLLLO....",
+        "OLLLLLLLLLLO....",
+        "OLLLLLLLLLLO....",
+        "ORRRRRRRRRRO....",
+        "OOOOOOOOOOOO...."
     ];
 
-    private static string[] BuildQuill()
+    // Filas de las líneas de texto, columna donde empiezan y longitud (en píxeles) de cada una.
+    private static readonly int[] ScrollLineRows = [5, 7, 9, 11, 13];
+    private const int ScrollFirstColumn = 2, ScrollLineLength = 6;
+
+    // Hoja con las líneas ya escritas (D) y el lápiz apoyado al final de la última.
+    private static string[] BuildScrollSprite()
     {
-        var rows = Enumerable.Range(0, 16).Select(_ => new string('.', 16).ToCharArray()).ToArray();
-        for (int i = 0; i <= 8; i++)
-        {
-            int x = 15 - i, y = i;
-            rows[y][x] = 'D';                                 // cálamo
-            if (y >= 1) rows[y - 1][x] = 'W';                 // barbas, a un lado y al otro
-            if (x + 1 < 16 && y >= 1) rows[y][x + 1] = 'L';
-        }
-        rows[9][6] = 'O'; rows[10][5] = 'O';                  // punta, apoyada en la hoja
-        return rows.Select(r => new string(r)).ToArray();
+        var rows = ScrollBase.Select(r => r.ToCharArray()).ToArray();
+        foreach (int row in ScrollLineRows) for (int i = 0; i < ScrollLineLength; i++) rows[row][ScrollFirstColumn + i] = 'D';
+        return Overlay(rows.Select(r => new string(r)).ToArray(), PencilAt(ScrollFirstColumn + ScrollLineLength, ScrollLineRows[^1] + 1), 0, 0);
     }
 
-    private static readonly string[] ScrollSprite = Overlay(ScrollBase, BuildQuill(), 0, 0);
+    private static readonly string[] ScrollSprite = BuildScrollSprite();
 
     private static Bitmap PixelIcon(string[] sprite, int scale, Dictionary<char, Color>? palette = null)
     {
@@ -333,46 +331,37 @@ internal static class RaUi
     }
     public static Bitmap ScrollIcon(int scale = 3) => PixelIcon(ScrollSprite, scale);
 
-    // Animación del papiro: la pluma va escribiendo, línea a línea, y al terminar la hoja se vacía y vuelve a empezar.
+    // Animación del papiro: el lápiz va escribiendo, línea a línea, y al terminar la hoja se vacía y vuelve a empezar.
     public static Bitmap[] ScrollWritingFrames(int scale = 3)
     {
         var frames = new List<Bitmap>();
-        int[] lineRows = [6, 8, 10];
-        const int firstColumn = 4, lineLength = 7;
-        string[] blank = ScrollBase.Select((r, y) => lineRows.Contains(y) ? r.Replace('D', 'L') : r).ToArray();
+        int[] lineRows = ScrollLineRows;
+        int firstColumn = ScrollFirstColumn, lineLength = ScrollLineLength;
         for (int line = 0; line < lineRows.Length; line++)
             for (int length = 0; length <= lineLength; length++)
             {
-                var rows = blank.Select(r => r.ToCharArray()).ToArray();
+                var rows = ScrollBase.Select(r => r.ToCharArray()).ToArray();
                 for (int done = 0; done <= line; done++)
                     for (int i = 0; i < (done < line ? lineLength : length); i++) rows[lineRows[done]][firstColumn + i] = 'D';
                 var paper = rows.Select(r => new string(r)).ToArray();
-                // La pluma apoya la punta al final de lo escrito, con un pequeño vaivén.
+                // El lápiz apoya la punta al final de lo escrito, con un pequeño vaivén.
                 int tipX = firstColumn + length + (length % 2), tipY = lineRows[line] + 1;
-                frames.Add(PixelIcon(Overlay(paper, QuillAt(tipX, tipY), 0, 0), scale));
+                frames.Add(PixelIcon(Overlay(paper, PencilAt(tipX, tipY), 0, 0), scale));
             }
         // Hoja ya escrita (una pausa) antes de volver a empezar.
-        string[] written = blank.Select(r => r).ToArray();
-        var full = written.Select(r => r.ToCharArray()).ToArray();
-        foreach (int row in lineRows) for (int i = 0; i < lineLength; i++) full[row][firstColumn + i] = 'D';
-        var done2 = full.Select(r => new string(r)).ToArray();
-        for (int i = 0; i < 3; i++) frames.Add(PixelIcon(Overlay(done2, QuillAt(firstColumn + lineLength + 2, lineRows[^1] + 1), 0, 0), scale));
+        for (int i = 0; i < 3; i++) frames.Add(PixelIcon(ScrollSprite, scale));
         return frames.ToArray();
     }
 
-    // Pluma en diagonal (hacia arriba a la derecha) con la punta en (tipX, tipY).
-    private static string[] QuillAt(int tipX, int tipY)
+    // Lápiz en diagonal (hacia arriba a la derecha) con la punta en (tipX, tipY): cono de madera, cuerpo con luz y sombra, banda metálica y goma.
+    private static string[] PencilAt(int tipX, int tipY)
     {
         var rows = Enumerable.Range(0, 16).Select(_ => new string('.', 16).ToCharArray()).ToArray();
-        void Put(int x, int y, char c) { if (x >= 0 && x < 16 && y >= 0 && y < 16) rows[y][x] = c; }
-        for (int k = 0; k <= 8; k++)
-        {
-            int x = tipX + 1 + k, y = tipY - 1 - k;
-            Put(x, y, 'D');
-            Put(x, y - 1, 'W');
-            Put(x + 1, y, 'L');
-        }
-        Put(tipX, tipY, 'O'); Put(tipX - 1, tipY + 1, 'O');
+        void Put(int dx, int dy, char c) { int x = tipX + dx, y = tipY + dy; if (x >= 0 && x < 16 && y >= 0 && y < 16) rows[y][x] = c; }
+        Put(0, 0, 'O'); Put(1, -1, 'R');
+        for (int k = 2; k <= 4; k++) { Put(k - 1, -k, 'L'); Put(k, -k, 'W'); Put(k + 1, -k, 'D'); }
+        Put(4, -5, 'R'); Put(5, -5, 'R'); Put(6, -5, 'R');
+        Put(5, -6, 'D'); Put(6, -6, 'D'); Put(7, -6, 'D');
         return rows.Select(r => new string(r)).ToArray();
     }
 

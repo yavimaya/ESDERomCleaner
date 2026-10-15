@@ -97,7 +97,7 @@ public sealed partial class RomCleanerForm
         trace.Add("curation_dialog_opened", root.Text);
         RomRow[] toDelete;
         List<RomRow> excludedRows;
-        using (var dialog = new CurationDialog(all.Where(r => IsVisibleSystem(r.System)).ToList(), trace, createGamelistBackups))
+        using (var dialog = new CurationDialog(all.Where(r => IsVisibleSystem(r.System)).ToList(), trace, createGamelistBackups, collectionRoot: root.Text))
         {
             // El borrado se hace sin salir del curado: los avisos salen sobre él y el re-listado de la ventana principal va en segundo plano.
             dialog.DeleteHandler = (rows, owner, report) => DeleteRowsAsync(rows, owner, report);

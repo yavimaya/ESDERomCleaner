@@ -105,7 +105,7 @@ internal sealed class RaScanDialog : LocalizedForm
     private readonly RaIndex index;
     private readonly TraceLog trace;
     private readonly CheckableList systemList = new() { IntegralHeight = false, ItemHeight = 34, BorderStyle = BorderStyle.None, BackColor = Color.White };
-    private readonly Label statusLabel = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, ForeColor = RaUi.Muted };
+    private readonly Label statusLabel = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleCenter, AutoEllipsis = true, ForeColor = RaUi.Muted };
     private readonly ProgressBar bar = new() { Minimum = 0, Maximum = 100 };
     private readonly Button start = RaUi.MakeButton("Analizar", true);
     private readonly Button close = RaUi.MakeButton("Cerrar", false);

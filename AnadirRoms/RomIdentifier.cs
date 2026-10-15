@@ -47,7 +47,11 @@ internal static class RomIdentifier
         {
             var m = Regex.Match(line.Trim(), "^FILE\\s+\"([^\"]+)\"", RegexOptions.IgnoreCase);
             if (!m.Success) continue;
-            string full = System.IO.Path.Combine(dir, m.Groups[1].Value);
+            string full;
+            try { full = System.IO.Path.GetFullPath(System.IO.Path.Combine(dir, m.Groups[1].Value)); }
+            catch (ArgumentException) { continue; }
+            // Una pista fuera de la carpeta del .cue (ruta absoluta o «..») se ignora.
+            if (!PathRules.Inside(full, dir)) continue;
             if (File.Exists(full)) tracks.Add(full);
         }
         return tracks;

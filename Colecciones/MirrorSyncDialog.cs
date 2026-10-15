@@ -16,7 +16,7 @@ internal sealed class MirrorSyncDialog : LocalizedForm
     private readonly Button cloneButton = new() { Text = "Clonar", Enabled = false, Width = 100 };
     private readonly Button closeButton = new() { Text = "Cerrar", Width = 90, DialogResult = DialogResult.Cancel };
     private readonly RichTextBox output = new() { Dock = DockStyle.Fill, ReadOnly = true, WordWrap = false, DetectUrls = false, Font = new Font("Consolas", 9F) };
-    private readonly Label status = new() { Dock = DockStyle.Fill, AutoEllipsis = true, Text = "Selecciona una carpeta de destino." };
+    private readonly Label status = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleCenter, Text = "Selecciona una carpeta de destino." };
     private readonly ProgressBar progress = new() { Dock = DockStyle.Fill, Style = ProgressBarStyle.Blocks, Minimum = 0, Maximum = 100, Value = 0 };
     private readonly ConcurrentQueue<string> lastRobocopyLines = new();
     private bool operationRunning;
@@ -257,7 +257,9 @@ internal sealed class MirrorSyncDialog : LocalizedForm
         string userProfile = NormalizePath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         if (destination.Equals(windows, StringComparison.OrdinalIgnoreCase) || IsInside(windows, destination)
             || destination.Equals(programFiles, StringComparison.OrdinalIgnoreCase) || IsInside(programFiles, destination)
-            || destination.Equals(userProfile, StringComparison.OrdinalIgnoreCase) || IsInside(userProfile, destination))
+            || destination.Equals(userProfile, StringComparison.OrdinalIgnoreCase) || IsInside(userProfile, destination)
+            || IsInside(destination, windows) || IsInside(destination, programFiles) || IsInside(destination, userProfile)
+            || Path.GetPathRoot(destination)?.TrimEnd('\\').Equals(destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) == true)
         {
             error = "El destino está en una carpeta protegida del sistema o del perfil de usuario.";
             return false;

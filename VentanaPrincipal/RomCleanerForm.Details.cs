@@ -136,7 +136,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         }
     }
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<string[]>> MiximageFileIndex = new(StringComparer.OrdinalIgnoreCase);
-    private static string? FindImage(string rootPath, RomRow row, string folder)
+    internal static string? FindImage(string rootPath, RomRow row, string folder)
     {
         string dir = Path.Combine(rootPath, "ES-DE", "downloaded_media", row.System, folder);
         if (!Directory.Exists(dir)) return null;

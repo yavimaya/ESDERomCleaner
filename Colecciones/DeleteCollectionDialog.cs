@@ -92,7 +92,7 @@ internal sealed class DeleteCollectionDialog : LocalizedForm
 
         // Progreso del borrado (sustituye al aviso mientras se borra).
         var progress = new ProgressBar { Location = new Point(24, 390), Size = new Size(592, 20), Visible = false, Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 30 };
-        var statusLabel = new Label { Tag = "noloc", Location = new Point(24, 414), Size = new Size(592, 20), AutoSize = false, AutoEllipsis = true, Visible = false, ForeColor = RaUi.Dark };
+        var statusLabel = new Label { Tag = "noloc", Location = new Point(24, 414), Size = new Size(592, 20), AutoSize = false, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleCenter, Visible = false, ForeColor = RaUi.Dark };
 
         var cancel = new Button { Text = "Cancelar", Size = new Size(120, 36), Location = new Point(496, 438), DialogResult = DialogResult.Cancel };
         var erase = new Button

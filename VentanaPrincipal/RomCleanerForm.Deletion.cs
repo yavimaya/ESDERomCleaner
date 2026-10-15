@@ -112,6 +112,14 @@ public sealed partial class RomCleanerForm : LocalizedForm
             }
             catch (Exception ex) { deletionError = ex; }
         };
+        // Con una sola ROM no se pide confirmación ni se muestra el formulario de borrado: se ejecuta directamente.
+        bool single = plan.Items.Count == 1;
+        if (single)
+        {
+            await runDeletion();
+            confirmResult = DialogResult.OK; remaining = []; excludedPaths = [];
+        }
+        else
         using (var confirm = new DeleteConfirmDialog(confirmData, plan.Items.Select(item => item.Row).ToList(), root.Text, FormatSize, runDeletion))
         {
             confirmResult = confirm.ShowDialog(owner);
@@ -145,7 +153,9 @@ public sealed partial class RomCleanerForm : LocalizedForm
             string finalSummary = BuildDeletionResultSummary(plan, result);
             details.Text = finalSummary;
             trace.Add("deletion_completed", finalSummary);
-            using (var resultDialog = new DeleteResultDialog(result, FormatSize)) resultDialog.ShowDialog(owner);
+            // Con una sola ROM borrada sin errores no se muestra el resultado; si hubo errores, sí.
+            if (!single || result.Errors.Count > 0)
+                using (var resultDialog = new DeleteResultDialog(result, FormatSize)) resultDialog.ShowDialog(owner);
             deletedPaths = plan.Items.Select(item => item.Row).Where(row => !File.Exists(row.Path) && !Directory.Exists(row.Path)).Select(row => row.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             selected.RemoveWhere(path => rowPaths.Contains(path));

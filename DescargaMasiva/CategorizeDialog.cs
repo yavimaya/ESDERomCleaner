@@ -9,7 +9,7 @@ internal sealed class CategorizeDialog : LocalizedForm
     private readonly string root;
     private readonly TraceLog trace;
     private readonly bool gamelistBackups;
-    private readonly Label statusLabel = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
+    private readonly Label statusLabel = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleCenter, AutoEllipsis = true };
     private readonly Label summaryLabel = new() { AutoSize = false, TextAlign = ContentAlignment.TopLeft, ForeColor = SystemColors.GrayText, AutoEllipsis = true };
     private readonly ProgressBar bar = new() { Minimum = 0, Maximum = 100 };
     private readonly Button cancel = new() { Text = "Cancelar", Size = new Size(110, 32) };
@@ -29,14 +29,14 @@ internal sealed class CategorizeDialog : LocalizedForm
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false; ControlBox = false;
         StartPosition = FormStartPosition.CenterParent;
         Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
-        ClientSize = new Size(600, 256);
+        ClientSize = new Size(600, 272);
         BackColor = RaUi.Body;
         // Mismo aspecto que el resto de formularios nuevos: cabecera oscura con el papiro (la pluma escribe mientras se categoriza), pie con el botón y barra de CPU.
-        var banner = new RaHeader("Categorizar", "Descarga de ScreenScraper la categoría (y los idiomas) de las ROMs de los sistemas elegidos.", 68, 48, logo: false);
+        var banner = new RaHeader("Categorizar", "Descarga de ScreenScraper la categoría (y los idiomas) de las ROMs de los sistemas elegidos.", 84, 48, logo: false); // más alta: el subtítulo ocupa dos líneas en algunos idiomas
         RaUi.AnimateIcon(banner.Icon, RaUi.ScrollWritingFrames());
-        statusLabel.Location = new Point(24, 84); statusLabel.Size = new Size(552, 22);
-        bar.Location = new Point(24, 112); bar.Size = new Size(552, 14);
-        summaryLabel.Location = new Point(24, 136); summaryLabel.Size = new Size(552, 38);
+        statusLabel.Location = new Point(24, 100); statusLabel.Size = new Size(552, 22);
+        bar.Location = new Point(24, 128); bar.Size = new Size(552, 14);
+        summaryLabel.Location = new Point(24, 152); summaryLabel.Size = new Size(552, 38);
         var footer = RaUi.Footer();
         RaUi.StyleButton(cancel, false);
         cancel.Location = new Point(600 - 24 - cancel.Width, 10);

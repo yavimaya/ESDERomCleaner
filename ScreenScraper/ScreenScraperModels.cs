@@ -179,7 +179,7 @@ internal static class SsMediaCache
         string game = gameId.Length > 0 && gameId.All(char.IsAsciiDigit) ? gameId : "sin_id";
         string region = media.Region.Length > 0 ? media.Region : "todas";
         string hash = media.Md5.Length >= 12 ? media.Md5[..12].ToLowerInvariant() : "sinmd5";
-        string format = media.Format.Length > 0 ? media.Format : "bin";
+        string format = media.Format.Length > 0 && media.Format.All(char.IsAsciiLetterOrDigit) && EsDeMediaInstaller.IsMediaFile("x." + media.Format) ? media.Format : "bin";
         return Path.Combine(Root, game, Safe($"{media.Type}_{region}_{hash}.{format}"));
     }
 
