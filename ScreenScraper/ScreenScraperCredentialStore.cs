@@ -9,7 +9,16 @@ internal static class ScreenScraperCredentialStore
 {
     private static string FilePath => Path.Combine(AppPaths.Data, "screenscraper.credentials");
 
+    // Las credenciales de desarrollador propias del usuario mandan; si no hay, se usan las incrustadas al compilar (si las hay).
     public static ScreenScraperCredentials Load()
+    {
+        var stored = LoadStored();
+        if (stored.HasDeveloper || !EmbeddedDevCredentials.Available) return stored;
+        string soft = EmbeddedDevCredentials.SoftName.Length > 0 ? EmbeddedDevCredentials.SoftName : stored.SoftName;
+        return stored with { DevId = EmbeddedDevCredentials.DevId, DevPassword = EmbeddedDevCredentials.DevPassword, SoftName = soft };
+    }
+
+    private static ScreenScraperCredentials LoadStored()
     {
         try
         {
@@ -23,6 +32,9 @@ internal static class ScreenScraperCredentialStore
 
     public static void Save(ScreenScraperCredentials credentials)
     {
+        // No se copian al disco las incrustadas: así una versión nueva con otras credenciales las toma sin más.
+        if (EmbeddedDevCredentials.Available && credentials.DevId == EmbeddedDevCredentials.DevId && credentials.DevPassword == EmbeddedDevCredentials.DevPassword)
+            credentials = credentials with { DevId = "", DevPassword = "" };
         string path = FilePath;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         byte[] plain = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(credentials));

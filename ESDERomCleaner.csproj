@@ -15,6 +15,29 @@
     <Version>0.1.5</Version>
   </PropertyGroup>
 
+  <!-- Credenciales de desarrollador de ScreenScraper: se leen de DevCredentials.props (local, ignorado por git; ver DevCredentials.props.example)
+       o de las variables de entorno SS_DEVID, SS_DEVPASSWORD y SS_SOFTNAME, y se incrustan en el exe como metadatos del ensamblado (en claro: no es cifrado). -->
+  <Import Project="DevCredentials.props" Condition="Exists('DevCredentials.props')" />
+  <PropertyGroup>
+    <SsDevId Condition="'$(SsDevId)' == ''">$(SS_DEVID)</SsDevId>
+    <SsDevPassword Condition="'$(SsDevPassword)' == ''">$(SS_DEVPASSWORD)</SsDevPassword>
+    <SsSoftName Condition="'$(SsSoftName)' == ''">$(SS_SOFTNAME)</SsSoftName>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(SsDevId)' != '' And '$(SsDevPassword)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ssd</_Parameter1>
+      <_Parameter2>$(SsDevId)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ssp</_Parameter1>
+      <_Parameter2>$(SsDevPassword)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>sss</_Parameter1>
+      <_Parameter2>$(SsSoftName)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
     <Compile Remove="Entrega_ESDERomCleaner\**\*.cs" />
   </ItemGroup>

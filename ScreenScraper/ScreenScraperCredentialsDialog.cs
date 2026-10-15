@@ -23,6 +23,7 @@ internal sealed class ScreenScraperCredentialsDialog : LocalizedForm
         var grid = new TableLayoutPanel { Dock = DockStyle.Top, Height = 190, ColumnCount = 2, RowCount = 5, Padding = new Padding(12, 12, 12, 0) };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        int shift = 0;
         void Row(int index, string label, Control box)
         {
             grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
@@ -32,6 +33,16 @@ internal sealed class ScreenScraperCredentialsDialog : LocalizedForm
         Row(0, "ID de desarrollador (devid):", devId);
         Row(1, "Contraseña de desarrollador:", devPassword);
         Row(2, "Nombre del software:", softName);
+        // Con credenciales de desarrollador incrustadas, el usuario solo escribe su cuenta: se ocultan las tres filas de desarrollador.
+        if (EmbeddedDevCredentials.Available && devId.Text == EmbeddedDevCredentials.DevId)
+        {
+            for (int i = 0; i < 3; i++) grid.RowStyles[i].Height = 0;
+            foreach (Control c in new Control[] { devId, devPassword, softName }) c.Visible = false;
+            foreach (Control c in grid.Controls) if (c is Label && grid.GetRow(c) < 3) c.Visible = false;
+            grid.Height -= 102;
+            ClientSize = new Size(ClientSize.Width, ClientSize.Height - 102);
+            shift = -102;
+        }
         Row(3, "Usuario ScreenScraper (opcional):", userId);
         Row(4, "Contraseña de usuario:", userPassword);
 
@@ -40,10 +51,10 @@ internal sealed class ScreenScraperCredentialsDialog : LocalizedForm
             Dock = DockStyle.Top, Height = 40, Padding = new Padding(12, 4, 12, 0),
             Text = "Se guardan cifradas con tu usuario de Windows (DPAPI), solo en este equipo. El usuario opcional amplía tus cuotas y subproceso."
         };
-        var ok = new Button { Text = "Guardar", DialogResult = DialogResult.OK, Location = new Point(300, 232), Size = new Size(80, 28) };
-        var cancel = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, Location = new Point(386, 232), Size = new Size(80, 28) };
+        var ok = new Button { Text = "Guardar", DialogResult = DialogResult.OK, Location = new Point(300, 232 + shift), Size = new Size(80, 28) };
+        var cancel = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, Location = new Point(386, 232 + shift), Size = new Size(80, 28) };
         ok.Click += (_, _) => Result = new ScreenScraperCredentials(devId.Text.Trim(), devPassword.Text, softName.Text.Trim(), userId.Text.Trim(), userPassword.Text);
-        var signUp = new Button { Text = "Alta en ScreenScraper", Location = new Point(12, 232), Size = new Size(160, 28) };
+        var signUp = new Button { Text = "Alta en ScreenScraper", Location = new Point(12, 232 + shift), Size = new Size(160, 28) };
         signUp.Click += (_, _) => ScreenScraperAccount.OpenSignUp(this);
         Controls.Add(signUp);
         Controls.Add(ok); Controls.Add(cancel); Controls.Add(note); Controls.Add(grid);

@@ -496,5 +496,8 @@ carpetas_accedidas.txt
 # Copia local de la wiki (es otro repositorio; no se sube con este)
 .wiki/
 
+# Credenciales de desarrollador de ScreenScraper (se incrustan al compilar; nunca se suben)
+DevCredentials.props
+
 # Capturas y pruebas locales
 .probe/
