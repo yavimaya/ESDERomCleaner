@@ -97,7 +97,7 @@ internal static class CollectionTitle
         var state = States.GetOrCreateValue(form);
         string current = form.Text;
         if (state.Applied is null || current != state.Applied) state.Base = current; // el programa o la traducción han puesto un título nuevo
-        string label = Name is null ? Loc.T("Crea o selecciona una colección") : $"{Loc.T("Colección")} \"{Name}\"" + (Path is null ? "" : $"     -     {Path}");
+        string label = Name is null ? Loc.T("Crea o selecciona una colección") : $"{Loc.T("Colección")} \"{Name}\"";
         string title = $"{state.Base}     -     {label}";
         state.Applied = title;
         SetWindowText(form.Handle, title);

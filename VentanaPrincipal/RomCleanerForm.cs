@@ -204,7 +204,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         systems.DropDown += (_, _) => ClearSearchForContextChange();
         categories.Enter += (_, _) => ClearSearchForContextChange();
         categories.MouseDown += (_, _) => ClearSearchForContextChange();
-        scan.Click += async (_, _) => await ScanAsync(); cancel.Click += (_, _) => cts?.Cancel();
+        scan.Click += async (_, _) => await ScanAsync(); cancel.Click += (_, _) => { if (cts is not null && CancelConfirm.Ask(this, "el análisis de la colección")) cts?.Cancel(); };
         systems.SelectedIndexChanged += (_, _) => { if (!changing) { ClearSearchForContextChange(); ChangeSystem(); } }; categories.SelectedIndexChanged += (_, _) => { if (!changing) { ClearSearchForContextChange(); RefreshList(); } };
         selectAll.Click += (_, _) => SetVisibleSelection(true);
         deselectAll.Click += (_, _) => SetVisibleSelection(false);

@@ -20,10 +20,19 @@ internal sealed class BulkResultDialog : LocalizedForm
             BackgroundColor = SystemColors.Window, BorderStyle = BorderStyle.None
         };
         RaUi.StyleGrid(grid, 26, 28);
-        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Tipo de medio", Width = 190 });
-        foreach (string header in new[] { "Guardados", "Sustituidos", "Antes", "Ahora", "Diferencia" })
-            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = header, Width = header == "Diferencia" ? 130 : 95, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
+        // «Tipo de medio» ocupa lo que sobra; Guardados y Sustituidos van centrados; Antes, Ahora y Diferencia, a la derecha (el signo y el color de la diferencia ya
+        // dicen si la colección ocupa más o menos, por eso no hay una columna con la palabra).
+        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Tipo de medio", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 160 });
+        foreach (var (header, colWidth, align) in new[]
+        {
+            ("Guardados", 95, DataGridViewContentAlignment.MiddleCenter), ("Sustituidos", 105, DataGridViewContentAlignment.MiddleCenter),
+            ("Antes", 95, DataGridViewContentAlignment.MiddleRight), ("Ahora", 95, DataGridViewContentAlignment.MiddleRight), ("Diferencia", 100, DataGridViewContentAlignment.MiddleRight)
+        })
+        {
+            var column = new DataGridViewTextBoxColumn { HeaderText = header, Width = colWidth, DefaultCellStyle = new DataGridViewCellStyle { Alignment = align } };
+            column.HeaderCell.Style.Alignment = align;
+            grid.Columns.Add(column);
+        }
 
         long totalBefore = 0, totalAfter = 0;
         int totalFiles = 0, totalReplaced = 0;
@@ -40,7 +49,7 @@ internal sealed class BulkResultDialog : LocalizedForm
         int width = nothingSaved ? 640 : 820;
         var banner = new RaHeader("Resumen de la descarga masiva", nothingSaved ? headline + " " + "No se guardó ningún medio." : headline, 68, 48, logo: false);
         banner.Icon.Image = RaUi.ChartIcon();
-        var counts = new Label { Text = counters.Replace(" · ", "   ·   "), AutoSize = false, Location = new Point(20, 80), Size = new Size(width - 40, nothingSaved ? 60 : 44) };
+        var counts = new Label { Text = counters.Replace(" · ", "   ·   "), AutoSize = false, Location = new Point(20, 80), Size = new Size(width - 40, nothingSaved ? 60 : 24) };
         var ok = new Button { Text = "Cerrar", DialogResult = DialogResult.OK, MinimumSize = new Size(100, 32), AutoSize = true };
         RaUi.StyleButton(ok, true);
         AcceptButton = ok; CancelButton = ok;
@@ -70,10 +79,19 @@ internal sealed class BulkResultDialog : LocalizedForm
             };
             var frame = new Panel { Dock = DockStyle.Fill, Padding = new Padding(1), BackColor = RaUi.Border };
             frame.Controls.Add(grid);
-            var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20, 132, 20, 8) };
+            var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20, 110, 20, 8) };
             body.Controls.Add(frame);
             Controls.AddRange([body, counts, note, footer, banner]);
             counts.BringToFront();
+            // La línea de contadores ocupa lo que mide (una línea o dos según el ancho) y la tabla empieza justo debajo, sin hueco.
+            void FitCounts()
+            {
+                int textHeight = TextRenderer.MeasureText(counts.Text, counts.Font, new Size(Math.Max(100, counts.Width), 0), TextFormatFlags.WordBreak).Height;
+                counts.Height = textHeight + 8;
+                body.Padding = new Padding(20, 80 + counts.Height + 4, 20, 8);
+            }
+            FitCounts();
+            Resize += (_, _) => FitCounts();
         }
     }
 
@@ -81,11 +99,9 @@ internal sealed class BulkResultDialog : LocalizedForm
     {
         long delta = after - before;
         int index = grid.Rows.Add(name, files.ToString("N0"), replaced.ToString("N0"),
-            before > 0 ? ScreenScraperDialog.FormatBytes(before) : "—", ScreenScraperDialog.FormatBytes(after), FormatDelta(delta), "");
+            before > 0 ? ScreenScraperDialog.FormatBytes(before) : "—", ScreenScraperDialog.FormatBytes(after), FormatDelta(delta));
         var row = grid.Rows[index];
         row.Cells[5].Style.ForeColor = delta < 0 ? Color.DarkGreen : delta > 0 ? Color.DarkOrange : SystemColors.ControlText;
-        row.Cells[6].Value = delta < 0 ? "ahorro" : delta > 0 ? "aumento" : "";
-        row.Cells[6].Style.ForeColor = row.Cells[5].Style.ForeColor;
         if (bold) row.DefaultCellStyle.Font = new Font(Font, FontStyle.Bold);
     }
 

@@ -32,11 +32,32 @@ internal sealed record DatImport(string Id, string Name, string Kind, string[] F
 // Qué orígenes de DAT se usan al identificar.
 internal sealed class DatSettings
 {
+    // Solo para leer ajustes antiguos: antes se activaban clases enteras. Ahora se desactiva cada DAT por separado (DisabledSources).
     public List<string> Kinds { get; set; } = ["no-intro", "redump", "tosec", "mame", "fbneo", "other"];
+    // Claves (DatSource.Key) de los DAT que el usuario ha desactivado; el resto se usa.
+    public List<string> DisabledSources { get; set; } = [];
+    public bool Migrated { get; set; }
+
+    public bool IsEnabled(DatSource source) => !DisabledSources.Contains(source.Key);
+
+    public void SetEnabled(DatSource source, bool enabled)
+    {
+        if (enabled) DisabledSources.Remove(source.Key);
+        else if (!DisabledSources.Contains(source.Key)) DisabledSources.Add(source.Key);
+    }
 
     public static DatSettings Load()
     {
-        return AppSettings.Get("Dats", new DatSettings());
+        var settings = AppSettings.Get("Dats", new DatSettings());
+        if (!settings.Migrated)
+        {
+            // Las clases que estaban desmarcadas pasan a tener todos sus DAT desactivados.
+            foreach (var source in RomDatabase.Sources.Where(s => !settings.Kinds.Contains(s.Kind))) settings.SetEnabled(source, false);
+            settings.Kinds = ["no-intro", "redump", "tosec", "mame", "fbneo", "other"];
+            settings.Migrated = true;
+            settings.Save();
+        }
+        return settings;
     }
 
     public void Save()
@@ -105,7 +126,7 @@ internal static class RomDatabase
 
     // Todas las bases de datos conocidas (las de libretro más las importadas) y las que se usan según la configuración.
     public static IReadOnlyList<DatSource> Sources => [.. BuiltIn, .. LoadImports().Select(ToSource)];
-    public static IReadOnlyList<DatSource> Allowed(DatSettings settings) => Sources.Where(s => settings.Kinds.Contains(s.Kind)).ToList();
+    public static IReadOnlyList<DatSource> Allowed(DatSettings settings) => Sources.Where(settings.IsEnabled).ToList();
     public static int InstalledCount() => Allowed(DatSettings.Load()).Count(IsInstalled);
 
     // ---- DAT importados por el usuario (clrmamepro, MAME, FBNeo…)
@@ -240,7 +261,62 @@ internal static class RomDatabase
     private static readonly object Gate = new();
     private static Task<DatIndex>? indexTask;
 
-    public static void Invalidate() { lock (Gate) indexTask = null; }
+    public static void Invalidate() { lock (Gate) { indexTask = null; cloneParents = null; } }
+
+    // ---- Clones de arcade: juego → su juego padre, leído de los DAT por nombre (MAME, FBNeo…) que se usan. Sirve para consultar solo al padre.
+    private static Dictionary<string, string>? cloneParents;
+
+    public static Dictionary<string, string> CloneParents()
+    {
+        lock (Gate)
+        {
+            if (cloneParents is not null) return cloneParents;
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var source in Allowed(DatSettings.Load()).Where(s => s.NameMatch && IsInstalled(s)))
+            {
+                try { ReadClones(source, map); }
+                catch (Exception) { /* un DAT dañado no impide usar los demás */ }
+            }
+            return cloneParents = map;
+        }
+    }
+
+    private static void ReadClones(DatSource source, Dictionary<string, string> map)
+    {
+        string path = PathOf(source);
+        bool xml;
+        using (var peek = new StreamReader(path))
+        {
+            int c;
+            while ((c = peek.Read()) >= 0 && char.IsWhiteSpace((char)c)) { }
+            xml = c == '<' || c == 0xFEFF && peek.Peek() == '<';
+        }
+        if (xml)
+        {
+            var settings = new System.Xml.XmlReaderSettings { DtdProcessing = System.Xml.DtdProcessing.Ignore, XmlResolver = null, IgnoreComments = true };
+            using var reader = System.Xml.XmlReader.Create(path, settings);
+            while (reader.Read())
+            {
+                if (reader.NodeType != System.Xml.XmlNodeType.Element || reader.LocalName is not ("game" or "machine")) continue;
+                string name = reader.GetAttribute("name") ?? "", parent = reader.GetAttribute("cloneof") ?? "";
+                if (name.Length > 0 && parent.Length > 0) map.TryAdd(name, parent);
+            }
+            return;
+        }
+        string game = ""; bool inGame = false;
+        foreach (var raw in File.ReadLines(path))
+        {
+            string line = raw.Trim();
+            if (line.StartsWith("game (", StringComparison.Ordinal) || line.StartsWith("machine (", StringComparison.Ordinal)) { inGame = true; game = ""; continue; }
+            if (!inGame) continue;
+            if (game.Length == 0 && line.StartsWith("name ", StringComparison.Ordinal)) { game = line[5..].Trim('"', ' '); continue; }
+            if (game.Length > 0 && line.StartsWith("cloneof ", StringComparison.Ordinal))
+            {
+                string parent = line[8..].Trim('"', ' ');
+                if (parent.Length > 0) map.TryAdd(game, parent);
+            }
+        }
+    }
 
     public static Task<DatIndex> GetIndexAsync()
     {

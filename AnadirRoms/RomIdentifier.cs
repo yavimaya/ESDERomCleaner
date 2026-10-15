@@ -18,6 +18,8 @@ internal sealed class RomIdentity
     public string? Origin { get; set; }
     // Extensión de los archivos de dentro cuando es un zip/7z/rar.
     public string? InnerExtension { get; init; }
+    // Archivo de la colección que esta ROM sustituirá al añadirla (elegido a mano desde la pestaña de duplicadas); el anterior se borra, sin copia de seguridad.
+    public string? ReplaceExisting { get; set; }
 }
 
 internal static class RomIdentifier
@@ -55,6 +57,51 @@ internal static class RomIdentifier
             if (File.Exists(full)) tracks.Add(full);
         }
         return tracks;
+    }
+
+    // Lista de lo que hay dentro de un archivo, con su CRC32 y tamaño (zip/7z: sale de su directorio; ROM suelta de hasta 64 MB: ella misma). null si no se puede.
+    public static List<(string Name, uint Crc, long Size)>? ContentEntries(string path, CancellationToken token)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+            var list = new List<(string, uint, long)>();
+            if (ext == ".zip")
+            {
+                using var zip = ZipFile.OpenRead(path);
+                foreach (var e in zip.Entries.Where(e => e.Length > 0 && !GamelistGenerator.IsNotRom(e.Name))) list.Add((e.FullName, e.Crc32, e.Length));
+            }
+            else if (ext == ".7z")
+            {
+                using var archive = ArchiveFactory.OpenArchive(path);
+                foreach (var e in archive.Entries.Where(e => !e.IsDirectory && e.Size > 0 && !GamelistGenerator.IsNotRom(e.Key ?? ""))) list.Add((e.Key ?? "", (uint)e.Crc, e.Size));
+            }
+            else
+            {
+                if (new FileInfo(path).Length > (64L << 20)) return null;
+                var (crc, size) = HashFile(path, token);
+                list.Add((System.IO.Path.GetFileName(path), crc, size));
+            }
+            return list;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return null; }
+    }
+
+    // Huella del contenido de un archivo para compararlo con otro: el conjunto de (CRC32, tamaño) de lo que lleva dentro si es un zip/7z (sale del directorio del
+    // archivo, sin descomprimir) o, si es una ROM suelta de hasta 64 MB, el de ella misma. null si no se puede (o es muy grande).
+    public static HashSet<(uint Crc, long Size)>? ContentKeys(string path, CancellationToken token)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+            if (ext is not (".zip" or ".7z") && new FileInfo(path).Length > (64L << 20)) return null;
+            return Keys(path, token, out _).ToHashSet();
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return null; }
     }
 
     // Claves (CRC32, tamaño) del contenido de un archivo: lo que lleva dentro si es un zip/7z, las pistas si es un .cue, o él mismo.
@@ -180,7 +227,8 @@ internal static class RomIdentifier
                 // Arcade (MAME, FBNeo): el nombre del archivo es el nombre del juego (sus ROMs internas se comparten entre juegos y el hash no basta).
                 // No se usa si dentro hay una ROM de consola reconocible (.nes, .fds…): un juego de consola puede llamarse como uno de arcade.
                 string? innerExt = InnerExtension(path);
-                bool consoleRom = innerExt is not null && !GenericExtensions.Contains(innerExt)
+                // Un set de arcade lleva varios chips (.u1, .p1, .a1…) y alguno coincide con la extensión de un sistema de consola: solo vale el aviso si hay una única ROM.
+                bool consoleRom = keys.Count <= 1 && innerExt is not null && !GenericExtensions.Contains(innerExt)
                     && EsDeSystemExtensions.BySystem.Any(p => !ArcadeFolders.Contains(p.Key) && p.Value.Contains(innerExt));
                 string stem = System.IO.Path.GetFileNameWithoutExtension(path);
                 if (!consoleRom && index.Names.TryGetValue(stem, out var named) && named.Count > 0)
@@ -222,6 +270,7 @@ internal static class RomIdentifier
         // En un archivo comprimido la extensión que vale es la del archivo de dentro, no la del zip/7z.
         string? inner = InnerExtension(path);
         string ext = inner ?? System.IO.Path.GetExtension(path).ToLowerInvariant();
+        if (inner is null && path.EndsWith(".p8.png", StringComparison.OrdinalIgnoreCase)) ext = ".p8"; // cartucho de PICO-8: solo puede ser de pico8, no de tic80
         var byExtension = EsDeSystemExtensions.BySystem
             .Where(p => p.Value.Contains(ext) && (inner is not null || ext is not (".zip" or ".7z")))
             .Select(p => p.Key).ToList();
@@ -238,7 +287,7 @@ internal static class RomIdentifier
     private static readonly HashSet<string> GenericExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".zip", ".7z", ".rar", ".bin", ".iso", ".img", ".chd", ".cue", ".gdi", ".m3u", ".cso", ".rom", ".dsk" };
 
-    private static readonly HashSet<string> ArcadeFolders = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> ArcadeFolders = new(StringComparer.OrdinalIgnoreCase)
     {
         "mame", "mame-advmame", "arcade", "fba", "fbneo", "cps", "cps1", "cps2", "cps3", "neogeo", "naomi", "naomi2", "naomigd", "atomiswave",
         "model2", "model3", "stv", "triforce", "pcarcade", "consolearcade", "type-x", "lcdgames", "daphne", "mess", "gameandwatch"

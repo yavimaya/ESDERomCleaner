@@ -75,57 +75,17 @@ internal sealed class MediaSaveConfirmDialog : LocalizedForm
 // Aviso con un único botón, sin icono: no suena nada al mostrarse (los MessageBox con icono reproducen un sonido del sistema).
 internal static class QuietMessage
 {
-    // Pregunta con dos botones, sin icono ni sonido. Devuelve true si se pulsa el botón de aceptar.
+    // Pregunta con dos botones, sin icono de sistema ni sonido, con el formato del resto de formularios (cabecera oscura con el título).
+    // Devuelve true si se pulsa el botón de aceptar.
     public static bool Confirm(IWin32Window? owner, string title, string text, string okText = "Aceptar", string cancelText = "Cancelar")
     {
-        title = Loc.T(title); text = Loc.T(text); okText = Loc.T(okText); cancelText = Loc.T(cancelText);
-        using var dialog = new Form
-        {
-            Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
-            ShowInTaskbar = false, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(700, 160),
-            Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont
-        };
-        var label = new Label { Dock = DockStyle.Fill, Text = text, AutoSize = false, Padding = new Padding(14, 12, 14, 0) };
-        var ok = new Button { Text = okText, DialogResult = DialogResult.OK, MinimumSize = new Size(110, 28), AutoSize = true };
-        var cancel = new Button { Text = cancelText, DialogResult = DialogResult.Cancel, MinimumSize = new Size(90, 28), AutoSize = true };
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 44, Padding = new Padding(8, 6, 8, 4) };
-        buttons.Controls.Add(cancel);
-        buttons.Controls.Add(ok);
-        dialog.Controls.Add(label);
-        dialog.Controls.Add(buttons);
-        dialog.AcceptButton = ok;
-        dialog.CancelButton = cancel;
-        // Ancho ajustado a la línea más larga (hasta 700) y alto al texto resultante.
-        int width = Math.Clamp(TextRenderer.MeasureText(text, dialog.Font, new Size(672, 0), TextFormatFlags.WordBreak).Width + 28 + 8, 400, 700);
-        var size = TextRenderer.MeasureText(text, dialog.Font, new Size(width - 28, 0), TextFormatFlags.WordBreak);
-        dialog.ClientSize = new Size(width, Math.Clamp(size.Height + 12 + 44 + 20, 120, 640));
-        CollectionTitle.Attach(dialog);
+        using var dialog = new QuietBox(Loc.T(title), Loc.T(text), Loc.T(okText), Loc.T(cancelText));
         return dialog.ShowDialog(owner) == DialogResult.OK;
     }
 
     public static void Show(IWin32Window? owner, string title, string text)
     {
-        title = Loc.T(title); text = Loc.T(text);
-        using var dialog = new Form
-        {
-            Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
-            ShowInTaskbar = false, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(520, 100),
-            Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont
-        };
-        var label = new Label { Dock = DockStyle.Fill, Text = text, AutoSize = false, Padding = new Padding(12, 12, 12, 0) };
-        var ok = new Button { Text = Loc.T("Aceptar"), DialogResult = DialogResult.OK, MinimumSize = new Size(90, 28), AutoSize = true };
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 40, Padding = new Padding(8, 4, 8, 4) };
-        buttons.Controls.Add(ok);
-        dialog.Controls.Add(label);
-        dialog.Controls.Add(buttons);
-        dialog.AcceptButton = ok;
-        dialog.CancelButton = ok;
-
-        // Alto ajustado al texto.
-        int width = Math.Clamp(TextRenderer.MeasureText(text, dialog.Font, new Size(496, 0), TextFormatFlags.WordBreak).Width + 24 + 8, 320, 520);
-        var size = TextRenderer.MeasureText(text, dialog.Font, new Size(width - 24, 0), TextFormatFlags.WordBreak);
-        dialog.ClientSize = new Size(width, Math.Clamp(size.Height + 12 + 40 + 16, 100, 520));
-        CollectionTitle.Attach(dialog);
+        using var dialog = new QuietBox(Loc.T(title), Loc.T(text), Loc.T("Aceptar"), null);
         dialog.ShowDialog(owner);
     }
 
@@ -162,5 +122,46 @@ internal static class QuietMessage
         if (dialog.ShowDialog(owner) != DialogResult.OK) return null;
         string text = box.Text.Trim();
         return text.Length == 0 ? null : text;
+    }
+}
+
+// Cuadro de aviso o pregunta con el mismo aspecto que los formularios nuevos: cabecera oscura con el título, el texto en un cuerpo claro y los botones
+// en un pie. Sin icono de sistema, así que no suena nada. Con cancelText = null solo lleva el botón de aceptar.
+internal sealed class QuietBox : Form
+{
+    public QuietBox(string title, string text, string okText, string? cancelText)
+    {
+        Text = title;
+        FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
+        StartPosition = FormStartPosition.CenterParent;
+        Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
+        BackColor = RaUi.Body;
+
+        var banner = new RaHeader(title, "", 52, 32, logo: false);
+        banner.Icon.Image = RaUi.InfoIcon(2);
+        banner.Title.Tag = "noloc";
+        var message = new Label { Dock = DockStyle.Fill, AutoSize = false, Text = text, ForeColor = RaUi.Dark, Padding = new Padding(22, 18, 22, 8) };
+
+        var footer = RaUi.Footer(52);
+        var ok = RaUi.MakeButton(okText, cancelText is not null, Math.Max(100, TextRenderer.MeasureText(okText, Font).Width + 36));
+        ok.DialogResult = DialogResult.OK;
+        Button? cancel = null;
+        if (cancelText is not null)
+        {
+            cancel = RaUi.MakeButton(cancelText, false, Math.Max(90, TextRenderer.MeasureText(cancelText, Font).Width + 36));
+            cancel.DialogResult = DialogResult.Cancel;
+        }
+
+        // Ancho ajustado al texto (de 420 a 700) y alto al resultado.
+        int width = Math.Clamp(TextRenderer.MeasureText(text, Font, new Size(656, 0), TextFormatFlags.WordBreak).Width + 44 + 8, 420, 700);
+        var size = TextRenderer.MeasureText(text, Font, new Size(width - 44, 0), TextFormatFlags.WordBreak);
+        ClientSize = new Size(width, Math.Clamp(52 + 18 + size.Height + 8 + 52, 150, 640));
+
+        ok.Location = new Point(width - 24 - ok.Width, 10);
+        footer.Controls.Add(ok);
+        if (cancel is not null) { cancel.Location = new Point(ok.Left - 10 - cancel.Width, 10); footer.Controls.Add(cancel); }
+        Controls.Add(message); Controls.Add(footer); Controls.Add(banner);
+        AcceptButton = ok; CancelButton = (IButtonControl?)cancel ?? ok;
+        CollectionTitle.Attach(this);
     }
 }

@@ -15,6 +15,10 @@ internal sealed class StorageSettings
 {
     public StorageFormat Format { get; set; } = StorageFormat.Keep;
     public StorageLevel Level { get; set; } = StorageLevel.Normal;
+    // Al añadir ROMs de arcade, omitir los clones cuyo juego padre ya esté (en el lote o en la colección).
+    public bool SkipClones { get; set; }
+    // Una duplicada cuyo contenido resulta distinto del existente se pasa sola a identificadas (reemplazará al existente al añadirla).
+    public bool AddDifferentDuplicates { get; set; }
 
     public static StorageSettings Load()
     {
@@ -193,6 +197,27 @@ internal static class RomStorage
 
     // Guarda la ROM en la carpeta del sistema con el formato indicado. Si «move», borra los originales al terminar con éxito.
     // Devuelve los archivos que se han creado en la carpeta de destino (para saber después cuáles son las ROMs recién añadidas).
+    // Sustitución de un archivo de la colección por la ROM nueva, sin copia de seguridad. Antes de guardar la nueva, el archivo existente se aparta con otro nombre
+    // en su misma carpeta (HoldExisting); si el guardado sale bien se borra (ReleaseHeld) y si falla se devuelve a su sitio (RestoreHeld), así no se pierde nada
+    // por un error a medias. Solo se toca un archivo dentro de la carpeta del sistema y sin enlaces simbólicos en el camino.
+    public static string? HoldExisting(string root, string folder, string existing)
+    {
+        string systemDir = Path.GetFullPath(Path.Combine(root, "Roms", folder));
+        if (!File.Exists(existing)) return null;
+        if (!PathRules.Inside(existing, systemDir)) throw new InvalidOperationException("El archivo que se iba a sustituir no está en la carpeta del sistema.");
+        if (DeletionService.HasReparsePointInPath(existing, systemDir)) throw new InvalidOperationException("El archivo que se iba a sustituir está tras un enlace simbólico o unión.");
+        string held = existing + ".replacing_" + Guid.NewGuid().ToString("N")[..8];
+        File.Move(existing, held);
+        return held;
+    }
+
+    public static void ReleaseHeld(string held) { try { File.Delete(held); } catch { } }
+
+    public static void RestoreHeld(string held, string original)
+    {
+        try { if (!File.Exists(original) && File.Exists(held)) File.Move(held, original); } catch { }
+    }
+
     public static List<string> Store(RomIdentity id, string destinationDir, StorageFormat format, StorageLevel level, bool move, CancellationToken token)
     {
         Directory.CreateDirectory(destinationDir);

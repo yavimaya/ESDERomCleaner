@@ -20,9 +20,32 @@ internal sealed class CpuUsageStrip : StatusStrip
     };
     private readonly bool withQuota;
 
-    public CpuUsageStrip(bool withQuota = false)
+    // Cuentas conectadas (formulario principal): usuario de ScreenScraper (o invitado) y de RetroAchievements.
+    private readonly ToolStripStatusLabel ssAccount = new()
     {
-        this.withQuota = withQuota;
+        AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, ToolTipText = "Cuenta de ScreenScraper con la que se consulta (sin usuario es la cuenta anónima de invitado).",
+        BorderSides = ToolStripStatusLabelBorderSides.Right, BorderStyle = Border3DStyle.Etched, Tag = "noloc"
+    };
+    private readonly ToolStripStatusLabel raAccount = new()
+    {
+        AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, ToolTipText = "Cuenta de RetroAchievements conectada.",
+        BorderSides = ToolStripStatusLabelBorderSides.Right, BorderStyle = Border3DStyle.Etched, Tag = "noloc"
+    };
+    private readonly bool withAccounts;
+
+    // Contador de tiempo a la izquierda del todo, para operaciones largas; vacío = oculto.
+    private readonly ToolStripStatusLabel timing = new()
+    {
+        AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Visible = false, Tag = "noloc",
+        BorderSides = ToolStripStatusLabelBorderSides.Right, BorderStyle = Border3DStyle.Etched
+    };
+
+    [System.ComponentModel.Browsable(false), System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public string TimeText { set { timing.Text = value; timing.Visible = value.Length > 0; } }
+
+    public CpuUsageStrip(bool withQuota = false, bool withAccounts = false, bool withTimer = false)
+    {
+        this.withQuota = withQuota; this.withAccounts = withAccounts;
         Dock = DockStyle.Bottom;
         AutoSize = false;
         SizingGrip = false;
@@ -35,6 +58,24 @@ internal sealed class CpuUsageStrip : StatusStrip
             UpdateQuota();
             ScreenScraperQuota.Changed += OnQuotaChanged;
         }
+        if (withAccounts)
+        {
+            // Logos oficiales (incrustados) a 16 px junto al nombre.
+            ssAccount.Image = Logo("screenscraper"); raAccount.Image = Logo("retroachievements");
+            ssAccount.ImageAlign = raAccount.ImageAlign = ContentAlignment.MiddleLeft;
+            ssAccount.TextImageRelation = raAccount.TextImageRelation = TextImageRelation.ImageBeforeText;
+            Items.Add(ssAccount); Items.Add(raAccount);
+            if (!withQuota) Items.Add(new ToolStripStatusLabel { Spring = true });
+            UpdateAccounts();
+            ScreenScraperCredentialStore.Changed += OnAccountsChanged;
+            RaCredentialStore.Changed += OnAccountsChanged;
+        }
+        if (withTimer && !withQuota && !withAccounts) Items.Add(new ToolStripStatusLabel { Spring = true });
+        if (withTimer) Items.Insert(0, timing); // el tiempo, a la izquierda del todo; la CPU, a la derecha del todo
+        // La CPU, pegada al final de la barra (sin el hueco que el StatusStrip reserva a la derecha para el agarrador) y con el separador solo por delante.
+        if (!Items.Cast<ToolStripItem>().Any(i => i is ToolStripStatusLabel { Spring: true })) Items.Add(new ToolStripStatusLabel { Spring = true });
+        Padding = new Padding(1, 0, 0, 0);
+        cpu.BorderSides = ToolStripStatusLabelBorderSides.Left;
         Items.Add(cpu);
         cpu.Width = TextRenderer.MeasureText("CPU: 100 %", Font).Width + 18;
         timer.Tick += (_, _) => Update();
@@ -71,11 +112,43 @@ internal sealed class CpuUsageStrip : StatusStrip
         try { BeginInvoke(UpdateQuota); } catch (InvalidOperationException) { }
     }
 
+    // Logo incrustado (Assets\Logos) reducido a 16 px; null si no se puede leer.
+    private static Bitmap? Logo(string name)
+    {
+        try
+        {
+            using var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream($"Logos.{name}.png");
+            if (stream is null) return null;
+            using var source = new Bitmap(stream);
+            var icon = new Bitmap(16, 16);
+            using var g = Graphics.FromImage(icon);
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.DrawImage(source, new Rectangle(0, 0, 16, 16));
+            return icon;
+        }
+        catch { return null; }
+    }
+
+    private void OnAccountsChanged()
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        try { BeginInvoke(UpdateAccounts); } catch (InvalidOperationException) { }
+    }
+
+    private void UpdateAccounts()
+    {
+        string ss = ScreenScraperCredentialStore.Load().UserId;
+        ssAccount.Text = string.IsNullOrWhiteSpace(ss) ? Loc.T("Invitado") : ss;
+        string ra = RaCredentialStore.Load().UserName;
+        raAccount.Text = string.IsNullOrWhiteSpace(ra) ? Loc.T("Sin conectar") : ra;
+    }
+
     private void UpdateQuota() => quota.Text = Loc.T(ScreenScraperQuota.TodayText());
 
     protected override void Dispose(bool disposing)
     {
         if (disposing && withQuota) ScreenScraperQuota.Changed -= OnQuotaChanged;
+        if (disposing && withAccounts) { ScreenScraperCredentialStore.Changed -= OnAccountsChanged; RaCredentialStore.Changed -= OnAccountsChanged; }
         if (disposing) timer.Dispose();
         base.Dispose(disposing);
     }

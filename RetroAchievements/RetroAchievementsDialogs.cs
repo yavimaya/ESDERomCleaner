@@ -109,7 +109,9 @@ internal sealed class RaScanDialog : LocalizedForm
     private readonly ProgressBar bar = new() { Minimum = 0, Maximum = 100 };
     private readonly Button start = RaUi.MakeButton("Analizar", true);
     private readonly Button close = RaUi.MakeButton("Cerrar", false);
-    private readonly Label[] tileValue = new Label[3];
+    private readonly Label[] tileValue = new Label[4];
+    private readonly Label[] tileCaption = new Label[4];
+    private static readonly Color PartialColor = Color.FromArgb(190, 90, 0);
     private readonly Font rowBold;
     private CancellationTokenSource? cts;
     public bool Changed { get; private set; }
@@ -137,33 +139,43 @@ internal sealed class RaScanDialog : LocalizedForm
         listCard.Controls.Add(systemList);
         foreach (var group in rows.Where(r => r.Status == RomStatus.Ok && RaConsoles.Of(r.System) is not null).GroupBy(r => r.System, StringComparer.OrdinalIgnoreCase).OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
         {
-            int i = systemList.Items.Add(new SystemItem(group.Key, group.Count(), index.SystemChecked(group.Key)));
+            int i = systemList.Items.Add(new SystemItem(group.Key, group.Count(), index.SystemChecked(group.Key)) { Before = CountWithAchievements(group.Key) });
             if (preselectSystem is null || group.Key.Equals(preselectSystem, StringComparison.OrdinalIgnoreCase)) systemList.SetItemChecked(i, true);
         }
-        var all = RaUi.MakeButton("Todos", false, 84); all.Location = new Point(24, 394); all.Height = 28;
-        var none = RaUi.MakeButton("Ninguno", false, 84); none.Location = new Point(114, 394); none.Height = 28;
-        all.Click += (_, _) => { for (int i = 0; i < systemList.Items.Count; i++) systemList.SetItemChecked(i, true); };
-        none.Click += (_, _) => { for (int i = 0; i < systemList.Items.Count; i++) systemList.SetItemChecked(i, false); };
+        // Un solo botón que alterna: si están todos marcados los desmarca; si no, los marca todos.
+        var all = RaUi.MakeButton("Todos", false, 84); all.Location = new Point(24, 394); all.Height = 28; all.Tag = "noloc";
+        bool AllChecked() => systemList.Items.Count > 0 && systemList.CheckedItems.Count() == systemList.Items.Count;
+        void RefreshToggle() => all.Text = Loc.T(AllChecked() ? "Ninguno" : "Todos");
+        all.Click += (_, _) =>
+        {
+            bool value = !AllChecked();
+            for (int i = 0; i < systemList.Items.Count; i++) systemList.SetItemChecked(i, value);
+        };
+        systemList.CheckChanged += (_, _) => RefreshToggle();
+        RefreshToggle();
 
         // Resultado del último análisis, en tres tarjetas.
-        (string Caption, Color Accent)[] tiles = [("Por hash", RaUi.Green), ("Por nombre", Color.FromArgb(190, 130, 10)), ("Sin logros", RaUi.Muted)];
+        (string Caption, Color Accent)[] tiles = [("Con logros", RaUi.Dark), ("Por hash", RaUi.Green), ("Por nombre", Color.FromArgb(190, 130, 10)), ("Sin logros", RaUi.Muted)];
         for (int t = 0; t < tiles.Length; t++)
         {
-            var tile = RaUi.Card(new Rectangle(24 + t * 188, 436, 176, 62));
-            tileValue[t] = new Label { Location = new Point(10, 6), Size = new Size(156, 30), Text = "—", Font = new Font(Font.FontFamily, 16F, FontStyle.Bold), ForeColor = tiles[t].Accent, Tag = "noloc" };
+            var tile = RaUi.Card(new Rectangle(24 + t * 141, 436, 129, 62));
+            tileValue[t] = new Label { Location = new Point(10, 6), Size = new Size(109, 30), TextAlign = ContentAlignment.MiddleCenter, Text = "—", Font = new Font(Font.FontFamily, 16F, FontStyle.Bold), ForeColor = tiles[t].Accent, Tag = "noloc" };
             tile.Controls.Add(tileValue[t]);
-            tile.Controls.Add(new Label { Location = new Point(10, 38), Size = new Size(156, 20), Text = tiles[t].Caption, ForeColor = RaUi.Muted });
+            tile.Controls.Add(tileCaption[t] = new Label { Location = new Point(10, 38), Size = new Size(109, 20), TextAlign = ContentAlignment.MiddleCenter, Text = tiles[t].Caption, ForeColor = RaUi.Muted });
             Controls.Add(tile);
         }
+        RefreshBaseline(null);
+        ShowTiles(0, 0);
         statusLabel.Location = new Point(24, 506); statusLabel.Size = new Size(552, 22);
         bar.Location = new Point(24, 532); bar.Size = new Size(552, 10);
 
         var footer = RaUi.Footer();
         start.Location = new Point(366, 10); close.Location = new Point(476, 10);
         footer.Controls.AddRange([start, close]);
-        Controls.AddRange([banner, intro, listCard, all, none, statusLabel, bar, footer, new CpuUsageStrip()]); // la barra de CPU va debajo del todo, como en la descarga masiva
+        Controls.AddRange([banner, intro, listCard, all, statusLabel, bar, footer, new CpuUsageStrip()]); // la barra de CPU va debajo del todo, como en la descarga masiva
         CancelButton = close;
-        start.Click += async (_, _) => await RunAsync();
+        start.Click += async (_, _) => { if (cts is not null) { if (CancelConfirm.Ask(this, "el cotejo de ROMs con RetroAchievements")) { cts?.Cancel(); start.Enabled = false; statusLabel.Text = "Cancelando…"; } } else await RunAsync(); };
+        FormClosing += (_, e) => { if (cts is null) return; if (CancelConfirm.Ask(this, "el cotejo de ROMs con RetroAchievements")) cts.Cancel(); else e.Cancel = true; }; // durante el análisis el botón es «Detener»
         close.Click += (_, _) => { if (cts is not null) { cts.Cancel(); close.Enabled = false; statusLabel.Text = "Cancelando…"; } else Close(); };
         if (systemList.Items.Count == 0) { statusLabel.Text = "Ningún sistema de la colección tiene consola en RetroAchievements."; start.Enabled = false; }
     }
@@ -179,47 +191,99 @@ internal sealed class RaScanDialog : LocalizedForm
         CheckBoxRenderer.DrawCheckBox(g, new Point(r.X + 12, r.Y + (r.Height - 13) / 2), on ? System.Windows.Forms.VisualStyles.CheckBoxState.CheckedNormal : System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedNormal);
         g.DrawImage(PixelSystemIcons.Get(item.System, 24), new Rectangle(r.X + 38, r.Y + 5, 24, 24));
         const TextFormatFlags flags = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
-        TextRenderer.DrawText(g, item.System, rowBold, new Rectangle(r.X + 72, r.Y, 230, r.Height), RaUi.Dark, flags);
-        TextRenderer.DrawText(g, Loc.T("{0} ROMs", item.Roms.ToString("N0")), Font, new Rectangle(r.X + 300, r.Y, 110, r.Height), RaUi.Muted, flags | TextFormatFlags.Right);
-        if (item.Done) TextRenderer.DrawText(g, "✓ " + Loc.T("analizado"), Font, new Rectangle(r.X + 420, r.Y, 120, r.Height), RaUi.Green, flags);
+        TextRenderer.DrawText(g, item.System, rowBold, new Rectangle(r.X + 72, r.Y, 130, r.Height), RaUi.Dark, flags);
+        TextRenderer.DrawText(g, Loc.T("{0} ROMs", item.Roms.ToString("N0")), Font, new Rectangle(r.X + 200, r.Y, 90, r.Height), RaUi.Muted, flags | TextFormatFlags.Right);
+        // Con logros: el valor actual (aunque sea 0) y, tras analizar, «antes → después» (en verde si ha subido).
+        string ra; Color raColor;
+        if (item.After is int after)
+        {
+            ra = Loc.T("{0} → {1} con logros", item.Before.ToString("N0"), after.ToString("N0"));
+            raColor = after > item.Before ? RaUi.Green : RaUi.Dark;
+        }
+        else { ra = Loc.T("{0} con logros", item.Before.ToString("N0")); raColor = item.Before > 0 ? RaUi.Dark : RaUi.Muted; }
+        TextRenderer.DrawText(g, ra, rowBold, new Rectangle(r.X + 300, r.Y, 150, r.Height), raColor, flags);
+        if (item.Done) TextRenderer.DrawText(g, "✓ " + Loc.T("analizado"), Font, new Rectangle(r.X + 455, r.Y, 90, r.Height), RaUi.Green, flags);
     }
 
-    private sealed record SystemItem(string System, int Roms, bool Done)
+    // Tras una detención temprana, las tarjetas y el estado se marcan en naranja como resultado parcial.
+    private void SetPartial(bool partial)
     {
+        statusLabel.ForeColor = partial ? PartialColor : RaUi.Muted;
+        for (int t = 0; t < tileCaption.Length; t++) { tileCaption[t].ForeColor = partial ? PartialColor : RaUi.Muted; tileCaption[t].Font = new Font(Font, partial ? FontStyle.Bold : FontStyle.Regular); }
+    }
+
+    // Totales de partida de las tarjetas: lo ya sabido del índice (sin contar los sistemas que se están reanalizando).
+    private int baseHash, baseName, baseTotal;
+
+    private void RefreshBaseline(ICollection<string>? scanning)
+    {
+        baseHash = baseName = 0;
+        baseTotal = systemList.Items.Cast<SystemItem>().Sum(i => i.Roms);
+        foreach (var r in rows)
+        {
+            if (r.Status != RomStatus.Ok || (scanning is not null && scanning.Contains(r.System, StringComparer.OrdinalIgnoreCase))) continue;
+            if (index.Match(r) is not { } m) continue;
+            if (m.By == "hash") baseHash++; else baseName++;
+        }
+    }
+
+    // «Con logros» y «Sin logros» (el resto) = lo ya conocido + lo que lleva encontrado el análisis en curso.
+    private void ShowTiles(int liveHash, int liveName)
+    {
+        int h = baseHash + liveHash, n = baseName + liveName;
+        tileValue[0].Text = (h + n).ToString("N0"); tileValue[1].Text = h.ToString("N0"); tileValue[2].Text = n.ToString("N0");
+        tileValue[3].Text = Math.Max(0, baseTotal - h - n).ToString("N0");
+    }
+
+    // ROMs del sistema que ya tienen logros en el índice (0 si no se ha analizado).
+    private int CountWithAchievements(string system) =>
+        rows.Count(r => r.Status == RomStatus.Ok && r.System.Equals(system, StringComparison.OrdinalIgnoreCase) && index.Match(r) is not null);
+
+    private sealed class SystemItem(string system, int roms, bool done)
+    {
+        public string System { get; } = system;
+        public int Roms { get; } = roms;
+        public bool Done { get; } = done;
+        public int Before { get; set; }
+        public int? After { get; set; }
         public override string ToString() => $"{System} — {Roms:N0} ROMs" + (Done ? " (ya analizado)" : "");
     }
 
     private async Task RunAsync()
     {
-        var chosen = systemList.CheckedItems.Cast<SystemItem>().Select(i => i.System).ToList();
+        var chosenItems = systemList.CheckedItems.Cast<SystemItem>().ToList();
+        var chosen = chosenItems.Select(i => i.System).ToList();
         if (chosen.Count == 0) { statusLabel.Text = "Marca al menos un sistema."; return; }
         var credentials = RaAccount.Ensure(this, trace);
         if (credentials is null) return;
         cts = new CancellationTokenSource();
-        start.Enabled = false; systemList.Enabled = false; close.Text = "Cancelar";
-        foreach (var value in tileValue) value.Text = "…";
+        start.Text = "Detener"; systemList.Enabled = false; close.Enabled = false;
+        RefreshBaseline(chosen); ShowTiles(0, 0); SetPartial(false);
+        foreach (var item in systemList.Items.Cast<SystemItem>()) { item.Before = CountWithAchievements(item.System); item.After = null; } // el «antes» de este análisis
+        systemList.Invalidate();
         trace.Add("retroachievements_scan_started", $"systems={string.Join(",", chosen)}");
         try
         {
             var report = new Progress<string>(s => statusLabel.Text = s);
             var percent = new Progress<int>(p => bar.Value = Math.Clamp(p, 0, 100));
             // Las tarjetas se van actualizando con lo que se encuentra.
-            var live = new Progress<(int ByHash, int ByName, int None)>(c => { tileValue[0].Text = c.ByHash.ToString("N0"); tileValue[1].Text = c.ByName.ToString("N0"); tileValue[2].Text = c.None.ToString("N0"); });
+            var live = new Progress<(int ByHash, int ByName, int None)>(c => { ShowTiles(c.ByHash, c.ByName); });
             RaScanner.Log = s => trace.Add("retroachievements_debug", s);
             var result = await RaScanner.RunAsync(rows, chosen, credentials, index, report, percent, cts.Token, live);
             Changed = true;
-            tileValue[0].Text = result.ByHash.ToString("N0"); tileValue[1].Text = result.ByName.ToString("N0"); tileValue[2].Text = result.WithoutAchievements.ToString("N0");
+            foreach (var item in chosenItems) item.After = CountWithAchievements(item.System);
+            ShowTiles(result.ByHash, result.ByName);
             statusLabel.Text = $"Hecho: {result.Roms:N0} ROMs revisadas en {result.Systems} sistema(s)." +
                 (result.Skipped > 0 ? $" {result.Skipped:N0} no se pudieron cotejar por hash ni por nombre." : "");
             trace.Add("retroachievements_scan_finished", $"systems={result.Systems}; roms={result.Roms}; by_hash={result.ByHash}; by_name={result.ByName}; none={result.WithoutAchievements}; not_hashable={result.Skipped}");
         }
-        catch (OperationCanceledException) { Changed = true; statusLabel.Text = "Cancelado (lo ya cotejado se conserva)."; index.Save(); foreach (var value in tileValue) value.Text = "—"; }
+        catch (OperationCanceledException) { Changed = true; statusLabel.Text = "⚠ Detenido antes de terminar: los números son parciales (lo ya cotejado se conserva)."; SetPartial(true); index.Save(); RefreshBaseline(null); ShowTiles(0, 0); foreach (var item in chosenItems) item.After = CountWithAchievements(item.System); }
         catch (RaException ex) { statusLabel.Text = ex.Message; trace.Add("retroachievements_scan_error", ex.Message); QuietMessage.Show(this, "Buscar logros", ex.Message); }
         catch (Exception ex) { statusLabel.Text = "Error: " + ex.Message; trace.Add("retroachievements_scan_error", ex.ToString()); QuietMessage.Show(this, "Buscar logros", "No se pudo completar: " + ex.Message); }
         finally
         {
             cts?.Dispose(); cts = null;
-            if (!IsDisposed) { start.Enabled = true; systemList.Enabled = true; close.Text = "Cerrar"; close.Enabled = true; bar.Value = 0; systemList.Invalidate(); }
+            if (!IsDisposed) { start.Text = "Analizar"; start.Enabled = true; systemList.Enabled = true; close.Text = "Cerrar"; close.Enabled = true; bar.Value = 0; systemList.Invalidate(); }
         }
     }
 }
@@ -525,7 +589,10 @@ internal sealed class CheckableList : ListBox
         if (index < 0 || index >= Items.Count) return;
         if (value) marked.Add(index); else marked.Remove(index);
         Invalidate();
+        CheckChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    public event EventHandler? CheckChanged;
 
     protected override void OnMouseDown(MouseEventArgs e)
     {

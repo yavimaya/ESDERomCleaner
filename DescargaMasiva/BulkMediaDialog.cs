@@ -24,7 +24,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
     private int plannedWork;
     private BulkMediaRunner? activeRunner;
     private string baseTitle = "";
-    private readonly System.Windows.Forms.Timer uiTimer = new() { Interval = 1000 };
+    private readonly System.Windows.Forms.Timer uiTimer = new() { Interval = 300 };
 
     private readonly DataGridView systemsGrid = new();
     private readonly GroupBox systemsGroupBox = new() { Text = "Sistemas a los que se aplica", Dock = DockStyle.Fill };
@@ -64,8 +64,8 @@ internal sealed class BulkMediaDialog : LocalizedForm
         double seconds = (DateTime.Now - digStartedAt).TotalSeconds;
         bannerIcon.Image = shovel.Frames[(int)(seconds * 7) % shovel.Frames.Length]; // unos 7 fotogramas por segundo, en bucle
     }
-    private readonly Label summaryLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
-    private readonly Label statusLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, AutoEllipsis = true };
+    private readonly Label summaryLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Tag = "noloc" };
+    private readonly Label statusLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, AutoEllipsis = true, Tag = "noloc" };
     private readonly ProgressBar progressBar = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 100 };
     private readonly DataGridView issuesGrid = new();
 
@@ -88,6 +88,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         this.defaultNormalizedVideo = defaultNormalizedVideo;
         credentials = ScreenScraperCredentialStore.Load();
         Text = baseTitle = "Descarga masiva de medios — ScreenScraper";
+        Redraw.EnableDoubleBuffer(summaryLabel); Redraw.EnableDoubleBuffer(statusLabel); // sin parpadeo al repintar el texto
         uiTimer.Tick += (_, _) => RefreshProgress();
         FormClosed += (_, _) => uiTimer.Dispose();
         Width = 1220; Height = 858; MinimumSize = new Size(1000, 788);
@@ -126,7 +127,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         foreach (var check in folderChecks.Values) check.CheckedChanged += (_, _) => SyncAllMediaCheck();
         SyncAllMediaCheck();
         startButton.Click += async (_, _) => await StartAsync();
-        cancelButton.Click += (_, _) => { cts?.Cancel(); statusLabel.Text = "Cancelando…"; };
+        cancelButton.Click += (_, _) => { if (!CancelConfirm.Ask(this, "la descarga masiva de medios")) return; cts?.Cancel(); SetStatus("Cancelando…"); };
         exportButton.Click += (_, _) => ExportIssues();
         debugButton.Click += (_, _) => OpenDebugWindow();
         viewSummaryButton.Click += (_, _) => ShowResult();
@@ -139,8 +140,9 @@ internal sealed class BulkMediaDialog : LocalizedForm
         FormClosing += (_, e) =>
         {
             if (!running) return;
+            if (!CancelConfirm.Ask(this, "la descarga masiva de medios")) { e.Cancel = true; return; }
             cts?.Cancel();
-            statusLabel.Text = "Terminando el elemento en curso; cierra de nuevo cuando acabe.";
+            SetStatus("Terminando el elemento en curso; cierra de nuevo cuando acabe.");
             e.Cancel = true;
         };
     }
@@ -423,12 +425,12 @@ internal sealed class BulkMediaDialog : LocalizedForm
     {
         if (!credentials.HasDeveloper)
         {
-            statusLabel.Text = "Faltan las credenciales de ScreenScraper: se configuran en Opciones › Credenciales de ScreenScraper.";
+            SetStatus("Faltan las credenciales de ScreenScraper: se configuran en Opciones › Credenciales de ScreenScraper.");
             return;
         }
         try
         {
-            statusLabel.Text = "Cargando la lista de sistemas de ScreenScraper…";
+            SetStatus("Cargando la lista de sistemas de ScreenScraper…");
             ssSystems = await new ScreenScraperClient(credentials).GetSystemsAsync(false, CancellationToken.None);
             await RefreshAccountAsync();
             updating = true;
@@ -448,9 +450,9 @@ internal sealed class BulkMediaDialog : LocalizedForm
             }
             finally { updating = false; }
             UpdateSystemsCount();
-            statusLabel.Text = "Marca los sistemas y los medios que quieres descargar y pulsa «Scrapear».";
+            SetStatus("Marca los sistemas y los medios que quieres descargar y pulsa «Scrapear».");
         }
-        catch (Exception ex) { statusLabel.Text = "No se pudo cargar la lista de sistemas: " + ex.Message; }
+        catch (Exception ex) { SetStatus("No se pudo cargar la lista de sistemas: " + ex.Message); }
     }
 
     // Lee del servidor cuántos hilos permite hoy la cuenta (la lectura guardada puede ser de antes de ampliarla).
@@ -515,21 +517,21 @@ internal sealed class BulkMediaDialog : LocalizedForm
 
         CollectSettings().Save();
         // Los hilos dependen de la membresía: se vuelven a leer del servidor por si ha cambiado desde que se abrió el formulario.
-        statusLabel.Text = "Leyendo los datos de tu cuenta de ScreenScraper…";
+        SetStatus("Leyendo los datos de tu cuenta de ScreenScraper…");
         await RefreshAccountAsync();
         var options = BuildOptions(systems);
 
-        statusLabel.Text = "Calculando el trabajo pendiente…";
+        SetStatus("Calculando el trabajo pendiente…");
         SetRunning(true, planning: true);
         BulkPlan plan;
         try { plan = await Task.Run(() => BulkMediaRunner.Plan(options)); }
         finally { SetRunning(false); }
 
         plannedWork = plan.RomsWithWork;
-        statusLabel.Text = "Trabajo calculado."; // sin esto se queda el texto «Calculando…» si luego no se descarga nada
+        SetStatus("Trabajo calculado."); // sin esto se queda el texto «Calculando…» si luego no se descarga nada
         if (plan.Roms == 0)
         {
-            statusLabel.Text = "Los sistemas marcados no tienen ROMs que procesar.";
+            SetStatus("Los sistemas marcados no tienen ROMs que procesar.");
             return;
         }
         var counts = ActiveRoms.Where(r => r.Status == RomStatus.Ok && r.Path.Length > 0)
@@ -555,7 +557,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
             footer.Add("No hay nada pendiente.");
             using var info = new BulkConfirmDialog(rows, footer, "Aceptar", confirm: false);
             info.ShowDialog(this);
-            statusLabel.Text = "No hay nada pendiente: lo pedido ya está en destino (o en el índice de idiomas).";
+            SetStatus("No hay nada pendiente: lo pedido ya está en destino (o en el índice de idiomas).");
             return;
         }
         // Sin formulario de confirmación: al pulsar «Scrapear» la descarga empieza directamente.
@@ -583,7 +585,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         catch (Exception ex)
         {
             trace.Add("bulk_media_error", ex.Message);
-            statusLabel.Text = "Error: " + ex.Message;
+            SetStatus("Error: " + ex.Message);
         }
         finally
         {
@@ -594,10 +596,10 @@ internal sealed class BulkMediaDialog : LocalizedForm
             MetadataChanged |= runner.MetadataChanged;
             SetRunning(false);
         }
-        Text = baseTitle;
-        summaryLabel.Text = SummaryText(runner.Summary);
-        string result = runner.Summary.StoppedReason.Length > 0 ? runner.Summary.StoppedReason : "Descarga terminada.";
-        statusLabel.Text = result;
+        Text = baseTitle; shownPercent = -1;
+        SetSummary(SummaryText(runner.Summary));
+        string result = runner.Summary.StoppedReason.Length > 0 ? "⚠ Detenida antes de terminar: los resultados son parciales. " + runner.Summary.StoppedReason : "Descarga terminada.";
+        SetStatus(result);
         progressBar.Value = runner.Summary.StoppedReason.Length == 0 ? 100 : Percent(runner.Summary);
         lastResult = (result, SummaryText(runner.Summary), runner.Summary);
         viewSummaryButton.Enabled = true;
@@ -613,10 +615,31 @@ internal sealed class BulkMediaDialog : LocalizedForm
         dialog.ShowDialog(this);
     }
 
+    // El estado llega muchas veces por segundo (una por paso de cada ROM): se guarda el último y la interfaz lo pinta a ritmo fijo desde el temporizador,
+    // en lugar de reescribir las etiquetas y el título en cada aviso (eso las hacía parpadear o no dejaba leerlas).
+    private string pendingStatus = "";
+    private bool statusDirty;
+    private string shownStatus = "", shownSummary = "", shownTitle = "";
+    private int shownPercent = -1;
+
     private void OnStatus(BulkStatus s)
     {
-        statusLabel.Text = s.Text;
-        RefreshProgress();
+        pendingStatus = s.Text; statusDirty = true;
+    }
+
+    // Asigna el texto solo si cambia, ya traducido una sola vez.
+    private void SetStatus(string text)
+    {
+        string translated = Loc.T(text);
+        if (translated == shownStatus) return;
+        shownStatus = translated; statusLabel.Text = translated;
+    }
+
+    private void SetSummary(string text)
+    {
+        string translated = Loc.T(text);
+        if (translated == shownSummary) return;
+        shownSummary = translated; summaryLabel.Text = translated;
     }
 
     // ROMs con trabajo ya terminadas sobre las que tenían trabajo al empezar.
@@ -630,9 +653,9 @@ internal sealed class BulkMediaDialog : LocalizedForm
         if (activeRunner is null) return;
         var s = activeRunner.Summary;
         int percent = Percent(s);
-        progressBar.Value = percent;
-        summaryLabel.Text = SummaryText(s);
-        Text = $"{baseTitle} — {percent} %";
+        if (percent != shownPercent) { shownPercent = percent; progressBar.Value = percent; Text = $"{baseTitle} — {percent} %"; }
+        SetSummary(SummaryText(s));
+        if (statusDirty) { statusDirty = false; SetStatus(pendingStatus); }
     }
 
     private static string FormatSpan(TimeSpan span) => $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}";
@@ -713,7 +736,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
     private void OpenSingleScrape(DataGridViewRow gridRow)
     {
         if (OpenSingleHandler is null) return;
-        if (running) { statusLabel.Text = "Espera a que termine la descarga para abrir el scrapeo de una ROM."; return; }
+        if (running) { SetStatus("Espera a que termine la descarga para abrir el scrapeo de una ROM."); return; }
         string system = gridRow.Cells["system"].Value?.ToString() ?? "", rom = gridRow.Cells["rom"].Value?.ToString() ?? "";
         var row = roms.FirstOrDefault(r => r.System.Equals(system, StringComparison.OrdinalIgnoreCase) && r.RomName.Equals(rom, StringComparison.OrdinalIgnoreCase));
         if (row is null) return;
@@ -747,7 +770,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
             removed++;
         }
         UpdateExportButton();
-        statusLabel.Text = removed > 0 ? $"Incidencias resueltas de {rom}: {removed}." : $"Se actualizó {rom}, pero sigue habiendo incidencias.";
+        SetStatus(removed > 0 ? $"Incidencias resueltas de {rom}: {removed}." : $"Se actualizó {rom}, pero sigue habiendo incidencias.");
     }
 
     private void UpdateExportButton() => exportButton.Enabled = issuesGrid.Rows.Count > 0;
@@ -765,7 +788,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         var lines = new List<string> { "Sistema;ROM;Resultado;Detalle" };
         foreach (DataGridViewRow row in issuesGrid.Rows)
             lines.Add(string.Join(";", row.Cells.Cast<DataGridViewCell>().Select(c => Quote(c.Value))));
-        try { File.WriteAllLines(dialog.FileName, lines, new UTF8Encoding(true)); statusLabel.Text = $"Incidencias exportadas a {dialog.FileName}"; }
+        try { File.WriteAllLines(dialog.FileName, lines, new UTF8Encoding(true)); SetStatus($"Incidencias exportadas a {dialog.FileName}"); }
         catch (Exception ex) { QuietMessage.Show(this, "Exportar incidencias", ex.Message); }
     }
 }

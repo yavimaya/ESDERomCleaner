@@ -337,7 +337,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         LayoutProgress();
         f.Controls.Add(status, 0, 3);
         f.Controls.Add(progressHost, 0, 4);
-        shell.Controls.Add(f, 0, 4); Controls.Add(shell); var cpuStrip = new CpuUsageStrip(); Controls.Add(cpuStrip); // la barra de CPU va debajo del todo (se añade después para que el panel principal ocupe el resto)
+        shell.Controls.Add(f, 0, 4); Controls.Add(shell); var cpuStrip = new CpuUsageStrip(withAccounts: true); Controls.Add(cpuStrip); // la barra de CPU va debajo del todo (se añade después para que el panel principal ocupe el resto)
         // El autoescalado por fuente de esta ventana la dejaba más alta que en los otros formularios (22 px): se fija esa altura al mostrarla.
         Shown += (_, _) => { cpuStrip.AutoSize = false; cpuStrip.Height = cpuStrip.LogicalToDeviceUnits(22); };
         // Cabecera con el chip de la aplicación, el nombre y, debajo, la colección cargada, su ruta y la versión. Va encima del menú.

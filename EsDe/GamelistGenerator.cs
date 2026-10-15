@@ -26,6 +26,8 @@ public static class GamelistGenerator
     {
         string name = Path.GetFileName(path);
         string ext = Path.GetExtension(path);
+        // Un cartucho de PICO-8 es una imagen PNG con el juego dentro («juego.p8.png»): aunque sea un .png, no es una carátula.
+        if (name.EndsWith(".p8.png", StringComparison.OrdinalIgnoreCase)) return false;
         return IgnoredNames.Contains(name) || name.StartsWith('.') || IgnoredExtensions.Contains(ext)
                || System.Text.RegularExpressions.Regex.IsMatch(ext, @"^\.(state|st)\d+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }

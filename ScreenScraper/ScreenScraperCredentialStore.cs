@@ -30,8 +30,15 @@ internal static class ScreenScraperCredentialStore
         catch { return ScreenScraperCredentials.Empty; }
     }
 
+    // Cuenta anónima de invitado: sin usuario de ScreenScraper (cuotas y velocidad mínimas). Se guarda en memoria hasta el próximo Save.
+    private static bool? guest;
+    public static bool IsGuest => guest ??= string.IsNullOrWhiteSpace(LoadStored().UserId);
+
+    public static event Action? Changed;
+
     public static void Save(ScreenScraperCredentials credentials)
     {
+        guest = null;
         // No se copian al disco las incrustadas: así una versión nueva con otras credenciales las toma sin más.
         if (EmbeddedDevCredentials.Available && credentials.DevId == EmbeddedDevCredentials.DevId && credentials.DevPassword == EmbeddedDevCredentials.DevPassword)
             credentials = credentials with { DevId = "", DevPassword = "" };
@@ -49,5 +56,6 @@ internal static class ScreenScraperCredentialStore
         {
             if (File.Exists(temporary)) try { File.Delete(temporary); } catch { }
         }
+        Changed?.Invoke();
     }
 }

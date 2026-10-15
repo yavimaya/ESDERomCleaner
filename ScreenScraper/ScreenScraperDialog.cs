@@ -61,7 +61,7 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
         BuildLayout();
         InitCandidates();
         searchButton.Click += async (_, _) => await SearchAsync();
-        cancelButton.Click += (_, _) => { cts?.Cancel(); selectionPanel?.CancelSave(); };
+        cancelButton.Click += (_, _) => { if (!CancelConfirm.Ask(this, "la operación de ScreenScraper")) return; cts?.Cancel(); selectionPanel?.CancelSave(); };
         downloadAllButton.Click += async (_, _) => await DownloadMediaAsync(AllMediaRows().Where(r => !IsCached(r)).ToList());
         mediaGrid.SelectionChanged += (_, _) => ShowSelectedMedia();
         mediaGrid.CellDoubleClick += async (_, e) =>
@@ -95,6 +95,7 @@ internal sealed partial class ScreenScraperDialog : LocalizedForm
         tabs.SelectedIndexChanged += (_, _) => OnTabChanged();
         FormClosing += (_, e) =>
         {
+            if (cancelButton.Enabled && !CancelConfirm.Ask(this, "la operación de ScreenScraper")) { e.Cancel = true; return; }
             cts?.Cancel();
             // Mientras se copian medios a la colección no se cierra: se cancela y se espera a que termine el elemento en curso.
             if (selectionPanel?.IsSaving == true)

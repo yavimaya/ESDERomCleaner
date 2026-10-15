@@ -15,6 +15,9 @@ internal static class ScreenScraperQuota
 
     public static event Action? Changed;
 
+    // « (Invitado)» tras las peticiones cuando la cuenta es la anónima de invitado.
+    private static string GuestSuffix => ScreenScraperCredentialStore.IsGuest ? " (Invitado)" : "";
+
     // Hilos simultáneos que permite la cuenta según la última lectura del servidor (0 si aún no se ha leído).
     public static int MaxThreads { get { lock (Gate) return snapshot?.MaxThreads ?? 0; } }
 
@@ -67,8 +70,9 @@ internal static class ScreenScraperQuota
         int calls;
         lock (Gate) { s = snapshot; calls = callsSinceSync; }
         var es = CultureInfo.GetCultureInfo("es-ES");
-        if (s is null) return calls == 0 ? "Peticiones hoy: sin datos" : $"Peticiones hoy: {calls.ToString("N0", es)}";
-        return $"Peticiones hoy: {(s.RequestsToday + calls).ToString("N0", es)} / {s.MaxPerDay.ToString("N0", es)}";
+        string guest = GuestSuffix;
+        if (s is null) return (calls == 0 ? "Peticiones hoy: sin datos" : $"Peticiones hoy: {calls.ToString("N0", es)}") + guest;
+        return $"Peticiones hoy: {(s.RequestsToday + calls).ToString("N0", es)} / {s.MaxPerDay.ToString("N0", es)}" + guest;
     }
 
     // Los mismos datos que Describe(), uno por concepto, para mostrarlos en casillas de ancho fijo.
@@ -79,10 +83,10 @@ internal static class ScreenScraperQuota
         lock (Gate) { s = snapshot; calls = callsSinceSync; failed = failedSinceSync; }
         var es = CultureInfo.GetCultureInfo("es-ES");
         string pending = calls > 0 ? $"+{calls.ToString("N0", es)} llamadas" + (failed > 0 ? $" ({failed.ToString("N0", es)} fallidas)" : "") : "";
-        if (s is null) return new QuotaParts("Peticiones hoy: sin datos", pending, "", "", "", "");
+        if (s is null) return new QuotaParts("Peticiones hoy: sin datos" + GuestSuffix, pending, "", "", "", "");
         string when = s.SyncedAt.Date == DateTime.Today ? s.SyncedAt.ToString("HH:mm", es) : s.SyncedAt.ToString("dd/MM HH:mm", es);
         return new QuotaParts(
-            $"Peticiones hoy: {s.RequestsToday.ToString("N0", es)} / {s.MaxPerDay.ToString("N0", es)}",
+            $"Peticiones hoy: {s.RequestsToday.ToString("N0", es)} / {s.MaxPerDay.ToString("N0", es)}" + GuestSuffix,
             pending,
             $"Fallidas hoy: {s.KoToday.ToString("N0", es)} / {s.MaxKoPerDay.ToString("N0", es)}",
             $"Hilos: {s.MaxThreads}",
@@ -157,7 +161,7 @@ internal sealed class ScreenScraperQuotaStrip : StatusStrip
     private void ApplyWidths()
     {
         void Fix(ToolStripStatusLabel label, string longest) => label.Width = TextRenderer.MeasureText(longest, Font).Width + 18;
-        Fix(requests, "Peticiones hoy: 000.000 / 000.000");
+        Fix(requests, "Peticiones hoy: 000.000 / 000.000 (Invitado)");
         Fix(pending, "+00.000 llamadas (0.000 fallidas)");
         Fix(failed, "Fallidas hoy: 00.000 / 00.000");
         Fix(threads, "Hilos: 00");

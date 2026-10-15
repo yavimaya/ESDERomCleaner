@@ -786,6 +786,37 @@ internal static class RaUi
         "................",
     ];
 
+    // Chip con una lupa que lo recorre mientras se analiza: el cristal describe círculos concéntricos que se abren y se cierran alrededor del centro y el mango
+    // mantiene siempre 45° sobre la horizontal (hacia abajo a la derecha). El bucle dura 6 s (tres vueltas) y empalma sin salto. Un fotograma cada 40 ms.
+    public static Bitmap[] ChipScanFrames(int scale = 4)
+    {
+        var palette = new Dictionary<char, Color>
+        {
+            ['K'] = Color.FromArgb(9, 17, 27), ['B'] = Color.FromArgb(43, 61, 77), ['S'] = Color.FromArgb(74, 96, 112), ['Y'] = Color.FromArgb(255, 207, 89),
+            ['y'] = Color.FromArgb(189, 139, 48), ['E'] = Color.FromArgb(224, 234, 241)
+        };
+        using var chip = PixelIcon(ChipSprite, scale, palette);
+        const int count = 150;
+        var frames = new Bitmap[count];
+        for (int i = 0; i < count; i++)
+        {
+            double t = (double)i / count; // 0..1 del bucle
+            double r = 0.6 + 2.4 * (0.5 + 0.5 * Math.Sin(t * Math.PI * 2));
+            double angle = t * Math.PI * 2 * 3;
+            float cx = (float)(8 + r * Math.Cos(angle)) * scale, cy = (float)(8.2 + r * Math.Sin(angle)) * scale;
+            var bitmap = new Bitmap(chip);
+            using var g = Graphics.FromImage(bitmap);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            float lens = 2.4f * scale;
+            using (var glass = new SolidBrush(Color.FromArgb(90, 190, 215, 240))) g.FillEllipse(glass, cx - lens, cy - lens, lens * 2, lens * 2);
+            using (var handle = new Pen(Color.FromArgb(217, 165, 32), 1.3f * scale) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
+                g.DrawLine(handle, cx + 1.7f * scale, cy + 1.7f * scale, cx + 4.6f * scale, cy + 4.6f * scale); // 45° sobre la horizontal, siempre igual
+            using (var ring = new Pen(Color.FromArgb(242, 246, 251), 0.9f * scale)) g.DrawEllipse(ring, cx - lens, cy - lens, lens * 2, lens * 2);
+            frames[i] = bitmap;
+        }
+        return frames;
+    }
+
     // Chip con un «+» verde abajo a la derecha que late como un corazón (dos latidos seguidos y una pausa). Un fotograma cada ~75 ms.
     public static Bitmap[] ChipPlusFrames(int scale = 4)
     {
@@ -911,6 +942,34 @@ internal static class RaUi
     public static Bitmap FolderIcon(int scale = 3) => PixelIcon(FolderSprite, scale);
     public static Bitmap ChartIcon(int scale = 3) => PixelIcon(ChartSprite, scale);
     public static Bitmap MagnifierIcon(int scale = 3) => PixelIcon(MagnifierSprite, scale);
+
+    // Icono «gemelos» (16 px) de la pestaña de clones: dos tarjetas iguales, la primera llena y la segunda clara, con dos puntos blancos.
+    public static Bitmap TwinsIcon()
+    {
+        var bitmap = new Bitmap(16, 16);
+        using var g = Graphics.FromImage(bitmap);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        var dark = Color.FromArgb(63, 111, 159); var light = Color.FromArgb(159, 192, 224);
+        using (var path = RoundedRect(new RectangleF(1.5f, 3f, 6f, 10f), 1.2f)) { using var fill = new SolidBrush(dark); g.FillPath(fill, path); }
+        using (var path = RoundedRect(new RectangleF(8.5f, 3f, 6f, 10f), 1.2f))
+        {
+            using var fill = new SolidBrush(light); g.FillPath(fill, path);
+            using var pen = new Pen(dark, 1.2f); g.DrawPath(pen, path);
+        }
+        using var dot = new SolidBrush(Color.White);
+        g.FillEllipse(dot, 3.6f, 5.6f, 1.8f, 1.8f); g.FillEllipse(dot, 10.6f, 5.6f, 1.8f, 1.8f);
+        return bitmap;
+    }
+
+    private static System.Drawing.Drawing2D.GraphicsPath RoundedRect(RectangleF r, float radius)
+    {
+        float d = radius * 2;
+        var path = new System.Drawing.Drawing2D.GraphicsPath();
+        path.AddArc(r.X, r.Y, d, d, 180, 90); path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90); path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
     public static Bitmap DatabaseIcon(int scale = 3) => PixelIcon(DatabaseSprite, scale);
 }
 

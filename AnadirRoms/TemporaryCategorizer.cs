@@ -4,7 +4,11 @@ namespace ESDERomCleaner;
 // curarlas antes de añadirlas. No escribe nada en ningún gamelist: el resultado se queda en memoria (y se reutiliza si se vuelve a abrir el curado).
 internal static class TemporaryCategorizer
 {
-    public sealed record Item(string Path, string Folder, string FileName);
+    // Method: cómo se identificó («Nombre · MAME · MAME 2010»); su último tramo es el DAT, que decide qué catver.ini corresponde.
+    public sealed record Item(string Path, string Folder, string FileName, string Method = "")
+    {
+        public string? DatName => Method.Contains(" · ") ? Method.Split(" · ")[^1].Trim() : null;
+    }
 
     // Devuelve false si se cancela o no se puede (sin credenciales, error de conexión o de cuota). Lo ya categorizado queda en «genres».
     public static async Task<bool> RunAsync(IWin32Window owner, TraceLog trace, IReadOnlyList<Item> roms, Dictionary<string, string> genres)
@@ -18,8 +22,35 @@ internal static class TemporaryCategorizer
         using var cts = new CancellationTokenSource();
         dialog.CancelRequested += () => cts.Cancel();
         string? failure = null;
-        int done = 0, known = 0, consecutiveErrors = 0;
+        int done = 0, known = 0, consecutiveErrors = 0, consulted = 0, inherited = 0, local = 0;
         var gate = new object();
+
+        // Arcade: la categoría sale de la lista local (catver.ini) del DAT de MAME con el que se identificó la ROM (cada versión tiene la suya), sin
+        // consultar a ScreenScraper. La lista solo se descarga si ese DAT está seleccionado. Lo que no está ahí, o se identificó de otra forma, sigue el
+        // camino de las consultas.
+        if (pending.Any(r => RomIdentifier.ArcadeFolders.Contains(r.Folder) && ArcadeCategories.Applies(r.DatName)))
+        {
+            try
+            {
+                foreach (var byDat in pending.Where(r => RomIdentifier.ArcadeFolders.Contains(r.Folder) && ArcadeCategories.Applies(r.DatName)).GroupBy(r => r.DatName!, StringComparer.OrdinalIgnoreCase).ToList())
+                {
+                    var catver = await ArcadeCategories.LoadAsync(byDat.Key, cts.Token);
+                    foreach (var item in byDat)
+                    {
+                        if (!catver.TryGetValue(Path.GetFileNameWithoutExtension(item.FileName), out var genre)) continue;
+                        genres[item.Path] = genre; pending.Remove(item); local++; known++;
+                    }
+                }
+                done = local;
+                if (pending.Count == 0) { trace.Add("temporary_categorization", $"roms={roms.Count}; locales={local}; consultas=0"); return true; }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { trace.Add("temporary_categorization_catver_error", ex.Message); }
+        }
+
+        // Los clones de arcade comparten juego (y categoría) con su padre: se consulta solo un representante de cada familia y el resto hereda el resultado.
+        var clones = await Task.Run(RomDatabase.CloneParents);
+        var groups = pending.GroupBy(r => Family(r, clones), StringComparer.OrdinalIgnoreCase).Select(g => g.ToList()).ToList();
 
         var work = Task.Run(async () =>
         {
@@ -27,9 +58,10 @@ internal static class TemporaryCategorizer
             {
                 var client = new ScreenScraperClient(credentials);
                 var systems = await client.GetSystemsAsync(false, cts.Token);
-                int degree = Math.Clamp(ScreenScraperQuota.MaxThreads, 1, 4);
-                await Parallel.ForEachAsync(pending, new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = cts.Token }, async (item, token) =>
+                int degree = Math.Max(1, ScreenScraperQuota.MaxThreads); // los hilos que permite la membresía, como en la descarga masiva
+                await Parallel.ForEachAsync(groups, new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = cts.Token }, async (family, token) =>
                 {
+                    var item = family[0]; // representante de la familia
                     string genre = "";
                     try
                     {
@@ -49,9 +81,10 @@ internal static class TemporaryCategorizer
                         if (failure is not null) cts.Cancel();
                         return;
                     }
-                    lock (gate) genres[item.Path] = genre;
-                    int n = Interlocked.Increment(ref done);
-                    dialog.Report(n, $"{item.FileName}");
+                    lock (gate) foreach (var member in family) genres[member.Path] = genre;
+                    int n = Interlocked.Add(ref done, family.Count);
+                    int c = Interlocked.Increment(ref consulted), h = Interlocked.Add(ref inherited, family.Count - 1);
+                    dialog.Report(n, c, h, local);
                 });
             }
             catch (OperationCanceledException) { }
@@ -66,9 +99,30 @@ internal static class TemporaryCategorizer
         return failure is null && done >= pending.Count;
     }
 
-    // Por hash del archivo; si es un zip y no se reconoce, se prueba con el hash del zip entero (como en la descarga masiva).
+    // Familia de un juego de arcade: el nombre de su padre (los clones comparten categoría); cualquier otra ROM es su propia familia.
+    private static string Family(Item item, Dictionary<string, string> clones)
+    {
+        string stem = Path.GetFileNameWithoutExtension(item.FileName);
+        if (!RomIdentifier.ArcadeFolders.Contains(item.Folder)) return item.Path;
+        while (clones.TryGetValue(stem, out var parent) && !parent.Equals(stem, StringComparison.OrdinalIgnoreCase)) stem = parent;
+        return item.Folder + "|" + stem;
+    }
+
+    // Arcade: primero por el nombre del archivo, sin leerlo (ScreenScraper identifica así los sets de MAME); si no lo reconoce, se sigue con el hash.
+    // Resto: por hash del archivo; si es un zip y no se reconoce, se prueba con el hash del zip entero (como en la descarga masiva).
     private static async Task<SsGame?> FindAsync(ScreenScraperClient client, SsSystem system, Item item, CancellationToken token)
     {
+        if (RomIdentifier.ArcadeFolders.Contains(item.Folder))
+        {
+            // Arcade: una sola consulta por nombre. Si ScreenScraper no conoce el juego (404) no se insiste con el hash: el hash de un set de MAME
+            // casi nunca lo identifica y cada intento extra gastaría peticiones y leería el zip para nada.
+            for (int attempt = 1; ; attempt++)
+            {
+                try { return (await client.LookupByRomNameAsync(system.Id, item.FileName, token)).Games.FirstOrDefault(); }
+                catch (ScreenScraperException ex) when (ex.StatusCode == 404) { return null; }
+                catch (ScreenScraperException ex) when (ex.StatusCode == 429 && attempt < 4) { await Task.Delay(TimeSpan.FromSeconds(3 * attempt), token); }
+            }
+        }
         string extension = Path.GetExtension(item.Path).ToLowerInvariant();
         bool packed = extension is ".zip" or ".7z" or ".rar";
         async Task<SsLookupResult> Lookup(RomHashes hashes)
@@ -107,9 +161,9 @@ internal static class TemporaryCategorizer
             BackColor = RaUi.Body;
             ClientSize = new Size(560, 236);
             bar.Maximum = Math.Max(1, total);
-            var banner = new RaHeader("Categorización temporal", "Consultando categorías en ScreenScraper.", 68, 48, logo: false);
+            var banner = new RaHeader("Categorización temporal", "Obteniendo la categoría de las ROMs para poder curarlas.", 68, 48, logo: false);
             RaUi.AnimateIcon(banner.Icon, RaUi.ScrollWritingFrames());
-            status.Location = new Point(24, 84); status.Size = new Size(512, 22); status.Text = $"0 / {total:N0}";
+            status.Location = new Point(24, 84); status.Size = new Size(512, 22); status.Text = Loc.T("Locales {0} · consultadas {1} · heredadas {2} · pendientes {3}", 0, 0, 0, total.ToString("N0"));
             bar.Location = new Point(24, 112); bar.Size = new Size(512, 14);
             var footer = RaUi.Footer();
             var cancel = RaUi.MakeButton("Cancelar", false); cancel.Location = new Point(436, 10);
@@ -120,10 +174,11 @@ internal static class TemporaryCategorizer
             FormClosing += (_, _) => { if (!finished) CancelRequested?.Invoke(); };
         }
 
-        public void Report(int done, string current)
+        // Consultadas = preguntadas a ScreenScraper; heredadas = clones que toman la categoría de su juego padre sin consulta.
+        public void Report(int done, int consulted, int inherited, int local)
         {
             if (IsDisposed || !IsHandleCreated) return;
-            try { BeginInvoke(() => { bar.Value = Math.Min(bar.Maximum, done); status.Text = $"{done:N0} / {total:N0} · {current}"; }); }
+            try { BeginInvoke(() => { bar.Value = Math.Min(bar.Maximum, done); status.Text = Loc.T("Locales {0} · consultadas {1} · heredadas {2} · pendientes {3}", local.ToString("N0"), consulted.ToString("N0"), inherited.ToString("N0"), Math.Max(0, total - done).ToString("N0")); }); }
             catch (InvalidOperationException) { }
         }
 

@@ -44,7 +44,7 @@ internal sealed class CategorizeDialog : LocalizedForm
         // Abajo del todo: peticiones de hoy a ScreenScraper a la izquierda y CPU a la derecha.
         Controls.AddRange([banner, statusLabel, bar, summaryLabel, footer, new CpuUsageStrip(withQuota: true)]);
         CancelButton = cancel;
-        cancel.Click += (_, _) => { cts.Cancel(); cancel.Enabled = false; statusLabel.Text = "Cancelando…"; };
+        cancel.Click += (_, _) => { if (!CancelConfirm.Ask(this, "la categorización de las ROMs")) return; cts.Cancel(); cancel.Enabled = false; statusLabel.Text = "Cancelando…"; };
         timer.Tick += (_, _) => RefreshProgress();
         Shown += async (_, _) => await RunAsync();
     }
@@ -100,7 +100,7 @@ internal sealed class CategorizeDialog : LocalizedForm
             await runner.RunAsync(cts.Token);
             MetadataChanged = runner.MetadataChanged;
             var summary = runner.Summary;
-            Result = summary.StoppedReason.Length > 0 ? summary.StoppedReason
+            Result = summary.StoppedReason.Length > 0 ? "⚠ Detenida antes de terminar: los resultados son parciales. " + summary.StoppedReason
                 : $"Categorizadas {summary.MetadataUpdated:N0} ROM(s)" +
                   (summary.NotFound > 0 ? $"; {summary.NotFound:N0} no encontradas" : "") + (summary.MetadataFailed > 0 ? $"; {summary.MetadataFailed:N0} fallidas" : "") + ".";
             // Si alguna ROM no se ha encontrado en ScreenScraper, se muestra el resumen de lo hecho; si se han encontrado todas, no.
@@ -113,7 +113,7 @@ internal sealed class CategorizeDialog : LocalizedForm
                 report.ShowDialog(this);
             }
         }
-        catch (OperationCanceledException) { MetadataChanged |= runner?.MetadataChanged ?? false; Result = "Categorización cancelada."; }
+        catch (OperationCanceledException) { MetadataChanged |= runner?.MetadataChanged ?? false; Result = "⚠ Detenida antes de terminar: los resultados son parciales."; }
         catch (Exception ex) { trace.Add("categorize_error", ex.ToString()); Result = "No se pudo categorizar: " + ex.Message; QuietMessage.Show(this, "Categorizar", Result); }
         finally
         {

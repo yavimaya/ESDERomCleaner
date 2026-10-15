@@ -157,6 +157,10 @@ internal sealed class ScreenScraperClient
         return await LookupUrlAsync(url, token);
     }
 
+    // Consulta solo por el nombre del archivo (sin leer ni calcular hashes): en arcade ScreenScraper identifica el juego por el nombre del zip.
+    public Task<SsLookupResult> LookupByRomNameAsync(int systemId, string romFileName, CancellationToken token) =>
+        LookupUrlAsync(BuildUrl("jeuInfos.php", ("systemeid", systemId.ToString()), ("romtype", "rom"), ("romnom", romFileName)), token);
+
     // Ficha completa de un juego ya identificado (p. ej. tras buscarlo por nombre), sin hash de ROM.
     public Task<SsLookupResult> LookupByGameIdAsync(int systemId, string gameId, CancellationToken token) =>
         LookupUrlAsync(BuildUrl("jeuInfos.php", ("systemeid", systemId.ToString()), ("gameid", gameId)), token);

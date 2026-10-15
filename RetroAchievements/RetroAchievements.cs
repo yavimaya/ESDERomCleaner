@@ -28,6 +28,8 @@ internal static class RaCredentialStore
         catch { return RaCredentials.Empty; }
     }
 
+    public static event Action? Changed;
+
     public static void Save(RaCredentials credentials)
     {
         string path = FilePath;
@@ -36,6 +38,7 @@ internal static class RaCredentialStore
         string temporary = path + ".tmp_" + Guid.NewGuid().ToString("N");
         try { File.WriteAllBytes(temporary, protectedBytes); File.Move(temporary, path, true); }
         finally { if (File.Exists(temporary)) try { File.Delete(temporary); } catch { } }
+        Changed?.Invoke();
     }
 }
 

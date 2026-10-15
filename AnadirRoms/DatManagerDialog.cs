@@ -1,4 +1,4 @@
-namespace ESDERomCleaner;
+﻿namespace ESDERomCleaner;
 
 // Gestión de las bases de datos (DAT) con las que se identifican las ROMs: elegir qué orígenes se usan, descargar las de
 // No-Intro y Redump (libretro-database) e importar las propias (GoodTools, clrmamepro, MAME, FBNeo, emuladores…).
@@ -9,7 +9,10 @@ internal sealed class DatManagerDialog : LocalizedForm
     private readonly DataGridView grid = new();
     private readonly ProgressBar progress = new() { Minimum = 0, Maximum = 1000 };
     private readonly Label info = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft };
-    private readonly Dictionary<string, CheckBox> kindChecks = new();
+    private static readonly (string Kind, string Label)[] Kinds = [("no-intro", "No-Intro"), ("redump", "Redump"), ("tosec", "TOSEC"), ("mame", "MAME"), ("fbneo", "FBNeo"), ("other", "Otras (importadas)")];
+    private readonly HashSet<string> collapsed = [];
+    private readonly Dictionary<string, int> rowIndex = new(); // DatSource.Key → fila de la tabla
+    private readonly ContextMenuStrip rowMenu = new() { ShowImageMargin = false };
     private readonly Button downloadMissing = new() { Text = "Descargar las que faltan", AutoSize = true, MinimumSize = new Size(150, 28) };
     private readonly Button updateAll = new() { Text = "Actualizar todas", AutoSize = true, MinimumSize = new Size(110, 28) };
     private readonly Button importButton = new() { Text = "Importar DAT…", AutoSize = true, MinimumSize = new Size(110, 28) };
@@ -52,28 +55,37 @@ internal sealed class DatManagerDialog : LocalizedForm
             Text = "Las ROMs se identifican con los DAT de los orígenes marcados. No-Intro, Redump, TOSEC, MAME y FBNeo se descargan del repositorio libretro-database de GitHub; cualquier otro DAT (GoodTools, clrmamepro, emuladores…) se importa.",
             Location = new Point(10, 8), Size = new Size(620, 36), AutoSize = false
         };
-        var useLabel = new Label { Text = "Usar:", Location = new Point(10, 52), Size = new Size(40, 22), TextAlign = ContentAlignment.MiddleLeft };
-        int x = 52;
-        foreach (var (kind, text, width) in new[] { ("no-intro", "No-Intro", 85), ("redump", "Redump", 78), ("tosec", "TOSEC", 70), ("mame", "MAME", 70), ("fbneo", "FBNeo", 72), ("other", "Otras (importadas)", 150) })
-        {
-            var check = new CheckBox { Text = text, Location = new Point(x, 52), Size = new Size(width, 22), Checked = settings.Kinds.Contains(kind) };
-            check.CheckedChanged += (_, _) => KindChanged(kind, check.Checked);
-            kindChecks[kind] = check;
-            Controls.Add(check);
-            x += width;
-        }
-
         grid.Dock = DockStyle.Fill;
         grid.ReadOnly = true; grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.AllowUserToResizeRows = false;
         grid.AllowUserToResizeColumns = false; grid.RowHeadersVisible = false; grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        grid.MultiSelect = false;
+        grid.MultiSelect = true;
         grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing; grid.ColumnHeadersHeight = 22;
         RaUi.StyleGrid(grid, 22, 24);
-        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Origen", Width = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sistema", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, SortMode = DataGridViewColumnSortMode.NotSortable });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Estado", Width = 210, SortMode = DataGridViewColumnSortMode.NotSortable });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "check", HeaderText = "", Width = 30, SortMode = DataGridViewColumnSortMode.NotSortable });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "name", HeaderText = "Origen / Sistema", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, SortMode = DataGridViewColumnSortMode.NotSortable });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "state", HeaderText = "Estado", Width = 210, SortMode = DataGridViewColumnSortMode.NotSortable });
+        grid.CellPainting += PaintCheck;
+        grid.CellMouseClick += (_, e) => { if (e.RowIndex >= 0 && e.ColumnIndex == 0 && e.Button == MouseButtons.Left && !busy) ToggleRows([e.RowIndex]); };
+        grid.CellDoubleClick += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex == 0 || busy) return;
+            if (grid.Rows[e.RowIndex].Tag is string kind) ToggleCollapsed(kind); else ToggleRows([e.RowIndex]);
+        };
+        grid.CellMouseDown += (_, e) =>
+        {
+            // Clic derecho sobre una fila que no estaba seleccionada: pasa a ser la selección.
+            if (e.Button != MouseButtons.Right || e.RowIndex < 0 || grid.Rows[e.RowIndex].Selected) return;
+            grid.ClearSelection(); grid.Rows[e.RowIndex].Selected = true;
+        };
+        var enableItem = new ToolStripMenuItem("Activar seleccionadas");
+        var disableItem = new ToolStripMenuItem("Desactivar seleccionadas");
+        rowMenu.Items.AddRange([enableItem, disableItem]);
+        enableItem.Click += (_, _) => SetSelected(true);
+        disableItem.Click += (_, _) => SetSelected(false);
+        rowMenu.Opening += (_, e) => { if (busy || grid.SelectedRows.Count == 0) e.Cancel = true; };
+        grid.ContextMenuStrip = rowMenu;
         grid.SelectionChanged += (_, _) => UpdateButtons();
-        progress.Location = new Point(10, 384); progress.Size = new Size(620, 18);
+        progress.Location = new Point(10, 388); progress.Size = new Size(620, 10); // fina, como en los demás formularios
         info.Location = new Point(10, 406); info.Size = new Size(620, 22);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 52, Padding = new Padding(8, 10, 8, 2), BackColor = RaUi.FooterBack };
@@ -84,8 +96,8 @@ internal sealed class DatManagerDialog : LocalizedForm
         buttons.Controls.Add(importButton);
         buttons.Controls.Add(updateAll);
         buttons.Controls.Add(downloadMissing);
-        var gridFrame = RaUi.Frame(grid, new Rectangle(10, 80, 620, 296));
-        Controls.Add(header); Controls.Add(useLabel); Controls.Add(gridFrame); Controls.Add(progress); Controls.Add(info); Controls.Add(buttons);
+        var gridFrame = RaUi.Frame(grid, new Rectangle(10, 52, 620, 324));
+        Controls.Add(header); Controls.Add(gridFrame); Controls.Add(progress); Controls.Add(info); Controls.Add(buttons);
         // Cabecera oscura como en los demás formularios; el texto explicativo pasa a ser su subtítulo.
         var banner = new RaHeader("Bases de datos de ROMs", "Los DAT identifican tus ROMs: se descargan de libretro-database o se importan.", 68, 48, logo: false);
         banner.Icon.Image = RaUi.DatabaseIcon();
@@ -97,57 +109,134 @@ internal sealed class DatManagerDialog : LocalizedForm
         importButton.Click += (_, _) => ImportFiles();
         removeButton.Click += (_, _) => RemoveSelected();
         timer.Tick += (_, _) => RefreshProgress();
-        FormClosing += (_, _) => { cts?.Cancel(); timer.Stop(); };
+        FormClosing += (_, e) => { if (busy && !CancelConfirm.Ask(this, "la descarga de bases de datos")) { e.Cancel = true; return; } cts?.Cancel(); timer.Stop(); };
         Rebuild();
     }
 
-    private void KindChanged(string kind, bool on)
-    {
-        if (loading) return;
-        if (on && !settings.Kinds.Contains(kind)) settings.Kinds.Add(kind);
-        if (!on) settings.Kinds.Remove(kind);
-        settings.Save();
-        RomDatabase.Invalidate();
-        RefreshStates();
-    }
+    private bool Enabled(DatSource source) => settings.IsEnabled(source);
 
-    // Vuelve a cargar la lista de bases de datos (tras importar o quitar una).
+    // Vuelve a cargar la lista de bases de datos (tras importar o quitar una): una fila de grupo por clase y debajo sus DAT.
     private void Rebuild()
     {
         loading = true;
         shown = RomDatabase.Sources.ToList();
-        grid.Rows.Clear();
-        foreach (var source in shown) grid.Rows.Add(source.KindLabel, source.Name, "");
+        grid.Rows.Clear(); rowIndex.Clear();
+        foreach (var (kind, _) in Kinds)
+        {
+            var sources = shown.Where(s => s.Kind == kind).ToList();
+            if (sources.Count == 0) continue;
+            int g = grid.Rows.Add("", "", "");
+            grid.Rows[g].Tag = kind;
+            grid.Rows[g].DefaultCellStyle.Font = new Font(grid.Font, FontStyle.Bold);
+            grid.Rows[g].DefaultCellStyle.BackColor = Color.FromArgb(238, 240, 244);
+            foreach (var source in sources)
+            {
+                int i = grid.Rows.Add("", "      " + source.Name, "");
+                grid.Rows[i].Tag = source;
+                grid.Rows[i].Visible = !collapsed.Contains(kind);
+                rowIndex[source.Key] = i;
+            }
+        }
         loading = false;
         RefreshStates();
     }
 
     private void RefreshStates()
     {
-        for (int i = 0; i < shown.Count; i++)
+        foreach (DataGridViewRow row in grid.Rows)
         {
-            var source = shown[i];
-            string path = RomDatabase.PathOf(source);
-            string state = File.Exists(path)
-                ? (source.Imported ? "Importada " : "Descargada ") + File.GetLastWriteTime(path).ToString("dd/MM/yyyy")
-                : source.Imported ? "Archivo no encontrado" : "Pendiente";
-            if (!settings.Kinds.Contains(source.Kind)) state += " · desactivada";
-            grid.Rows[i].Cells[2].Value = state;
-            grid.Rows[i].DefaultCellStyle.ForeColor = settings.Kinds.Contains(source.Kind) ? SystemColors.WindowText : SystemColors.GrayText;
+            if (row.Tag is DatSource source)
+            {
+                string path = RomDatabase.PathOf(source);
+                string state = File.Exists(path)
+                    ? (source.Imported ? "Importada " : "Descargada ") + File.GetLastWriteTime(path).ToString("dd/MM/yyyy")
+                    : source.Imported ? "Archivo no encontrado" : "Pendiente";
+                if (!Enabled(source)) state += " · desactivada";
+                row.Cells[2].Value = state;
+                row.DefaultCellStyle.ForeColor = Enabled(source) ? SystemColors.WindowText : SystemColors.GrayText;
+            }
+            else if (row.Tag is string kind)
+            {
+                var all = shown.Where(s => s.Kind == kind).ToList();
+                int on = all.Count(Enabled);
+                string label = Kinds.First(k => k.Kind == kind).Label;
+                row.Cells[1].Value = $"{(collapsed.Contains(kind) ? "▸" : "▾")} {Loc.T(label)} ({Loc.T("{0} de {1} en uso", on, all.Count)})";
+            }
         }
-        int usable = shown.Count(s => settings.Kinds.Contains(s.Kind) && RomDatabase.IsInstalled(s));
+        int usable = shown.Count(s => Enabled(s) && RomDatabase.IsInstalled(s));
         info.Text = $"{usable} bases de datos en uso de {shown.Count}.";
+        grid.Invalidate();
         UpdateButtons();
+    }
+
+    // Casilla de cada fila: marcada, vacía o a medias (en las filas de clase cuando solo algunos de sus DAT están activos).
+    private void PaintCheck(object? sender, DataGridViewCellPaintingEventArgs e)
+    {
+        if (e.RowIndex < 0 || e.ColumnIndex != 0) return;
+        var unchecked_ = System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedNormal;
+        var checked_ = System.Windows.Forms.VisualStyles.CheckBoxState.CheckedNormal;
+        System.Windows.Forms.VisualStyles.CheckBoxState? state = null;
+        var row = grid.Rows[e.RowIndex];
+        if (row.Tag is DatSource source) state = Enabled(source) ? checked_ : unchecked_;
+        else if (row.Tag is string kind)
+        {
+            var all = shown.Where(s => s.Kind == kind).ToList();
+            int on = all.Count(Enabled);
+            state = on == 0 ? unchecked_ : on == all.Count ? checked_ : System.Windows.Forms.VisualStyles.CheckBoxState.MixedNormal;
+        }
+        if (state is null) return;
+        e.Paint(e.CellBounds, DataGridViewPaintParts.Background | DataGridViewPaintParts.Border);
+        var size = CheckBoxRenderer.GetGlyphSize(e.Graphics!, state.Value);
+        CheckBoxRenderer.DrawCheckBox(e.Graphics!, new Point(e.CellBounds.X + (e.CellBounds.Width - size.Width) / 2, e.CellBounds.Y + (e.CellBounds.Height - size.Height) / 2), state.Value);
+        e.Handled = true;
+    }
+
+    // DAT afectados por un conjunto de filas: los de las filas sueltas y todos los de las filas de clase.
+    private List<DatSource> SourcesOf(IEnumerable<int> rows)
+    {
+        var result = new List<DatSource>();
+        foreach (int r in rows)
+        {
+            if (grid.Rows[r].Tag is DatSource s) result.Add(s);
+            else if (grid.Rows[r].Tag is string kind) result.AddRange(shown.Where(x => x.Kind == kind));
+        }
+        return result.Distinct().ToList();
+    }
+
+    // Clic en la casilla o doble clic: si todos los afectados están activos se desactivan; si no, se activan (una clase a medias pasa a completa).
+    private void ToggleRows(IEnumerable<int> rows)
+    {
+        var sources = SourcesOf(rows);
+        if (sources.Count == 0) return;
+        ApplyEnabled(sources, !sources.All(Enabled));
+    }
+
+    private void SetSelected(bool enabled) => ApplyEnabled(SourcesOf(grid.SelectedRows.Cast<DataGridViewRow>().Select(r => r.Index)), enabled);
+
+    private void ApplyEnabled(List<DatSource> sources, bool enabled)
+    {
+        if (loading || sources.Count == 0) return;
+        foreach (var source in sources) settings.SetEnabled(source, enabled);
+        settings.Save();
+        RomDatabase.Invalidate();
+        RefreshStates();
+    }
+
+    private void ToggleCollapsed(string kind)
+    {
+        if (!collapsed.Remove(kind)) collapsed.Add(kind);
+        grid.CurrentCell = null;
+        foreach (var source in shown.Where(s => s.Kind == kind)) grid.Rows[rowIndex[source.Key]].Visible = !collapsed.Contains(kind);
+        RefreshStates();
     }
 
     private void UpdateButtons()
     {
-        var downloadable = shown.Where(s => !s.Imported && settings.Kinds.Contains(s.Kind)).ToList();
+        var downloadable = shown.Where(s => !s.Imported && Enabled(s)).ToList();
         downloadMissing.Enabled = !busy && downloadable.Any(s => !RomDatabase.IsInstalled(s));
         updateAll.Enabled = !busy && downloadable.Any(RomDatabase.IsInstalled);
         importButton.Enabled = !busy;
-        int row = grid.CurrentRow?.Index ?? -1;
-        removeButton.Enabled = !busy && row >= 0 && row < shown.Count && shown[row].Imported;
+        removeButton.Enabled = !busy && grid.CurrentRow?.Tag is DatSource { Imported: true };
     }
 
     // ---- Importar y quitar
@@ -169,8 +258,9 @@ internal sealed class DatManagerDialog : LocalizedForm
                 using var dialog = new ImportDatDialog(file, name, arcade, existing);
                 if (dialog.ShowDialog(this) != DialogResult.OK) continue;
                 RomDatabase.Import(file, dialog.DatName, dialog.Kind, dialog.Folders, dialog.NameMatch);
-                // Si el origen elegido está desactivado, se activa para que la base importada se use.
-                if (!settings.Kinds.Contains(dialog.Kind)) { settings.Kinds.Add(dialog.Kind); settings.Save(); loading = true; kindChecks[dialog.Kind].Checked = true; loading = false; }
+                // Una base importada de nuevo se usa desde el principio, aunque antes se hubiera desactivado una con el mismo nombre.
+                var again = RomDatabase.Sources.FirstOrDefault(x => x.Imported && x.Name == dialog.DatName && x.Kind == dialog.Kind);
+                if (again is not null && !settings.IsEnabled(again)) { settings.SetEnabled(again, true); settings.Save(); RomDatabase.Invalidate(); }
                 trace.Add("dat_imported", $"name={dialog.DatName}; kind={dialog.Kind}; folders={string.Join("|", dialog.Folders)}; by_name={dialog.NameMatch}");
                 imported++;
             }
@@ -181,9 +271,7 @@ internal sealed class DatManagerDialog : LocalizedForm
 
     private void RemoveSelected()
     {
-        int row = grid.CurrentRow?.Index ?? -1;
-        if (row < 0 || row >= shown.Count || !shown[row].Imported) return;
-        var source = shown[row];
+        if (grid.CurrentRow?.Tag is not DatSource { Imported: true } source) return;
         if (!QuietMessage.Confirm(this, "Quitar base de datos", $"¿Quitar «{source.Name}» de la lista? Solo se borra la copia que guarda la aplicación, no tu archivo original.", "Quitar")) return;
         RomDatabase.RemoveImport(source);
         trace.Add("dat_removed", source.Name);
@@ -226,14 +314,14 @@ internal sealed class DatManagerDialog : LocalizedForm
 
     private async Task DownloadAsync(bool onlyMissing)
     {
-        var list = shown.Where(s => !s.Imported && settings.Kinds.Contains(s.Kind) && (!onlyMissing || !RomDatabase.IsInstalled(s))).ToList();
+        var list = shown.Where(s => !s.Imported && Enabled(s) && (!onlyMissing || !RomDatabase.IsInstalled(s))).ToList();
         if (list.Count == 0) return;
         if (!await Requirements.CheckAsync(this, trace, "Descargar bases de datos", Need.Internet, "raw.githubusercontent.com")) return;
 
         jobCount = list.Count;
         received = new long[jobCount]; totals = new long[jobCount]; lastSample = new long[jobCount];
         active = new bool[jobCount]; outcome = new int[jobCount]; errors = new string?[jobCount];
-        rowOf = list.Select(s => shown.IndexOf(s)).ToArray();
+        rowOf = list.Select(s => rowIndex[s.Key]).ToArray();
         previousTotalBytes = 0; previousTick = DateTime.UtcNow;
         foreach (int row in rowOf) grid.Rows[row].Cells[2].Value = "En cola";
         progress.Value = 0;
@@ -273,6 +361,6 @@ internal sealed class DatManagerDialog : LocalizedForm
         for (int i = 0; i < jobCount; i++)
             if (outcome[i] == 2) grid.Rows[rowOf[i]].Cells[2].Value = "Error: " + errors[i];
         info.Text += failed > 0 ? $"  ·  {failed} con error." : "";
-        if (token.IsCancellationRequested) info.Text += "  ·  Descarga cancelada.";
+        if (token.IsCancellationRequested) info.Text += "  ·  ⚠ Descarga cancelada antes de terminar: faltan bases por descargar.";
     }
 }

@@ -12,7 +12,7 @@
     <VlcWindowsX86Enabled>false</VlcWindowsX86Enabled>
     <VlcWindowsArm64Enabled>false</VlcWindowsArm64Enabled>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.1.5</Version>
+    <Version>0.1.6</Version>
   </PropertyGroup>
 
   <!-- Credenciales de desarrollador de ScreenScraper: se leen de DevCredentials.props (local, ignorado por git; ver DevCredentials.props.example)
@@ -68,5 +68,6 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Assets\SystemIcons\*.png" LogicalName="SystemIcons.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Assets\Logos\*.png" LogicalName="Logos.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>
