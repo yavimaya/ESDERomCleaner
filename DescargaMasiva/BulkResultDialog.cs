@@ -88,7 +88,8 @@ internal sealed class BulkResultDialog : LocalizedForm
             {
                 int textHeight = TextRenderer.MeasureText(counts.Text, counts.Font, new Size(Math.Max(100, counts.Width), 0), TextFormatFlags.WordBreak).Height;
                 counts.Height = textHeight + 8;
-                body.Padding = new Padding(20, 80 + counts.Height + 4, 20, 8);
+                // El cuerpo empieza bajo la cabecera (68 px): el hueco se mide desde ahí, no desde lo alto de la ventana.
+                body.Padding = new Padding(20, 80 + counts.Height + 4 - banner.Height, 20, 8);
             }
             FitCounts();
             Resize += (_, _) => FitCounts();

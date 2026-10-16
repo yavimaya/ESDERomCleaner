@@ -10,7 +10,8 @@ internal enum BulkOverwrite { No, Always, IfSizeDiffers }
 
 // Cómo se sustituye un elemento (metadatos o una carpeta de medios) cuando ya existe en destino: siempre, solo si el nuevo es menor que el actual
 // o solo si es mayor. En los medios se compara el tamaño del archivo; en los metadatos, la longitud de la descripción.
-internal enum BulkReplace { Always, NewSmaller, NewLarger }
+// «No» respeta lo que ya existe (no se sustituye ni se compara nada); lo que falta en destino se descarga igualmente.
+internal enum BulkReplace { No, Always, NewSmaller, NewLarger }
 
 internal sealed record BulkMediaSettings(string[] Folders, bool NormalizedVideo, BulkOverwrite Overwrite, bool Backup, bool SearchByName, string[] Systems)
 {
@@ -39,6 +40,11 @@ internal sealed record BulkMediaOptions(
 
     // Sustitución por elemento (descarga masiva): si no es null, manda sobre «Overwrite» para los medios y los metadatos (los idiomas solo se piden si faltan).
     public IReadOnlyDictionary<string, BulkReplace>? Replace { get; init; }
+    // ¿Hay que pedir este elemento para una ROM? Con política por elemento, «No» solo lo pide si falta en destino; las demás, siempre. Sin política (modo antiguo),
+    // se pide si se sobrescribe o si falta.
+    public bool Wants(string element, bool existsInDestination) =>
+        Replace is not null ? ReplaceFor(element) != BulkReplace.No || !existsInDestination : Overwrite != BulkOverwrite.No || !existsInDestination;
+
     public BulkReplace ReplaceFor(string element) => Replace is not null && Replace.TryGetValue(element, out var policy) ? policy : BulkReplace.NewSmaller;
 }
 
@@ -139,7 +145,7 @@ internal sealed class BulkMediaRunner
         !string.IsNullOrWhiteSpace(row.Description) || (!string.IsNullOrWhiteSpace(row.Genre) && row.Genre != "Sin categoría");
 
     // Metadatos que hay que pedir para esta ROM: siempre si se sobrescribe; con «no sobrescribir», solo los juegos que todavía no tienen.
-    private static bool NeedsMetadata(BulkMediaOptions o, RomRow row) => o.Metadata && (o.Replace is not null || o.Overwrite != BulkOverwrite.No || !HasMetadata(row));
+    private static bool NeedsMetadata(BulkMediaOptions o, RomRow row) => o.Metadata && o.Wants("metadata", HasMetadata(row));
 
     // Cuenta, sin tocar nada, cuánto trabajo habría: ROMs de los sistemas elegidos y cuántas ya lo tienen todo en destino.
     public static BulkPlan Plan(BulkMediaOptions o)
@@ -157,7 +163,7 @@ internal sealed class BulkMediaRunner
                 int pending = 0;
                 foreach (var folder in o.Folders)
                 {
-                    try { if (o.Replace is not null || o.Overwrite != BulkOverwrite.No || !index.Has(RomFolderTarget(o, row, folder))) pending++; }
+                    try { if (o.Wants(folder.Folder, index.Has(RomFolderTarget(o, row, folder)))) pending++; }
                     catch { pending++; }
                 }
                 bool needLanguages = languageIndex is not null && ((o.Replace is null && o.Overwrite != BulkOverwrite.No) || !languageIndex.Has(RomKey.Of(row)));
@@ -317,7 +323,7 @@ internal sealed class BulkMediaRunner
         {
             string target = RomFolderTarget(o, row, folder);
             bool exists = index.Has(target);
-            bool wanted = o.Replace is not null || o.Overwrite != BulkOverwrite.No || !exists;
+            bool wanted = o.Wants(folder.Folder, exists);
             Dbg($"{id} · {folder.Folder}: {(exists ? "ya existe" : "no existe")} en destino ({Path.GetFileName(target)}) → {(wanted ? "se pide" : "se omite (no se sobrescribe)")}");
             if (wanted) pending.Add(folder);
         }
@@ -357,10 +363,10 @@ internal sealed class BulkMediaRunner
                 {
                     var policy = o.ReplaceFor("metadata");
                     int current = row.Description.Length, incoming = fetched.Desc.Length;
-                    bool replace = policy switch { BulkReplace.Always => true, BulkReplace.NewSmaller => incoming > 0 && incoming < current, _ => incoming > current };
+                    bool replace = policy switch { BulkReplace.No => false, BulkReplace.Always => true, BulkReplace.NewSmaller => incoming > 0 && incoming < current, _ => incoming > current };
                     if (!replace)
                     {
-                        Dbg($"{id}: metadatos recibidos (descripción de {incoming} caracteres frente a {current} actuales) pero no cumplen «{(policy == BulkReplace.NewSmaller ? "Nuevo es menor" : "Nuevo es mayor")}»: se respetan los actuales");
+                        Dbg(policy == BulkReplace.No ? $"{id}: ya tiene metadatos y la opción es «No»: se respetan los actuales" : $"{id}: metadatos recibidos (descripción de {incoming} caracteres frente a {current} actuales) pero no cumplen «{(policy == BulkReplace.NewSmaller ? "Nuevo es menor" : "Nuevo es mayor")}»: se respetan los actuales");
                         goto metadataDone;
                     }
                 }
@@ -497,11 +503,13 @@ internal sealed class BulkMediaRunner
         var policy = o.ReplaceFor(element);
         bool replace = policy switch
         {
+            BulkReplace.No => false,
             BulkReplace.Always => true,
             BulkReplace.NewSmaller => media.Size > 0 && media.Size < current,
             _ => media.Size > current
         };
-        if (!replace) reason = $"el nuevo ({(media.Size > 0 ? ScreenScraperDialog.FormatBytes(media.Size) : "tamaño desconocido")}) no cumple «{(policy == BulkReplace.NewSmaller ? "Nuevo es menor" : "Nuevo es mayor")}» frente al actual ({ScreenScraperDialog.FormatBytes(current)})";
+        if (!replace && policy == BulkReplace.No) reason = "la opción es «No»: se respeta el actual";
+        else if (!replace) reason = $"el nuevo ({(media.Size > 0 ? ScreenScraperDialog.FormatBytes(media.Size) : "tamaño desconocido")}) no cumple «{(policy == BulkReplace.NewSmaller ? "Nuevo es menor" : "Nuevo es mayor")}» frente al actual ({ScreenScraperDialog.FormatBytes(current)})";
         return !replace;
     }
 

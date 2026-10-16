@@ -28,14 +28,14 @@ internal sealed class BulkMediaDialog : LocalizedForm
 
     private readonly DataGridView systemsGrid = new();
     private readonly GroupBox systemsGroupBox = new() { Text = "Sistemas a los que se aplica", Dock = DockStyle.Fill };
-    private readonly Button selectAllButton = new() { Text = "Seleccionar todos", AutoSize = true };
-    private readonly Button selectNoneButton = new() { Text = "Deseleccionar todos", AutoSize = true };
+    // Estado de la casilla de tres estados (marcada / vacía / parcial) de la cabecera de la primera columna; sustituye a los botones Seleccionar todos y Deseleccionar todos.
+    private CheckState allSystemsState;
     private readonly Dictionary<string, CheckBox> folderChecks = new();
-    private readonly CheckBox allMediaCheck = new() { Text = "Todos", AutoSize = true, Margin = new Padding(6, 3, 3, 3) };
+    private readonly CheckBox allMediaCheck = new() { Text = "Todos", AutoSize = true, AutoCheck = false, ThreeState = true, Margin = new Padding(6, 3, 3, 3) };
     private readonly RadioButton normalizedRadio = new() { Text = "Vídeo normalizado (más ligero, mejor para Android)", AutoSize = true, Margin = new Padding(26, 0, 3, 0) };
     private readonly RadioButton originalRadio = new() { Text = "Vídeo original (el de mayor calidad y tamaño)", AutoSize = true, Margin = new Padding(26, 0, 3, 0) };
     // Por cada elemento (metadatos y cada carpeta de medios, menos los idiomas): cómo se sustituye si ya existe en destino.
-    private readonly Dictionary<string, (RadioButton Always, RadioButton Smaller, RadioButton Larger)> replaceRadios = new();
+    private readonly Dictionary<string, (RadioButton No, RadioButton Always, RadioButton Smaller, RadioButton Larger)> replaceRadios = new();
     // Cuadro «Sobrescribir» sobre las columnas de sustitución; se pone en gris mientras se descarga, como el resto.
     private Label replaceHeader = null!;
     private readonly CheckBox onlyNoMediaCheck = new() { Text = "Solo las ROMs que no tienen imagen o vídeo", AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 3, 3, 3) };
@@ -110,15 +110,32 @@ internal sealed class BulkMediaDialog : LocalizedForm
             var cell = systemsGrid.Rows[e.RowIndex].Cells["use"];
             if (!cell.ReadOnly) cell.Value = cell.Value is not true;
         };
-        selectAllButton.Click += (_, _) => SetAllSystems(true);
-        selectNoneButton.Click += (_, _) => SetAllSystems(false);
+        systemsGrid.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex != -1 || e.ColumnIndex != 0) return;
+            e.Paint(e.ClipBounds, DataGridViewPaintParts.All & ~DataGridViewPaintParts.ContentForeground);
+            var state = allSystemsState switch
+            {
+                CheckState.Checked => System.Windows.Forms.VisualStyles.CheckBoxState.CheckedNormal,
+                CheckState.Indeterminate => System.Windows.Forms.VisualStyles.CheckBoxState.MixedNormal,
+                _ => System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedNormal
+            };
+            CheckBoxRenderer.DrawCheckBox(e.Graphics!, new Point(e.CellBounds.X + 6, e.CellBounds.Y + (e.CellBounds.Height - 13) / 2), state);
+            TextRenderer.DrawText(e.Graphics!, Loc.T("Todos"), e.CellStyle!.Font, new Rectangle(e.CellBounds.X + 24, e.CellBounds.Y, e.CellBounds.Width - 24, e.CellBounds.Height), e.CellStyle.ForeColor,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            e.Handled = true;
+        };
+        systemsGrid.ColumnHeaderMouseClick += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left && e.ColumnIndex == 0 && systemsGrid.Enabled) SetAllSystems(allSystemsState != CheckState.Checked);
+        };
         systemsGrid.CurrentCellDirtyStateChanged += (_, _) => { if (systemsGrid.IsCurrentCellDirty) systemsGrid.CommitEdit(DataGridViewDataErrorContexts.Commit); };
         systemsGrid.CellValueChanged += (_, e) => { if (!updating && e.RowIndex >= 0 && e.ColumnIndex == 0) UpdateSystemsCount(); };
         foreach (var element in folderChecks.Values) element.CheckedChanged += (_, _) => UpdateDependentControls();
         allMediaCheck.Click += (_, _) =>
         {
             // Sin esta protección cada casilla marcada volvía a recalcular la general y el resto se hacía una a una.
-            bool value = allMediaCheck.Checked;
+            bool value = allMediaCheck.CheckState != CheckState.Checked;
             bulkChanging = true;
             try { foreach (var check in folderChecks.Values) check.Checked = value; }
             finally { bulkChanging = false; }
@@ -134,8 +151,10 @@ internal sealed class BulkMediaDialog : LocalizedForm
         Shown += async (_, _) =>
         {
             // Sin credenciales se ofrece registrarlas (o darse de alta) antes de seguir.
+            ClearSystemsFocus();
             credentials = ScreenScraperAccount.Ensure(this, trace, credentials);
             await LoadSsSystemsAsync();
+            ClearSystemsFocus();
         };
         FormClosing += (_, e) =>
         {
@@ -158,21 +177,16 @@ internal sealed class BulkMediaDialog : LocalizedForm
         systemsGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         systemsGrid.MultiSelect = false;
         systemsGrid.BackgroundColor = SystemColors.Window;
-        systemsGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "use", HeaderText = "", Width = 34 });
+        systemsGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "use", HeaderText = "Todos", Width = 70, SortMode = DataGridViewColumnSortMode.NotSortable });
         systemsGrid.Columns.Add(SystemIconColumn.Create(30));
         systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "system", HeaderText = "Carpeta de ES-DE", Width = 150, ReadOnly = true });
         systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "ss", HeaderText = "Sistema en ScreenScraper", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, ReadOnly = true });
         systemsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "roms", HeaderText = "ROMs", Width = 70, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter }, HeaderCell = { Style = { Alignment = DataGridViewContentAlignment.MiddleCenter } } });
 
-        var systemsButtons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, Margin = Padding.Empty };
-        systemsButtons.Controls.Add(selectAllButton);
-        systemsButtons.Controls.Add(selectNoneButton);
-        var systemsLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        var systemsLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 1 };
         systemsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        systemsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         systemsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        systemsLayout.Controls.Add(systemsButtons, 0, 0);
-        systemsLayout.Controls.Add(systemsGrid, 0, 1);
+        systemsLayout.Controls.Add(systemsGrid, 0, 0);
         var systemsGroup = systemsGroupBox;
         systemsGroup.Controls.Add(systemsLayout);
 
@@ -195,11 +209,13 @@ internal sealed class BulkMediaDialog : LocalizedForm
         }
         FlowLayoutPanel ReplaceOptions(string element)
         {
+            var no = new RadioButton { Text = "No", AutoSize = true, Margin = new Padding(0, 0, 12, 0) };
             var always = new RadioButton { Text = "Siempre", AutoSize = true, Margin = new Padding(0, 0, 12, 0) };
             var smaller = new RadioButton { Text = "Nuevo es menor", AutoSize = true, Checked = true, Margin = new Padding(0, 0, 12, 0) };
             var larger = new RadioButton { Text = "Nuevo es mayor", AutoSize = true, Margin = Padding.Empty };
-            replaceRadios[element] = (always, smaller, larger);
+            replaceRadios[element] = (no, always, smaller, larger);
             var panel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Padding = Padding.Empty };
+            panel.Controls.Add(no);
             panel.Controls.Add(always);
             panel.Controls.Add(smaller);
             panel.Controls.Add(larger);
@@ -209,8 +225,23 @@ internal sealed class BulkMediaDialog : LocalizedForm
         // Cabecera de las columnas de sustitución: un cuadro con borde fino y el texto centrado, tan ancho como las tres opciones.
         replaceHeader = new Label
         {
-            Text = "Sobrescribir", AutoSize = false, Size = new Size(328, 22), TextAlign = ContentAlignment.MiddleCenter,
+            Text = "Sobrescribir", AutoSize = false, Size = new Size(380, 22), TextAlign = ContentAlignment.MiddleCenter,
             BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 2, 0, 2)
+        };
+        // Pulsar el cuadro cambia a la vez todas las opciones: No → Siempre → Nuevo es menor → Nuevo es mayor → No… (si no están todas igual, empieza por No).
+        replaceHeader.Cursor = Cursors.Hand;
+        replaceHeader.Click += (_, _) =>
+        {
+            BulkReplace[] order = [BulkReplace.No, BulkReplace.Always, BulkReplace.NewSmaller, BulkReplace.NewLarger];
+            var current = replaceRadios.Keys.Select(ReplaceOf).Distinct().ToList();
+            var next = current.Count == 1 ? order[(Array.IndexOf(order, current[0]) + 1) % order.Length] : BulkReplace.No;
+            foreach (var radios in replaceRadios.Values)
+            {
+                radios.No.Checked = next == BulkReplace.No;
+                radios.Always.Checked = next == BulkReplace.Always;
+                radios.Smaller.Checked = next == BulkReplace.NewSmaller;
+                radios.Larger.Checked = next == BulkReplace.NewLarger;
+            }
         };
         AddElement(allMediaCheck, replaceHeader);
         // Los metadatos son un elemento más de la lista.
@@ -346,6 +377,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         foreach (var (element, radios) in replaceRadios)
         {
             var policy = settings.Replace is not null && settings.Replace.TryGetValue(element, out var saved) && Enum.TryParse<BulkReplace>(saved, out var parsed) ? parsed : BulkReplace.NewSmaller;
+            radios.No.Checked = policy == BulkReplace.No;
             radios.Always.Checked = policy == BulkReplace.Always;
             radios.Smaller.Checked = policy == BulkReplace.NewSmaller;
             radios.Larger.Checked = policy == BulkReplace.NewLarger;
@@ -364,12 +396,17 @@ internal sealed class BulkMediaDialog : LocalizedForm
 
     private BulkReplace ReplaceOf(string element) =>
         !replaceRadios.TryGetValue(element, out var radios) ? BulkReplace.NewSmaller
-        : radios.Always.Checked ? BulkReplace.Always : radios.Larger.Checked ? BulkReplace.NewLarger : BulkReplace.NewSmaller;
+        : radios.No.Checked ? BulkReplace.No : radios.Always.Checked ? BulkReplace.Always : radios.Larger.Checked ? BulkReplace.NewLarger : BulkReplace.NewSmaller;
 
     // La casilla general refleja si todos los elementos (medios y metadatos) están marcados.
     private bool bulkChanging;
 
-    private void SyncAllMediaCheck() { if (!bulkChanging) allMediaCheck.Checked = folderChecks.Values.All(c => c.Checked); }
+    private void SyncAllMediaCheck()
+    {
+        if (bulkChanging) return;
+        int marked = folderChecks.Values.Count(c => c.Checked);
+        allMediaCheck.CheckState = marked == 0 ? CheckState.Unchecked : marked == folderChecks.Count ? CheckState.Checked : CheckState.Indeterminate;
+    }
 
     private void UpdateDependentControls()
     {
@@ -377,7 +414,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         normalizedRadio.Enabled = originalRadio.Enabled = videos;
         // Las opciones de sustitución de cada elemento solo están activas si el elemento está marcado.
         foreach (var (element, radios) in replaceRadios)
-            radios.Always.Enabled = radios.Smaller.Enabled = radios.Larger.Enabled = folderChecks[element].Checked && !running;
+            radios.No.Enabled = radios.Always.Enabled = radios.Smaller.Enabled = radios.Larger.Enabled = folderChecks[element].Checked && !running;
     }
 
     // ---- Sistemas
@@ -419,6 +456,14 @@ internal sealed class BulkMediaDialog : LocalizedForm
         }
         finally { updating = false; }
         UpdateSystemsCount();
+        ClearSystemsFocus();
+    }
+
+    // Al abrir no debe haber ninguna fila con el foco ni seleccionada (el grid pone la primera por defecto).
+    private void ClearSystemsFocus()
+    {
+        systemsGrid.CurrentCell = null;
+        systemsGrid.ClearSelection();
     }
 
     private async Task LoadSsSystemsAsync()
@@ -475,6 +520,8 @@ internal sealed class BulkMediaDialog : LocalizedForm
 
     private void SetAllSystems(bool value)
     {
+        // La celda con el foco puede seguir en modo edición (tras pulsar su casilla) y conservar su valor anterior: se cierra la edición antes.
+        systemsGrid.EndEdit();
         updating = true;
         try
         {
@@ -492,6 +539,9 @@ internal sealed class BulkMediaDialog : LocalizedForm
     private void UpdateSystemsCount()
     {
         var rows = systemsGrid.Rows.Cast<DataGridViewRow>().Where(r => r.Cells["use"].Value is true && !r.Cells["use"].ReadOnly).ToList();
+        int selectable = systemsGrid.Rows.Cast<DataGridViewRow>().Count(r => !r.Cells["use"].ReadOnly);
+        allSystemsState = rows.Count == 0 ? CheckState.Unchecked : rows.Count == selectable ? CheckState.Checked : CheckState.Indeterminate;
+        systemsGrid.InvalidateCell(0, -1);
         int romCount = rows.Sum(r => Convert.ToInt32(r.Cells["roms"].Value));
         systemsGroupBox.Text = rows.Count == 0 ? "Sistemas a los que se aplica" : $"Sistemas a los que se aplica — {rows.Count} marcados · {romCount:N0} ROMs";
     }
@@ -542,6 +592,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         var marked = options.Folders.Select(f => f.Folder).Concat(options.Metadata ? ["metadata"] : []).ToList();
         string Group(BulkReplace policy) => string.Join(", ", marked.Where(e => options.ReplaceFor(e) == policy).Select(e => e == "metadata" ? "metadatos" : e));
         var replaceLines = new List<string>();
+        if (Group(BulkReplace.No).Length > 0) replaceLines.Add($"No se sustituye lo que ya existe (solo se descarga lo que falta): {Group(BulkReplace.No)}.");
         if (Group(BulkReplace.Always).Length > 0) replaceLines.Add($"SE SUSTITUYE SIEMPRE: {Group(BulkReplace.Always)}.");
         if (Group(BulkReplace.NewSmaller).Length > 0) replaceLines.Add($"Se sustituye solo si el nuevo es menor: {Group(BulkReplace.NewSmaller)}.");
         if (Group(BulkReplace.NewLarger).Length > 0) replaceLines.Add($"Se sustituye solo si el nuevo es mayor: {Group(BulkReplace.NewLarger)}.");
@@ -707,7 +758,6 @@ internal sealed class BulkMediaDialog : LocalizedForm
         else if (!running && iconTimer.Enabled) { iconTimer.Stop(); if (shovel is not null && bannerIcon is not null) bannerIcon.Image = shovel.Idle; }
         bool locked = value;
         systemsGrid.Enabled = !locked;
-        selectAllButton.Enabled = selectNoneButton.Enabled = !locked;
         foreach (var check in folderChecks.Values) check.Enabled = !locked;
         allMediaCheck.Enabled = !locked;
         searchNameCheck.Enabled = onlyNoMediaCheck.Enabled = replaceHeader.Enabled = !locked;
@@ -718,7 +768,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         else
         {
             normalizedRadio.Enabled = originalRadio.Enabled = false;
-            foreach (var radios in replaceRadios.Values) radios.Always.Enabled = radios.Smaller.Enabled = radios.Larger.Enabled = false;
+            foreach (var radios in replaceRadios.Values) radios.No.Enabled = radios.Always.Enabled = radios.Smaller.Enabled = radios.Larger.Enabled = false;
         }
     }
 

@@ -109,6 +109,26 @@ internal sealed class CurationDialog : LocalizedForm
             current.CellValueChanged += (_, e) => OnCheckChanged(current, e.RowIndex, e.ColumnIndex);
             // Doble clic en cualquier parte de la fila (menos en su casilla, que ya responde a cada clic) marca o desmarca la regla.
             current.CellDoubleClick += (_, e) => ToggleRow(current, e.RowIndex, e.ColumnIndex);
+            // La cabecera de la primera columna lleva una casilla de tres estados dibujada a mano que marca o desmarca todas las filas visibles.
+            current.CellPainting += (_, e) =>
+            {
+                if (e.RowIndex != -1 || e.ColumnIndex != 0) return;
+                e.Paint(e.ClipBounds, DataGridViewPaintParts.All & ~DataGridViewPaintParts.ContentForeground);
+                var state = HeaderState(current) switch
+                {
+                    CheckState.Checked => System.Windows.Forms.VisualStyles.CheckBoxState.CheckedNormal,
+                    CheckState.Indeterminate => System.Windows.Forms.VisualStyles.CheckBoxState.MixedNormal,
+                    _ => System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedNormal
+                };
+                CheckBoxRenderer.DrawCheckBox(e.Graphics!, new Point(e.CellBounds.X + 6, e.CellBounds.Y + (e.CellBounds.Height - 13) / 2), state);
+                TextRenderer.DrawText(e.Graphics!, Loc.T("Todos"), e.CellStyle!.Font, new Rectangle(e.CellBounds.X + 24, e.CellBounds.Y, e.CellBounds.Width - 24, e.CellBounds.Height), e.CellStyle.ForeColor,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                e.Handled = true;
+            };
+            current.ColumnHeaderMouseClick += (_, e) =>
+            {
+                if (e.Button == MouseButtons.Left && e.ColumnIndex == 0 && current.Enabled) SetAllInGrid(current, HeaderState(current) != CheckState.Checked);
+            };
         }
         genreFilter.TextChanged += (_, _) => FillGenres();
         exportButton.Click += (_, _) => Export();
@@ -164,7 +184,7 @@ internal sealed class CurationDialog : LocalizedForm
     private void BuildLayout()
     {
         Configure(supraGrid);
-        supraGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "use", HeaderText = "", Width = 30 });
+        supraGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "use", HeaderText = "Todos", Width = 70, SortMode = DataGridViewColumnSortMode.NotSortable });
         supraGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "rule", HeaderText = "Supracategoría", Width = 190, ReadOnly = true });
         supraGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "ROMs", Width = 55, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter }, HeaderCell = { Style = { Alignment = DataGridViewContentAlignment.MiddleCenter } } });
         supraGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "desc", HeaderText = "Qué incluye", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, ReadOnly = true });
@@ -181,7 +201,7 @@ internal sealed class CurationDialog : LocalizedForm
         supraGroup.Controls.Add(supraLayout);
 
         Configure(genresGrid);
-        genresGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "use", HeaderText = "", Width = 30 });
+        genresGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "use", HeaderText = "Todos", Width = 70, SortMode = DataGridViewColumnSortMode.NotSortable });
         genresGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "rule", HeaderText = "Categoría", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, ReadOnly = true });
         genresGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "ROMs", Width = 60, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter }, HeaderCell = { Style = { Alignment = DataGridViewContentAlignment.MiddleCenter } } });
         var genresLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
@@ -641,9 +661,36 @@ internal sealed class CurationDialog : LocalizedForm
         finally { updating = false; }
     }
 
+    private static CheckState HeaderState(DataGridView grid)
+    {
+        int total = grid.Rows.Count, marked = grid.Rows.Cast<DataGridViewRow>().Count(r => r.Cells["use"].Value is true);
+        return marked == 0 ? CheckState.Unchecked : marked == total ? CheckState.Checked : CheckState.Indeterminate;
+    }
+
+    // Marca o desmarca todas las filas del grid (en el de categorías, las que deja ver el filtro) y recalcula una sola vez.
+    private void SetAllInGrid(DataGridView grid, bool value)
+    {
+        grid.EndEdit(); // la celda con el foco puede seguir en edición y conservar su valor anterior
+        updating = true;
+        try
+        {
+            foreach (DataGridViewRow row in grid.Rows)
+            {
+                if (row.Tag is not string id) continue;
+                row.Cells["use"].Value = value;
+                if (value) checkedIds.Add(id); else checkedIds.Remove(id);
+            }
+        }
+        finally { updating = false; }
+        grid.InvalidateCell(0, -1);
+        SaveState();
+        RefreshAll();
+    }
+
     private void OnCheckChanged(DataGridView grid, int rowIndex, int columnIndex)
     {
         if (updating || rowIndex < 0 || columnIndex != 0 || grid.Rows[rowIndex].Tag is not string id) return;
+        grid.InvalidateCell(0, -1);
         if (grid.Rows[rowIndex].Cells["use"].Value is true) checkedIds.Add(id); else checkedIds.Remove(id);
         SaveState();
         RefreshAll();

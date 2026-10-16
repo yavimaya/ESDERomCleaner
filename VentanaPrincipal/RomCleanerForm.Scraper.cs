@@ -7,7 +7,18 @@ public sealed partial class RomCleanerForm
 
     // «preselected»: sistemas que se abren ya marcados (viene de la propuesta tras analizar, con la colección recién cargada).
     // «onlyRows»: la descarga trabaja solo con esas ROMs (de uno o varios sistemas), todas marcadas; es el caso de las ROMs recién añadidas.
+    private bool bulkMediaOpening;
+
+    // Evita abrir dos veces la descarga masiva: hay esperas (comprobaciones, creación de gamelists) antes de que aparezca el diálogo.
     private async Task OpenBulkMediaDialogAsync(IReadOnlyCollection<string>? preselected = null, IReadOnlyList<RomRow>? onlyRows = null, BulkPreset preset = BulkPreset.Saved)
+    {
+        if (bulkMediaOpening) return;
+        bulkMediaOpening = true;
+        try { await OpenBulkMediaDialogCoreAsync(preselected, onlyRows, preset); }
+        finally { bulkMediaOpening = false; }
+    }
+
+    private async Task OpenBulkMediaDialogCoreAsync(IReadOnlyCollection<string>? preselected, IReadOnlyList<RomRow>? onlyRows, BulkPreset preset)
     {
         if (!await Requirements.CheckAsync(this, trace, "Descarga masiva de medios", Need.ScreenScraper | Need.Internet)) return;
         if (onlyRows is not null) preselected = onlyRows.Select(r => r.System).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -41,7 +52,17 @@ public sealed partial class RomCleanerForm
         ShowDetails();
     }
 
+    private bool scraperOpening;
+
     private async Task OpenScraperDialogAsync()
+    {
+        if (scraperOpening) return;
+        scraperOpening = true;
+        try { await OpenScraperDialogCoreAsync(); }
+        finally { scraperOpening = false; }
+    }
+
+    private async Task OpenScraperDialogCoreAsync()
     {
         if (roms.SelectedItem is not RomItem item) return;
         if (!await Requirements.CheckAsync(this, trace, "Scrapear con ScreenScraper", Need.ScreenScraper | Need.Internet)) return;

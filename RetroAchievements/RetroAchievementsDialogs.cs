@@ -142,13 +142,16 @@ internal sealed class RaScanDialog : LocalizedForm
             int i = systemList.Items.Add(new SystemItem(group.Key, group.Count(), index.SystemChecked(group.Key)) { Before = CountWithAchievements(group.Key) });
             if (preselectSystem is null || group.Key.Equals(preselectSystem, StringComparison.OrdinalIgnoreCase)) systemList.SetItemChecked(i, true);
         }
-        // Un solo botón que alterna: si están todos marcados los desmarca; si no, los marca todos.
-        var all = RaUi.MakeButton("Todos", false, 84); all.Location = new Point(24, 394); all.Height = 28; all.Tag = "noloc";
-        bool AllChecked() => systemList.Items.Count > 0 && systemList.CheckedItems.Count() == systemList.Items.Count;
-        void RefreshToggle() => all.Text = Loc.T(AllChecked() ? "Ninguno" : "Todos");
+        // Casilla de tres estados: si están todos marcados los desmarca; si no, los marca todos.
+        var all = new CheckBox { Text = "Todos los sistemas", AutoSize = true, AutoCheck = false, ThreeState = true, Location = new Point(26, 396), BackColor = Color.Transparent };
+        void RefreshToggle()
+        {
+            int marked = systemList.CheckedItems.Count();
+            all.CheckState = marked == 0 ? CheckState.Unchecked : marked == systemList.Items.Count ? CheckState.Checked : CheckState.Indeterminate;
+        }
         all.Click += (_, _) =>
         {
-            bool value = !AllChecked();
+            bool value = all.CheckState != CheckState.Checked;
             for (int i = 0; i < systemList.Items.Count; i++) systemList.SetItemChecked(i, value);
         };
         systemList.CheckChanged += (_, _) => RefreshToggle();

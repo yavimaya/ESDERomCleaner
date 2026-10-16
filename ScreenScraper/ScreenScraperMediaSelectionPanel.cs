@@ -45,8 +45,8 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     private readonly CheckBox candidateSound = new() { Text = "Sonido", AutoSize = true, Enabled = false, Margin = new Padding(0, 4, 8, 0) };
     private readonly Label currentCaption = NewCaption();
     private readonly Label candidateCaption = NewCaption();
-    private readonly Button markAllButton = new() { Text = "Marcar todas", AutoSize = true, MinimumSize = new Size(110, 30), Margin = new Padding(6, 0, 3, 0) };
-    private readonly Button clearButton = new() { Text = "Limpiar", AutoSize = true, MinimumSize = new Size(90, 30), Margin = new Padding(3, 0, 3, 0) };
+    // Estado de la casilla de tres estados de la cabecera de «Scrapear» (sustituye a los botones Marcar todas y Limpiar).
+    private CheckState allFoldersState;
     private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 30) };
     private readonly Button saveButton = new() { Text = "Scrapear", AutoSize = true, MinimumSize = new Size(170, 30), Anchor = AnchorStyles.None };
 
@@ -101,7 +101,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         var menu = new ContextMenuStrip { ShowImageMargin = false };
         var markSelected = new ToolStripMenuItem("Marcar las seleccionadas");
         var unmarkSelected = new ToolStripMenuItem("Desmarcar las seleccionadas");
-        menu.Items.AddRange([markSelected, unmarkSelected, new ToolStripSeparator(), new ToolStripMenuItem("Marcar todas", null, (_, _) => markAllButton.PerformClick()), new ToolStripMenuItem("Limpiar", null, (_, _) => clearButton.PerformClick())]);
+        menu.Items.AddRange([markSelected, unmarkSelected, new ToolStripSeparator(), new ToolStripMenuItem("Marcar todas", null, (_, _) => SetSave(Enumerable.Range(0, states.Count), true)), new ToolStripMenuItem("Limpiar", null, (_, _) => SetSave(Enumerable.Range(0, states.Count), false))]);
         markSelected.Click += (_, _) => SetSave(SelectedIndexes(), true);
         unmarkSelected.Click += (_, _) => SetSave(SelectedIndexes(), false);
         menu.Opening += (_, e) =>
@@ -140,8 +140,28 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         candidatePreview.ContentDoubleClick += async (_, _) => await OpenOrDownloadCandidateAsync();
         saveButton.Click += async (_, _) => await SaveAsync();
         closeButton.Click += (_, _) => CloseRequested?.Invoke();
-        markAllButton.Click += (_, _) => SetSave(Enumerable.Range(0, states.Count), true);
-        clearButton.Click += (_, _) => SetSave(Enumerable.Range(0, states.Count), false);
+        // La cabecera de «Scrapear» lleva una casilla de tres estados dibujada a mano; al pulsarla se marcan o desmarcan todas las carpetas.
+        foldersGrid.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex != -1 || e.ColumnIndex != foldersGrid.Columns["save"]!.Index) return;
+            e.Paint(e.ClipBounds, DataGridViewPaintParts.All & ~DataGridViewPaintParts.ContentForeground);
+            var state = allFoldersState switch
+            {
+                CheckState.Checked => System.Windows.Forms.VisualStyles.CheckBoxState.CheckedNormal,
+                CheckState.Indeterminate => System.Windows.Forms.VisualStyles.CheckBoxState.MixedNormal,
+                _ => System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedNormal
+            };
+            var box = new Point(e.CellBounds.X + 6, e.CellBounds.Y + (e.CellBounds.Height - 13) / 2);
+            CheckBoxRenderer.DrawCheckBox(e.Graphics!, box, state);
+            TextRenderer.DrawText(e.Graphics!, Loc.T("Scrapear"), e.CellStyle!.Font, new Rectangle(e.CellBounds.X + 24, e.CellBounds.Y, e.CellBounds.Width - 24, e.CellBounds.Height), e.CellStyle.ForeColor,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            e.Handled = true;
+        };
+        foldersGrid.ColumnHeaderMouseClick += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left || e.ColumnIndex != foldersGrid.Columns["save"]!.Index || !foldersGrid.Enabled) return;
+            SetSave(Enumerable.Range(0, states.Count), allFoldersState != CheckState.Checked);
+        };
         currentSound.CheckedChanged += (_, _) => currentPreview.Sound = currentSound.Checked;
         candidateSound.CheckedChanged += (_, _) => candidatePreview.Sound = candidateSound.Checked;
     }
@@ -164,6 +184,8 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     // Marca o desmarca las filas indicadas (las que no tienen candidato no se pueden marcar).
     private void SetSave(IEnumerable<int> indexes, bool value)
     {
+        // La celda con el foco puede seguir en modo edición y conservar su valor anterior: se cierra la edición antes.
+        foldersGrid.EndEdit();
         foreach (int i in indexes)
         {
             if (i < 0 || i >= states.Count) continue;
@@ -194,8 +216,8 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         foldersGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         foldersGrid.MultiSelect = true;
         RaUi.StyleGrid(foldersGrid, 26, 28);
-        RaUi.StyleButton(markAllButton, false); RaUi.StyleButton(clearButton, false); RaUi.StyleButton(closeButton, false); RaUi.StyleButton(saveButton, true);
-        foldersGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "save", HeaderText = "Scrapear", Width = 70 });
+        RaUi.StyleButton(closeButton, false); RaUi.StyleButton(saveButton, true);
+        foldersGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "save", HeaderText = "Scrapear", Width = 96, SortMode = DataGridViewColumnSortMode.NotSortable });
         foreach (var (name, header, width) in new[] { ("folder", "Carpeta ES-DE", 105), ("desc", "Qué es", 150), ("chosen", "Elegido de ScreenScraper", 160), ("current", "En la colección", 170), ("action", "Acción", 150) })
             foldersGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = header, Width = width, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable });
         foldersGrid.Columns[^1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
@@ -250,8 +272,6 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var selectionButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty, Padding = new Padding(0, 5, 0, 0) };
-        selectionButtons.Controls.Add(markAllButton);
-        selectionButtons.Controls.Add(clearButton);
         closeButton.Anchor = AnchorStyles.Right;
         closeButton.Margin = new Padding(3, 0, 6, 0);
         buttons.Controls.Add(selectionButtons, 0, 0);
@@ -358,8 +378,15 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
     }
 
     // Scrapear solo está disponible si hay algo marcado que se pueda guardar (con candidato y que no sea idéntico al actual).
-    private void UpdateSaveEnabled() =>
+    private void UpdateSaveEnabled()
+    {
         saveButton.Enabled = !IsSaving && states.Any(s => s.Save && s.Chosen is not null && !s.Identical);
+        // La casilla general refleja las carpetas que se pueden marcar (con candidato y no idénticas al actual).
+        var markable = states.Where(s => s.Chosen is not null && !s.Identical).ToList();
+        int marked = markable.Count(s => s.Save);
+        allFoldersState = marked == 0 ? CheckState.Unchecked : marked == markable.Count ? CheckState.Checked : CheckState.Indeterminate;
+        foldersGrid.InvalidateCell(foldersGrid.Columns["save"]!.Index, -1);
+    }
 
     private void ShowSelectedFolder()
     {
@@ -596,7 +623,7 @@ internal sealed class ScreenScraperMediaSelectionPanel : UserControl
         foldersGrid.Enabled = !busy;
         candidatesList.Enabled = !busy;
         IsSaving = busy;
-        markAllButton.Enabled = clearButton.Enabled = closeButton.Enabled = !busy;
+        closeButton.Enabled = !busy;
         UpdateSaveEnabled();
         BusyChanged?.Invoke(busy);
     }
