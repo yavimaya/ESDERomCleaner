@@ -137,12 +137,22 @@ internal sealed class ScreenScraperQuotaStrip : StatusStrip
     public string TimeText { set { timing.Text = value; timing.Visible = value.Length > 0; } }
 
     // showPending = false quita la casilla de llamadas pendientes de leer.
-    public ScreenScraperQuotaStrip(bool showPending = true)
+    // cpuAtRight = true: el tiempo va tras «Leído del servidor» y la CPU sola en la esquina derecha (descarga masiva).
+    public ScreenScraperQuotaStrip(bool showPending = true, bool cpuAtRight = false)
     {
         Dock = DockStyle.Bottom;
         SizingGrip = false;
         ShowItemToolTips = true;
-        Items.AddRange(new ToolStripItem[] { requests, pending, failed, threads, speed, synced, cpu, filler, timing });
+        if (cpuAtRight)
+        {
+            timing.TextAlign = ContentAlignment.MiddleLeft;
+            timing.BorderSides = ToolStripStatusLabelBorderSides.Right;
+            timing.BorderStyle = Border3DStyle.Etched;
+            cpu.BorderSides = ToolStripStatusLabelBorderSides.None;
+            cpu.TextAlign = ContentAlignment.MiddleRight;
+            Items.AddRange(new ToolStripItem[] { requests, pending, failed, threads, speed, synced, timing, filler, cpu });
+        }
+        else Items.AddRange(new ToolStripItem[] { requests, pending, failed, threads, speed, synced, cpu, filler, timing });
         cpuTimer.Tick += (_, _) => UpdateCpu();
         cpuTimer.Start();
         pending.Visible = showPending;

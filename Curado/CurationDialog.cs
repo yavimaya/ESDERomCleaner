@@ -726,7 +726,8 @@ internal sealed class CurationDialog : LocalizedForm
 
     private void ToggleRow(DataGridView grid, int rowIndex, int columnIndex)
     {
-        if (rowIndex < 0 || columnIndex == 0) return;
+        if (rowIndex < 0 || (columnIndex == 0 && GridChecks.OnGlyph(grid, 0, rowIndex))) return;
+        grid.EndEdit();
         grid.Rows[rowIndex].Cells["use"].Value = grid.Rows[rowIndex].Cells["use"].Value is not true;
     }
 

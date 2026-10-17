@@ -6,8 +6,14 @@ internal static class CancelConfirm
     // true si el usuario confirma que quiere cancelar «operation» (texto en español, ya traducible).
     public static bool Ask(IWin32Window? owner, string operation)
     {
-        using var dialog = new CancelOperationDialog(operation);
-        return dialog.ShowDialog(owner) == DialogResult.OK;
+        // Mientras el usuario decide, la operación en curso se queda parada (las que llaman a PauseGate.Checkpoint).
+        PauseGate.Pause();
+        try
+        {
+            using var dialog = new CancelOperationDialog(operation);
+            return dialog.ShowDialog(owner) == DialogResult.OK;
+        }
+        finally { PauseGate.Resume(); }
     }
 }
 

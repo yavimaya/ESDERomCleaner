@@ -260,7 +260,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         WireCollections();
         WireRetroAchievements();
         addRoms.Click += async (_, _) => await OpenAddRomsAsync();
-        datManager.Click += (_, _) => { using var d = new DatManagerDialog(trace, root.Text.Trim().Trim('"')); d.ShowDialog(this); if (RomDatabase.InstalledCount() > 0) _ = RomDatabase.GetIndexAsync(); };
+        datManager.Click += (_, _) => { using var d = BusyNotice.Create(this, () => new DatManagerDialog(trace, root.Text.Trim().Trim('"'))); d.ShowDialog(this); if (RomDatabase.InstalledCount() > 0) _ = RomDatabase.GetIndexAsync(); };
         createGamelists.Click +=async (_, _) => await CreateGamelistsAsync(scanAfter: true, quiet: false);
         curationRules.Click +=async (_, _) => await OpenCurationDialogAsync();
         screenScraperCredentials.Click += (_, _) =>
@@ -382,7 +382,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
     }
     private void ShowTrace()
     {
-        using var dialog = new TraceViewerDialog(trace);
+        using var dialog = BusyNotice.Create(this, () => new TraceViewerDialog(trace));
         dialog.ShowDialog(this);
     }
 

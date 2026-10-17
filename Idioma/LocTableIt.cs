@@ -27,6 +27,8 @@ internal static class LocTableIt
         ("Seleccionar todos", "Seleziona tutti"),
         ("Deseleccionar todos", "Deseleziona tutti"),
         ("Todos los sistemas", "Tutti i sistemi"),
+        ("Preparando la ventana…", "Preparazione della finestra…"),
+        ("Preparando la descarga masiva…", "Preparazione del download di massa…"),
         ("Todos", "Tutti"),
         ("Vídeo normalizado (más ligero, mejor para Android)", "Video normalizzato (più leggero, ideale per Android)"),
         ("Vídeo original (el de mayor calidad y tamaño)", "Video originale (qualità e dimensioni massime)"),

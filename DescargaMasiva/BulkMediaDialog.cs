@@ -51,7 +51,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
     private readonly Button debugButton = new() { Text = "Registro…", AutoSize = true, MinimumSize = new Size(90, 30) };
     private readonly Button exportButton = new() { Text = "Exportar incidencias…", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
     private readonly Button closeButton = new() { Text = "Cerrar", AutoSize = true, MinimumSize = new Size(90, 30), DialogResult = DialogResult.Cancel };
-    private readonly ScreenScraperQuotaStrip quotaStrip = new(showPending: false);
+    private readonly ScreenScraperQuotaStrip quotaStrip = new(showPending: false, cpuAtRight: true);
     // Animación del icono de la cabecera: la pala cava y va sacando imágenes (foto, vídeo, documento) en bucle mientras se descarga.
     private RaUi.ShovelAnimation? shovel;
     private PictureBox? bannerIcon;
@@ -106,7 +106,8 @@ internal sealed class BulkMediaDialog : LocalizedForm
         // Doble clic en cualquier parte de la fila (menos en su casilla, que ya responde a cada clic) marca o desmarca el sistema.
         systemsGrid.CellDoubleClick += (_, e) =>
         {
-            if (running || e.RowIndex < 0 || e.ColumnIndex == 0) return;
+            if (running || e.RowIndex < 0 || (e.ColumnIndex == 0 && GridChecks.OnGlyph(systemsGrid, 0, e.RowIndex))) return;
+            systemsGrid.EndEdit();
             var cell = systemsGrid.Rows[e.RowIndex].Cells["use"];
             if (!cell.ReadOnly) cell.Value = cell.Value is not true;
         };
@@ -143,6 +144,7 @@ internal sealed class BulkMediaDialog : LocalizedForm
         };
         foreach (var check in folderChecks.Values) check.CheckedChanged += (_, _) => SyncAllMediaCheck();
         SyncAllMediaCheck();
+        UpdateDependentControls(); // los ajustes guardados se aplicaron antes de enganchar los eventos: se sincroniza el estado inicial de las opciones
         startButton.Click += async (_, _) => await StartAsync();
         cancelButton.Click += (_, _) => { if (!CancelConfirm.Ask(this, "la descarga masiva de medios")) return; cts?.Cancel(); SetStatus("Cancelando…"); };
         exportButton.Click += (_, _) => ExportIssues();

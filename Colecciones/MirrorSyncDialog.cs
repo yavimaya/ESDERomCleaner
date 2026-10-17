@@ -259,7 +259,9 @@ internal sealed class MirrorSyncDialog : LocalizedForm
             || destination.Equals(programFiles, StringComparison.OrdinalIgnoreCase) || IsInside(programFiles, destination)
             || destination.Equals(userProfile, StringComparison.OrdinalIgnoreCase) || IsInside(userProfile, destination)
             || IsInside(destination, windows) || IsInside(destination, programFiles) || IsInside(destination, userProfile)
-            || Path.GetPathRoot(destination)?.TrimEnd('\\').Equals(destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) == true)
+            // La raíz de la unidad de Windows está protegida; la raíz de otra unidad (una tarjeta SD, un disco externo) es un destino válido, con su confirmación.
+            || (Path.GetPathRoot(destination)?.TrimEnd('\\').Equals(destination.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) == true
+                && destination.TrimEnd('\\').Equals(Path.GetPathRoot(windows)?.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)))
         {
             error = "El destino está en una carpeta protegida del sistema o del perfil de usuario.";
             return false;

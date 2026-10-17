@@ -465,7 +465,7 @@ internal static class RaScanner
         int doneSystems = 0, totalRoms = 0, byHash = 0, byName = 0, without = 0, skipped = 0;
         foreach (string system in systems)
         {
-            token.ThrowIfCancellationRequested();
+            await PauseGate.WaitAsync(token);
             report.Report($"{system}: descargando la lista de juegos con logros…");
             int consoleId = RaConsoles.Of(system)!.Value;
             var games = await client.GetGamesAsync(consoleId, token);
@@ -486,6 +486,7 @@ internal static class RaScanner
             await Parallel.ForEachAsync(systemRows, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Math.Min(4, Environment.ProcessorCount - 1)), CancellationToken = token },
                 (row, _) =>
                 {
+                    PauseGate.Checkpoint(token); // hilo del grupo: puede esperar sin bloquear la interfaz
                     RaGame? game = null; string by = "hash";
                     string? hash = RaHasher.Compute(consoleId, row.Path);
                     if (hash is null) Interlocked.Increment(ref hashNull);

@@ -11,24 +11,35 @@ namespace ESDERomCleaner;
 
 public sealed partial class RomCleanerForm : LocalizedForm
 {
+    private bool scanStarting;
+
     private async Task ScanAsync(bool offerUnclassified = true)
     {
         List<string>? unclassified = null;
-        if (cts != null) return;
-        if (!EnsureCollectionRoot()) { status.Text = "Ruta raíz no válida."; return; }
-        string rootPath = root.Text.Trim().Trim('"');
-        if (!ValidateRoot(rootPath, out string problem))
+        // «scanStarting» cubre las esperas previas (aviso de gamelists): sin él, un segundo análisis lanzado entonces pisaba el cts del primero
+        // y al terminar uno de los dos fallaba con una referencia nula.
+        if (cts != null || scanStarting) return;
+        scanStarting = true;
+        string rootPath;
+        CancellationToken token;
+        try
         {
-            status.Text = "Ruta raíz no válida.";
-            QuietMessage.Show(this, "Ruta raíz no válida", problem);
-            return;
+            if (!EnsureCollectionRoot()) { status.Text = "Ruta raíz no válida."; return; }
+            rootPath = root.Text.Trim().Trim('"');
+            if (!ValidateRoot(rootPath, out string problem))
+            {
+                status.Text = "Ruta raíz no válida.";
+                QuietMessage.Show(this, "Ruta raíz no válida", problem);
+                return;
+            }
+            // Para analizar una carpeta hace falta una colección con ella (se ofrece crearla).
+            if (!EnsureActiveCollection()) return;
+            root.Text = rootPath;
+            // El análisis solo lista los juegos que figuran en un gamelist: si hay ROMs sin gamelist (sistema nuevo o ROMs recién copiadas), se ofrece añadirlas.
+            await CreateGamelistsAsync(scanAfter: false, quiet: true, reason: "Hay ROMs en Roms\\<sistema> que no figuran en ningún gamelist.xml, y el análisis solo lista los juegos de los gamelists.");
+            selected.Clear(); cts = new CancellationTokenSource(); token = cts.Token;
         }
-        // Para analizar una carpeta hace falta una colección con ella (se ofrece crearla).
-        if (!EnsureActiveCollection()) return;
-        root.Text = rootPath;
-        // El análisis solo lista los juegos que figuran en un gamelist: si hay ROMs sin gamelist (sistema nuevo o ROMs recién copiadas), se ofrece añadirlas.
-        await CreateGamelistsAsync(scanAfter: false, quiet: true, reason: "Hay ROMs en Roms\\<sistema> que no figuran en ningún gamelist.xml, y el análisis solo lista los juegos de los gamelists.");
-        selected.Clear(); cts = new CancellationTokenSource(); var token = cts.Token;
+        finally { scanStarting = false; }
         scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = deleteSelected.Enabled = false; cancel.Enabled = true; progress.Style = ProgressBarStyle.Blocks; progress.Value = 0;
         trace.Add("scan_started", root.Text);
         sizesCalculating = true;
@@ -68,7 +79,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
         }
         catch (OperationCanceledException) { sizesCalculating = false; status.Text = "Cancelado. No se modificó ningún archivo."; trace.Add("scan_cancelled", root.Text); }
         catch (Exception ex) { sizesCalculating = false; status.Text = "Error de escaneo."; trace.Add("scan_error", ex.ToString()); MessageBox.Show(this, ex.Message, "No se pudo analizar", MessageBoxButtons.OK, MessageBoxIcon.Error); }
-        finally { try { await mediaSizeTask; } catch { } cts.Dispose(); cts = null; scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = true; deleteSelected.Enabled = selected.Count > 0; cancel.Enabled = false; progress.Style = ProgressBarStyle.Blocks; progress.Value = 0; }
+        finally { try { await mediaSizeTask; } catch { } cts?.Dispose(); cts = null; scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = true; deleteSelected.Enabled = selected.Count > 0; cancel.Enabled = false; progress.Style = ProgressBarStyle.Blocks; progress.Value = 0; }
 
         if (categorizeAfterScan is { Count: > 0 } toCategorize)
         {
@@ -96,7 +107,7 @@ public sealed partial class RomCleanerForm : LocalizedForm
                 var paths = kind == 0 ? set.NoMetadata : kind == 1 ? set.NoImage : set.NoVideo;
                 return paths.Select(Path.GetFileName).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).Order(StringComparer.OrdinalIgnoreCase).ToList();
             }
-            using (var dialog = new UnclassifiedSystemsDialog(listed, GapNames)) { dialog.ShowDialog(this); choice = dialog.Choice; }
+            using (var dialog = BusyNotice.Create(this, () => new UnclassifiedSystemsDialog(listed, GapNames))) { dialog.ShowDialog(this); choice = dialog.Choice; }
             // «Categorizar» solo descarga los metadatos (que traen la categoría), con una ventana de progreso y sin abrir el scrapeo; «Categorizar y scrapear» abre la descarga masiva con los medios elegidos la última vez.
             if (choice == UnclassifiedChoice.Categorize) await CategorizeAsync(unclassified, onlyMissingCategory: true);
             else if (choice == UnclassifiedChoice.CategorizeAndScrape)
@@ -338,11 +349,11 @@ public sealed partial class RomCleanerForm : LocalizedForm
         var rows = all.Where(r => r.Path.Length > 0 && selected.Contains(r.Path)).ToList();
         if (rows.Count == 0) { QuietMessage.Show(this, "ROMs seleccionadas", "No hay ROMs seleccionadas."); return; }
         trace.Add("selected_roms_opened", $"roms={rows.Count}");
-        using var dialog = new SelectedRomsDialog(root.Text, rows, FormatSize, (row, on) =>
+        using var dialog = BusyNotice.Create(this, () => new SelectedRomsDialog(root.Text, rows, FormatSize, (row, on) =>
         {
             ApplyRomCheck(row.Path, on);
             SyncVisibleRomChecks();
-        });
+        }));
         dialog.ShowDialog(this);
     }
 

@@ -16,7 +16,7 @@ internal sealed class CollectionScanner
         var rows = new List<RomRow>(); var accessories = new List<AccessoryFile>(); var systemFileCounts = new Dictionary<string,int>(StringComparer.OrdinalIgnoreCase); int gamelists = 0, systemCount = 0, fileCount = 0; var extensionCounts = new Dictionary<string,int>(StringComparer.OrdinalIgnoreCase);
         for (int si = 0; si < systems.Length; si++)
         {
-            token.ThrowIfCancellationRequested();
+            PauseGate.Checkpoint(token);
             var system = systems[si]; var sysPath = Path.Combine(romRoot, system);
             progress.Report(new ScanProgress($"Analizando {system}…", si, systems.Length));
             var listPath = Path.Combine(listRoot, system, "gamelist.xml");
@@ -30,7 +30,7 @@ internal sealed class CollectionScanner
             }
 
             var files = new List<string>();
-            try { foreach (var f in Directory.EnumerateFiles(sysPath, "*", SearchOption.AllDirectories)) { token.ThrowIfCancellationRequested(); files.Add(f); } }
+            try { foreach (var f in Directory.EnumerateFiles(sysPath, "*", SearchOption.AllDirectories)) { PauseGate.Checkpoint(token); files.Add(f); } }
             catch (UnauthorizedAccessException e) { progress.Report(new ScanProgress($"Acceso parcial {system}: {e.Message}", si + 1, systems.Length)); }
             catch (IOException e) { progress.Report(new ScanProgress($"Lectura parcial {system}: {e.Message}", si + 1, systems.Length)); }
 
@@ -40,7 +40,7 @@ internal sealed class CollectionScanner
             {
                 foreach (var f in files)
                 {
-                    token.ThrowIfCancellationRequested();
+                    PauseGate.Checkpoint(token);
                     var p = Path.GetFullPath(f);
                     string relativePath = PathRules.Relative(Path.GetRelativePath(sysPath, p));
                     accessories.Add(new AccessoryFile(system, p, Length(p), relativePath, PathRules.AccessoryMatchKey(relativePath)));
@@ -52,7 +52,7 @@ internal sealed class CollectionScanner
             var directories = new List<string>(); var unmatched = new List<GameEntry>();
             foreach (var game in games)
             {
-                token.ThrowIfCancellationRequested();
+                PauseGate.Checkpoint(token);
                 // «Excluir del contador» o «del multi-scraper»: el juego no se cuenta, ni se lista, ni se scrapea, ni entra en el curado.
                 if (game.Excluded) continue;
                 var path = Path.GetFullPath(Path.Combine(sysPath, game.RelativeKey.Replace('/', Path.DirectorySeparatorChar)));
@@ -69,14 +69,14 @@ internal sealed class CollectionScanner
                 var byName = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var f in files)
                 {
-                    token.ThrowIfCancellationRequested(); var key = PathRules.Name(Path.GetFileName(f));
+                    PauseGate.Checkpoint(token); var key = PathRules.Name(Path.GetFileName(f));
                     if (key.Length == 0) continue;
                     if (!byName.TryGetValue(key, out var list)) byName[key] = list = new();
                     list.Add(f);
                 }
                 foreach (var game in unmatched)
                 {
-                    token.ThrowIfCancellationRequested();
+                    PauseGate.Checkpoint(token);
                     var matches = byName.TryGetValue(game.NameKey, out var list) ? list.Where(p => !matched.Contains(Path.GetFullPath(p))).ToArray() : Array.Empty<string>();
                     if (matches.Length == 1)
                     {
@@ -88,7 +88,7 @@ internal sealed class CollectionScanner
             }
             foreach (var f in files)
             {
-                token.ThrowIfCancellationRequested(); var p = Path.GetFullPath(f);
+                PauseGate.Checkpoint(token); var p = Path.GetFullPath(f);
                 if (matched.Contains(p) || directories.Any(d => PathRules.Inside(p, d))) continue;
                 string relativePath = PathRules.Relative(Path.GetRelativePath(sysPath, p));
                 accessories.Add(new AccessoryFile(system, p, Length(p), relativePath, PathRules.AccessoryMatchKey(relativePath)));
@@ -145,7 +145,7 @@ internal sealed class CollectionScanner
     private static long DirectorySize(string path, CancellationToken token)
     {
         long n = 0;
-        try { foreach (var f in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)) { token.ThrowIfCancellationRequested(); n += Length(f); } }
+        try { foreach (var f in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)) { PauseGate.Checkpoint(token); n += Length(f); } }
         catch (UnauthorizedAccessException) { } catch (IOException) { }
         return n;
     }

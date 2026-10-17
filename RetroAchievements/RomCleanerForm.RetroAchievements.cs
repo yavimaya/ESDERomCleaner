@@ -83,7 +83,7 @@ public sealed partial class RomCleanerForm
         StopVideoPlayback();
         trace.Add("retroachievements_dialog_opened", root.Text);
         bool changed;
-        using (var dialog = new RaScanDialog(ScrapableRows().ToList(), raIndex, trace, system))
+        using (var dialog = BusyNotice.Create(this, () => new RaScanDialog(ScrapableRows().ToList(), raIndex, trace, system)))
         {
             dialog.ShowDialog(this);
             changed = dialog.Changed;

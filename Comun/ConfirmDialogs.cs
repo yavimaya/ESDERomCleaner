@@ -118,8 +118,8 @@ internal sealed class DeleteConfirmDialog : LocalizedForm
             viewFiles.Click += (_, _) =>
             {
                 var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                using (var list = new SelectedRomsDialog(root, rows, formatSize, (row, on) => { if (on) excluded.Remove(row.Path); else excluded.Add(row.Path); },
-                    "Desmarca las ROMs que no quieras eliminar; al cerrar este formulario se vuelve a calcular lo que se borra."))
+                using (var list = BusyNotice.Create(this, () => new SelectedRomsDialog(root, rows, formatSize, (row, on) => { if (on) excluded.Remove(row.Path); else excluded.Add(row.Path); },
+                    "Desmarca las ROMs que no quieras eliminar; al cerrar este formulario se vuelve a calcular lo que se borra.")))
                     list.ShowDialog(this);
                 if (excluded.Count == 0) return;
                 ExcludedPaths.UnionWith(excluded);

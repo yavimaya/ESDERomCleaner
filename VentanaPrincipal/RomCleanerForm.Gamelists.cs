@@ -18,7 +18,7 @@ public sealed partial class RomCleanerForm
         trace.Add("add_roms_dialog_opened", root.Text);
         bool changed, scrapeRequested;
         List<string> added;
-        using (var dialog = new AddRomsDialog(root.Text.Trim().Trim('"'), trace))
+        using (var dialog = BusyNotice.Create(this, () => new AddRomsDialog(root.Text.Trim().Trim('"'), trace)))
         {
             dialog.ShowDialog(this);
             changed = dialog.CollectionChanged;

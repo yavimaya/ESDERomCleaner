@@ -27,6 +27,8 @@ internal static class LocTablePt
         ("Seleccionar todos", "Selecionar todos"),
         ("Deseleccionar todos", "Desmarcar todos"),
         ("Todos los sistemas", "Todos os sistemas"),
+        ("Preparando la ventana…", "Preparando a janela…"),
+        ("Preparando la descarga masiva…", "Preparando o download em massa…"),
         ("Todos", "Todos"),
         ("Vídeo normalizado (más ligero, mejor para Android)", "Vídeo normalizado (mais leve, melhor para Android)"),
         ("Vídeo original (el de mayor calidad y tamaño)", "Vídeo original (maior qualidade e tamanho)"),

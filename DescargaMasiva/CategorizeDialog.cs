@@ -82,7 +82,7 @@ internal sealed class CategorizeDialog : LocalizedForm
             // Metadatos (con la categoría) e idiomas, sin carpetas de medios. Los hilos los marca la membresía.
             var settings = BulkMediaSettings.Load(true);
             var options = new BulkMediaOptions(root, roms, ssSystems, systems.ToList(), [], true, BulkOverwrite.No, false, settings.SearchByName,
-                Math.Max(1, ScreenScraperQuota.MaxThreads), true, gamelistBackups, true);
+                Math.Max(1, ScreenScraperQuota.MaxThreads), true, gamelistBackups, true) { CategoryOnly = true };
 
             statusLabel.Text = "Calculando el trabajo pendiente…";
             var plan = await Task.Run(() => BulkMediaRunner.Plan(options), cts.Token);

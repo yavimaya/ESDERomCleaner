@@ -27,6 +27,8 @@ internal static class LocTableFr
         ("Seleccionar todos", "Tout sélectionner"),
         ("Deseleccionar todos", "Tout désélectionner"),
         ("Todos los sistemas", "Tous les systèmes"),
+        ("Preparando la ventana…", "Préparation de la fenêtre…"),
+        ("Preparando la descarga masiva…", "Préparation du téléchargement en masse…"),
         ("Todos", "Tous"),
         ("Vídeo normalizado (más ligero, mejor para Android)", "Vidéo normalisée (plus légère, idéale pour Android)"),
         ("Vídeo original (el de mayor calidad y tamaño)", "Vidéo originale (la plus grande qualité et taille)"),

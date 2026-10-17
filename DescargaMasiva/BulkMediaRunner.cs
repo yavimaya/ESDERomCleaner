@@ -38,6 +38,10 @@ internal sealed record BulkMediaOptions(
     // Juego elegido a mano para una ROM (desde «Aproximaciones por nombre» del formulario de una ROM): se usa tal cual, sin buscar en ScreenScraper.
     public Func<RomRow, SsGame?>? ForcedGame { get; init; }
 
+    // «Categorizar»: lo que falta es la categoría, no los metadatos en general. Se piden las ROMs sin categoría aunque ya tengan descripción, y solo se escribe el género
+    // (sin tocar la descripción ni el resto de campos que ya hubiera).
+    public bool CategoryOnly { get; init; }
+
     // Sustitución por elemento (descarga masiva): si no es null, manda sobre «Overwrite» para los medios y los metadatos (los idiomas solo se piden si faltan).
     public IReadOnlyDictionary<string, BulkReplace>? Replace { get; init; }
     // ¿Hay que pedir este elemento para una ROM? Con política por elemento, «No» solo lo pide si falta en destino; las demás, siempre. Sin política (modo antiguo),
@@ -145,7 +149,9 @@ internal sealed class BulkMediaRunner
         !string.IsNullOrWhiteSpace(row.Description) || (!string.IsNullOrWhiteSpace(row.Genre) && row.Genre != "Sin categoría");
 
     // Metadatos que hay que pedir para esta ROM: siempre si se sobrescribe; con «no sobrescribir», solo los juegos que todavía no tienen.
-    private static bool NeedsMetadata(BulkMediaOptions o, RomRow row) => o.Metadata && o.Wants("metadata", HasMetadata(row));
+    private static bool NeedsMetadata(BulkMediaOptions o, RomRow row) => o.Metadata && o.Wants("metadata", o.CategoryOnly ? HasCategory(row) : HasMetadata(row));
+
+    private static bool HasCategory(RomRow row) => !string.IsNullOrWhiteSpace(row.Genre) && row.Genre != "Sin categoría";
 
     // Cuenta, sin tocar nada, cuánto trabajo habría: ROMs de los sistemas elegidos y cuántas ya lo tienen todo en destino.
     public static BulkPlan Plan(BulkMediaOptions o)
@@ -244,6 +250,7 @@ internal sealed class BulkMediaRunner
         {
             await Parallel.ForEachAsync(work, new ParallelOptions { MaxDegreeOfParallelism = threads, CancellationToken = stop.Token }, async (item, ct) =>
             {
+                await PauseGate.WaitAsync(ct); // si el usuario está decidiendo si cancelar, no se empieza otra ROM
                 var (row, ss) = item;
                 Interlocked.Increment(ref Summary.RomsDone);
                 Report($"{row.System}: {row.RomName}" + (threads > 1 ? $"  (+ hasta {threads - 1} más en paralelo)" : ""));
@@ -358,6 +365,12 @@ internal sealed class BulkMediaRunner
             else
             {
                 var fetched = GamelistMetadata.From(game, regions);
+                if (o.CategoryOnly)
+                {
+                    // Solo el género: el resto de campos vacíos significa «no tocar lo que ya hay».
+                    if (fetched.Genre.Length == 0) { Summary.NoGenre.Add($"{row.System}: {row.RomName}"); Dbg($"{id}: ScreenScraper no trae categoría para este juego"); goto metadataDone; }
+                    fetched = new GamelistMetadata("", "", "", "", "", "", fetched.Genre, "");
+                }
                 // Con política por elemento y metadatos ya existentes, se compara la longitud de la descripción (si la actual está vacía se rellena siempre).
                 if (o.Replace is not null && HasMetadata(row) && !string.IsNullOrWhiteSpace(row.Description))
                 {
@@ -578,6 +591,7 @@ internal sealed class BulkMediaRunner
     {
         for (int attempt = 1; ; attempt++)
         {
+            await PauseGate.WaitAsync(token);
             Dbg($"{what}: enviada, esperando respuesta de ScreenScraper…" + (attempt > 1 ? $" (intento {attempt})" : ""));
             var watch = System.Diagnostics.Stopwatch.StartNew();
             try

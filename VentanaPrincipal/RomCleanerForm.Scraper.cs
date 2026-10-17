@@ -14,11 +14,13 @@ public sealed partial class RomCleanerForm
     {
         if (bulkMediaOpening) return;
         bulkMediaOpening = true;
-        try { await OpenBulkMediaDialogCoreAsync(preselected, onlyRows, preset); }
-        finally { bulkMediaOpening = false; }
+        // Aviso «Preparando…» hasta que aparece el diálogo (con muchos sistemas tarda en construirse y parecía que el clic no había hecho nada).
+        var notice = BusyNotice.Show(this, "Preparando la descarga masiva…");
+        try { await OpenBulkMediaDialogCoreAsync(preselected, onlyRows, preset, notice); }
+        finally { notice.Dispose(); bulkMediaOpening = false; }
     }
 
-    private async Task OpenBulkMediaDialogCoreAsync(IReadOnlyCollection<string>? preselected, IReadOnlyList<RomRow>? onlyRows, BulkPreset preset)
+    private async Task OpenBulkMediaDialogCoreAsync(IReadOnlyCollection<string>? preselected, IReadOnlyList<RomRow>? onlyRows, BulkPreset preset, BusyNotice notice)
     {
         if (!await Requirements.CheckAsync(this, trace, "Descarga masiva de medios", Need.ScreenScraper | Need.Internet)) return;
         if (onlyRows is not null) preselected = onlyRows.Select(r => r.System).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -42,6 +44,7 @@ public sealed partial class RomCleanerForm
             single.ShowDialog(owner);
             return (single.CollectionMediaChanged, single.MetadataChanged);
         };
+        dialog.Shown += (_, _) => notice.Dispose();
         dialog.ShowDialog(this);
         if (!dialog.MetadataChanged && !dialog.CollectionChanged) return;
         // Los índices de miximages y vídeos se construyen una vez por carpeta: hay que olvidarlos para ver los nuevos.
@@ -118,7 +121,7 @@ public sealed partial class RomCleanerForm
         trace.Add("curation_dialog_opened", root.Text);
         RomRow[] toDelete;
         List<RomRow> excludedRows;
-        using (var dialog = new CurationDialog(all.Where(r => IsVisibleSystem(r.System)).ToList(), trace, createGamelistBackups, collectionRoot: root.Text))
+        using (var dialog = BusyNotice.Create(this, () => new CurationDialog(all.Where(r => IsVisibleSystem(r.System)).ToList(), trace, createGamelistBackups, collectionRoot: root.Text)))
         {
             // El borrado se hace sin salir del curado: los avisos salen sobre él y el re-listado de la ventana principal va en segundo plano.
             dialog.DeleteHandler = (rows, owner, report) => DeleteRowsAsync(rows, owner, report);

@@ -27,6 +27,8 @@ internal static class LocTable
         ("Seleccionar todos", "Select all"),
         ("Deseleccionar todos", "Select none"),
         ("Todos los sistemas", "All systems"),
+        ("Preparando la ventana…", "Preparing the window…"),
+        ("Preparando la descarga masiva…", "Preparing the bulk download…"),
         ("Todos", "All"),
         ("Vídeo normalizado (más ligero, mejor para Android)", "Normalized video (lighter, better for Android)"),
         ("Vídeo original (el de mayor calidad y tamaño)", "Original video (highest quality and size)"),
