@@ -13,7 +13,9 @@ internal sealed class DeleteConfirmDialog : LocalizedForm
 
     // Con «rows» (las ROMs del plan), la confirmación lleva un botón «Ver ficheros» que abre su lista (con los tamaños de ROM y de medios) y permite desmarcar ROMs.
     // Con «runDeletion», al pulsar BORRAR el formulario no se cierra: se queda con la papelera animada y avisando mientras se borra, y se cierra con OK al terminar.
-    public DeleteConfirmDialog(DeleteConfirmData data, IReadOnlyList<RomRow>? rows = null, string root = "", Func<long, string>? formatSize = null, Func<Task>? runDeletion = null)
+    // Con «tilesOverride» (hasta cuatro) las tarjetas muestran otras cifras (p. ej. la limpieza de huérfanos) en lugar de ROMs, accesorios, media y gamelists.
+    public DeleteConfirmDialog(DeleteConfirmData data, IReadOnlyList<RomRow>? rows = null, string root = "", Func<long, string>? formatSize = null, Func<Task>? runDeletion = null,
+        IReadOnlyList<(string Number, string Name, string Size)>? tilesOverride = null)
     {
         Text = "Confirmar eliminación";
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
@@ -52,13 +54,15 @@ internal sealed class DeleteConfirmDialog : LocalizedForm
             tile.Controls.Add(new Label { Text = size, Tag = "noloc", Location = new Point(0, 71), Size = new Size(140, 20), AutoSize = false, TextAlign = ContentAlignment.MiddleCenter, ForeColor = SystemColors.GrayText });
             return tile;
         }
-        var tiles = new[]
-        {
-            Tile(0, data.Roms.ToString("N0"), "ROMs", data.RomSize),
-            Tile(1, data.Accessories < 0 ? "—" : data.Accessories.ToString("N0"), "Accesorios", data.AccessorySize), // un número negativo = todavía sin calcular
-            Tile(2, data.Media < 0 ? "—" : data.Media.ToString("N0"), "Media de ES-DE", data.MediaSize),
-            Tile(3, data.Gamelists < 0 ? "—" : data.Gamelists.ToString("N0"), "Gamelists", "")
-        };
+        var tiles = tilesOverride is not null
+            ? tilesOverride.Take(4).Select((t, i) => Tile(i, t.Number, t.Name, t.Size)).ToArray()
+            : new[]
+            {
+                Tile(0, data.Roms.ToString("N0"), "ROMs", data.RomSize),
+                Tile(1, data.Accessories < 0 ? "—" : data.Accessories.ToString("N0"), "Accesorios", data.AccessorySize), // un número negativo = todavía sin calcular
+                Tile(2, data.Media < 0 ? "—" : data.Media.ToString("N0"), "Media de ES-DE", data.MediaSize),
+                Tile(3, data.Gamelists < 0 ? "—" : data.Gamelists.ToString("N0"), "Gamelists", "")
+            };
 
         var total = new Label
         {

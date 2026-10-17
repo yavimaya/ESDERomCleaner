@@ -19,6 +19,10 @@ internal sealed class StorageSettings
     public bool SkipClones { get; set; }
     // Una duplicada cuyo contenido resulta distinto del existente se pasa sola a identificadas (reemplazará al existente al añadirla).
     public bool AddDifferentDuplicates { get; set; }
+    // En las carpetas de arcade, la ROM se guarda con el nombre del juego en el DAT con el que se identificó (el que esperan los emuladores).
+    public bool RenameArcadeToDat { get; set; } = true;
+    // En las carpetas de arcade nunca se crea un 7z: si se pidió 7z, se guarda en zip (los emuladores de arcade esperan zip).
+    public bool ArcadeZipOnly { get; set; } = true;
 
     public static StorageSettings Load()
     {
@@ -132,8 +136,15 @@ internal static class RomStorage
 
     // Si hay que guardar sin comprimir pero el comprimido lleva varios archivos de ROM (o subcarpetas), extraerlo aplanado mezclaría archivos y podría
     // perder alguno con el mismo nombre: se guarda tal como llega.
-    public static (StorageFormat Format, string Note) Plan(RomIdentity id, StorageOptions options, HashSet<string>? allowed)
+    public static (StorageFormat Format, string Note) Plan(RomIdentity id, StorageOptions options, HashSet<string>? allowed, bool zipOnly = false)
     {
+        // Carpeta de arcade con «solo zip»: lo pedido en 7z pasa a zip.
+        if (zipOnly && options.Format == StorageFormat.SevenZip)
+        {
+            bool zipAllowed = allowed is null || allowed.Contains(".zip");
+            return zipAllowed ? (StorageFormat.Zip, "MAME: solo zip")
+                : (StorageFormat.Raw, "el sistema no admite .zip: se guarda sin comprimir");
+        }
         var (format, note) = PlanCore(id, options, allowed);
         if (format == StorageFormat.Raw && id.Files.Any(f => IsArchive(f) && IsMultiFile(f)))
             return (StorageFormat.Keep, "tiene varios archivos: se guarda comprimido, como llega");
@@ -232,13 +243,13 @@ internal static class RomStorage
         switch (format)
         {
             case StorageFormat.Keep:
-                foreach (var file in id.Files) CopyAtomic(file, Path.Combine(destinationDir, Path.GetFileName(file)), created);
+                foreach (var file in id.Files) CopyAtomic(file, Path.Combine(destinationDir, TargetName(id, file)), created);
                 break;
             case StorageFormat.Raw:
                 foreach (var file in id.Files)
                 {
                     if (IsArchive(file)) ExtractAll(file, destinationDir, token, created);
-                    else CopyAtomic(file, Path.Combine(destinationDir, Path.GetFileName(file)), created);
+                    else CopyAtomic(file, Path.Combine(destinationDir, TargetName(id, file)), created);
                 }
                 break;
             default:
@@ -247,6 +258,10 @@ internal static class RomStorage
         }
         if (move) foreach (var file in id.Files) try { File.Delete(file); } catch { }
     }
+
+    // Nombre del archivo de destino: el original, o el del DAT (con la extensión original) cuando la ROM es un único archivo y se pidió renombrarla.
+    private static string TargetName(RomIdentity id, string file) =>
+        id.TargetStem is { Length: > 0 } stem && id.Files.Length == 1 ? stem + Path.GetExtension(file) : Path.GetFileName(file);
 
     private static void CopyAtomic(string source, string target, List<string> created)
     {
@@ -296,7 +311,7 @@ internal static class RomStorage
     private static void Pack(RomIdentity id, string destinationDir, StorageFormat format, StorageLevel level, CancellationToken token, List<string> created)
     {
         string primary = id.Files[0];
-        string baseName = Path.GetFileNameWithoutExtension(primary);
+        string baseName = id.TargetStem is { Length: > 0 } renamed ? renamed : Path.GetFileNameWithoutExtension(primary);
         string target = Path.Combine(destinationDir, baseName + (format == StorageFormat.Zip ? ".zip" : ".7z"));
         if (File.Exists(target)) return;
 

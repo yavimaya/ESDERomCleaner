@@ -94,8 +94,34 @@ public sealed partial class RomCleanerForm
         StopVideoPlayback();
         trace.Add("categorize_started", $"systems={string.Join(",", systemNames)}");
         var rows = ScrapableRows().Where(r => systemNames.Contains(r.System, StringComparer.OrdinalIgnoreCase) && (!onlyMissingCategory || NoCategory(r))).ToList();
+        // Carpetas de arcade: la categoría sale de la lista local (catver.ini) del romset con el que se crearon (se guardó al añadir ROMs). Si no se sabe, se
+        // pregunta entre los DAT de arcade seleccionados y se recuerda. Lo que no esté en la lista, o si se elige consultar, va a ScreenScraper.
+        var localMaps = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (string folder in systemNames.Where(n => RomIdentifier.ArcadeFolders.Contains(n) && rows.Any(r => r.System.Equals(n, StringComparison.OrdinalIgnoreCase))))
+        {
+            string? set = ArcadeSets.Get(folder);
+            if (set is not null && !ArcadeCategories.Applies(set)) set = null; // ese DAT ya no está seleccionado
+            if (set is null)
+            {
+                // El gestor de DAT (descargar o importar) se abre desde «Más DAT…»; al cerrarlo se vuelve a leer la lista de DAT de arcade.
+                string rootPath = root.Text.Trim().Trim('"');
+                using var picker = new ArcadeSetPickerDialog(folder, ArcadeSets.Available(), () =>
+                {
+                    using (var manager = BusyNotice.Create(this, () => new DatManagerDialog(trace, rootPath))) manager.ShowDialog(this);
+                    return ArcadeSets.Available();
+                });
+                if (picker.ShowDialog(this) != DialogResult.OK || picker.Selected.Length == 0) { trace.Add("arcade_set_skipped", $"folder={folder}"); continue; }
+                set = picker.Selected;
+                ArcadeSets.Set(folder, set);
+                trace.Add("arcade_set_chosen", $"folder={folder}; set={set}");
+            }
+            var map = await ArcadeCategories.LoadAsync(set, CancellationToken.None);
+            if (map.Count > 0) localMaps[folder] = map;
+        }
+        Func<RomRow, string?>? localGenre = localMaps.Count == 0 ? null
+            : row => localMaps.TryGetValue(row.System, out var map) && map.TryGetValue(Path.GetFileNameWithoutExtension(row.RomName), out var genre) ? genre : null;
         bool changed; string result;
-        using (var dialog = new CategorizeDialog(rows, systemNames.ToList(), root.Text, trace, createGamelistBackups))
+        using (var dialog = new CategorizeDialog(rows, systemNames.ToList(), root.Text, trace, createGamelistBackups, localGenre))
         {
             dialog.ShowDialog(this);
             changed = dialog.MetadataChanged; result = dialog.Result;

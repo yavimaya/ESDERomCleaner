@@ -103,7 +103,8 @@ internal sealed class RequirementDialog : LocalizedForm
         StartPosition = FormStartPosition.CenterParent;
         Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
         BackColor = Color.White;
-        const int width = 580, headerHeight = 80, footerHeight = 56;
+        const int width = 580, headerHeight = 80;
+        int footerHeight;
 
         var header = new Panel { Dock = DockStyle.Top, Height = headerHeight, BackColor = Orange };
         header.Paint += (_, ev) => RaUi.PaintHeaderTexture(ev.Graphics, header.ClientRectangle, header.BackColor);
@@ -131,20 +132,29 @@ internal sealed class RequirementDialog : LocalizedForm
             }
         }
 
+        // Botones de ancho fijo (entre 110 y 150 px, según el texto ya traducido): si el texto no cabe en una línea se parte en dos y todos los botones del pie
+        // pasan a ser más altos. Antes se dimensionaban con el texto en español y, al traducirse, el texto se cortaba.
+        const int minButton = 110, maxButton = 150, gap = 8;
+        var boldFont = new Font(Font, FontStyle.Bold);
+        int[] widths = buttons.Select((b, i) => Math.Clamp(TextRenderer.MeasureText(Loc.T(b.Text), i == 0 ? boldFont : Font).Width + 36, minButton, maxButton)).ToArray();
+        bool twoLines = buttons.Select((b, i) => TextRenderer.MeasureText(Loc.T(b.Text), i == 0 ? boldFont : Font).Width + 36 > maxButton).Any(x => x);
+        int buttonHeight = twoLines ? 44 : 32;
+        footerHeight = twoLines ? 68 : 56;
         var footer = RaUi.Footer(footerHeight);
         int x = width - 20;
         var created = new List<Button>();
         foreach (var (text, result) in buttons.Reverse())
         {
-            var button = new Button { Text = text, DialogResult = result, AutoSize = true, MinimumSize = new Size(110, 32) };
+            var button = new Button { Text = text, DialogResult = result, AutoSize = false, Size = new Size(widths[buttons.Length - 1 - created.Count], buttonHeight) };
             created.Add(button);
         }
         for (int i = 0; i < created.Count; i++)
         {
             bool primary = i == created.Count - 1; // el primero de la lista es el principal
             RaUi.StyleButton(created[i], primary, primary ? Orange : null);
-            created[i].Location = new Point(x - created[i].PreferredSize.Width, 12);
-            x = created[i].Left - 8;
+            created[i].Size = new Size(created[i].Width, buttonHeight); // StyleButton sube el alto mínimo; se fija el de todo el pie
+            created[i].Location = new Point(x - created[i].Width, (footerHeight - buttonHeight) / 2);
+            x = created[i].Left - gap;
             footer.Controls.Add(created[i]);
         }
         Controls.AddRange([body, header, footer]);

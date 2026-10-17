@@ -11,6 +11,7 @@ internal sealed class DatManagerDialog : LocalizedForm
     private readonly Label info = new() { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft };
     private static readonly (string Kind, string Label)[] Kinds = [("no-intro", "No-Intro"), ("redump", "Redump"), ("tosec", "TOSEC"), ("mame", "MAME"), ("fbneo", "FBNeo"), ("other", "Otras (importadas)")];
     private readonly HashSet<string> collapsed = [];
+    private bool collapseApplied;
     private readonly Dictionary<string, int> rowIndex = new(); // DatSource.Key → fila de la tabla
     private readonly ContextMenuStrip rowMenu = new() { ShowImageMargin = false };
     private readonly Button downloadMissing = new() { Text = "Descargar las que faltan", AutoSize = true, MinimumSize = new Size(150, 28) };
@@ -120,6 +121,13 @@ internal sealed class DatManagerDialog : LocalizedForm
     {
         loading = true;
         shown = RomDatabase.Sources.ToList();
+        // Al abrir, los grupos sin ningún DAT en uso salen contraídos y los que tienen alguno marcado, desplegados. Después se respeta lo que el usuario despliegue o contraiga.
+        if (!collapseApplied)
+        {
+            collapseApplied = true;
+            foreach (var (kind, _) in Kinds)
+                if (!shown.Any(s => s.Kind == kind && Enabled(s))) collapsed.Add(kind);
+        }
         grid.Rows.Clear(); rowIndex.Clear();
         foreach (var (kind, _) in Kinds)
         {
@@ -234,7 +242,7 @@ internal sealed class DatManagerDialog : LocalizedForm
     {
         var downloadable = shown.Where(s => !s.Imported && Enabled(s)).ToList();
         downloadMissing.Enabled = !busy && downloadable.Any(s => !RomDatabase.IsInstalled(s));
-        updateAll.Enabled = !busy && downloadable.Any(RomDatabase.IsInstalled);
+        updateAll.Enabled = !busy && shown.Any(s => !s.Imported);
         importButton.Enabled = !busy;
         removeButton.Enabled = !busy && grid.CurrentRow?.Tag is DatSource { Imported: true };
     }
@@ -314,7 +322,8 @@ internal sealed class DatManagerDialog : LocalizedForm
 
     private async Task DownloadAsync(bool onlyMissing)
     {
-        var list = shown.Where(s => !s.Imported && Enabled(s) && (!onlyMissing || !RomDatabase.IsInstalled(s))).ToList();
+        // «Actualizar todas» baja todos los DAT descargables, estén o no activados (los importados no se pueden bajar); «Descargar las que faltan» solo los activados que no están.
+        var list = shown.Where(s => !s.Imported && (onlyMissing ? Enabled(s) && !RomDatabase.IsInstalled(s) : true)).ToList();
         if (list.Count == 0) return;
         if (!await Requirements.CheckAsync(this, trace, "Descargar bases de datos", Need.Internet, "raw.githubusercontent.com")) return;
 

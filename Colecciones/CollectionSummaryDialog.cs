@@ -16,9 +16,13 @@ internal sealed class CollectionSummaryDialog : LocalizedForm
     private readonly CollectionSummary s;
     private Bitmap? card;
 
-    public CollectionSummaryDialog(CollectionSummary summary)
+    // Con removeSystem, clic derecho en un sistema de la pestaña «Sistemas» ofrece eliminarlo (devuelve true si se borró).
+    private readonly Func<string, Task<bool>>? removeSystem;
+
+    public CollectionSummaryDialog(CollectionSummary summary, Func<string, Task<bool>>? removeSystem = null)
     {
         s = summary;
+        this.removeSystem = removeSystem;
         Text = "Resumen de la colección";
         FormBorderStyle = FormBorderStyle.Sizable; MaximizeBox = true; MinimizeBox = false; ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
@@ -152,6 +156,22 @@ internal sealed class CollectionSummaryDialog : LocalizedForm
         foreach (var p in s.PerSystem.OrderByDescending(p => p.Roms).ThenBy(p => p.System, StringComparer.OrdinalIgnoreCase))
             Add(PixelSystemIcons.Get(p.System, 20), p.System, p.Roms, p.Bytes, p.Gaps);
         Add(null, Loc.T("Total"), s.Roms, s.RomBytes, s.Gaps, total: true);
+        if (removeSystem is not null)
+        {
+            var menu = new ContextMenuStrip { ShowImageMargin = false };
+            var remove = new ToolStripMenuItem("Eliminar sistema completo…") { ForeColor = Color.Firebrick };
+            menu.Items.Add(remove);
+            grid.ContextMenuStrip = menu;
+            // El clic derecho también selecciona la fila; la fila Total (sin icono) no tiene menú.
+            grid.CellMouseDown += (_, e) => { if (e.Button == MouseButtons.Right && e.RowIndex >= 0) { grid.ClearSelection(); grid.Rows[e.RowIndex].Selected = true; grid.CurrentCell = grid.Rows[e.RowIndex].Cells[1]; } };
+            menu.Opening += (_, e) => { if (grid.CurrentRow is null || !grid.CurrentRow.Selected || grid.CurrentRow.Index >= grid.Rows.Count - 1) e.Cancel = true; };
+            remove.Click += async (_, _) =>
+            {
+                var row = grid.CurrentRow;
+                if (row is null || row.Index >= grid.Rows.Count - 1 || row.Cells[1].Value is not string name) return;
+                if (await removeSystem(name)) grid.Rows.Remove(row);
+            };
+        }
         page.Controls.Add(grid);
         return page;
     }

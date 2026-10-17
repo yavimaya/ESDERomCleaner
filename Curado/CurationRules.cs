@@ -51,7 +51,7 @@ internal sealed class CurationRule
     }
 
     // Criterio exacto, para consultarlo como ayuda.
-    public string Criteria => custom is not null ? "Regla de idiomas: se configura con el botón «Idiomas…»" :
+    public string Criteria => custom is not null ? (Id == "lang-unreadable" ? "Regla de idiomas: se configura con el botón «Idiomas…»" : Description) :
         (genrePattern is null ? "" : $"Categorías: {genrePattern}") +
         (genrePattern is not null && namePattern is not null ? "\r\n" : "") +
         (namePattern is null ? "" : $"Palabras del nombre: {namePattern}");

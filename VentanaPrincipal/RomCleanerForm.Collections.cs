@@ -80,7 +80,9 @@ public sealed partial class RomCleanerForm
         clone.Click += (_, _) => OpenCloneDialog();
         var summary = new ToolStripMenuItem("Resumen de la colección…") { Enabled = !busy && activeCollection is not null };
         summary.Click += async (_, _) => await ShowSummaryAsync();
-        collectionsMenu.DropDownItems.AddRange([create, save, edit, clone, summary, new ToolStripSeparator()]);
+        var orphans = new ToolStripMenuItem("Limpiar huérfanos…") { Enabled = !busy && activeCollection is not null, ToolTipText = "Borra los medios y las entradas de gamelist que no tienen una ROM real." };
+        orphans.Click += async (_, _) => await OpenOrphanCleanerAsync();
+        collectionsMenu.DropDownItems.AddRange([create, save, edit, clone, summary, orphans, new ToolStripSeparator()]);
 
         var list = LoadCollections().OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
         // Las colecciones guardadas van en un panel de ancho fijo: cabecera dorada y una tarjeta por colección (icono, nombre en negrita y cifras debajo),
@@ -435,7 +437,9 @@ public sealed partial class RomCleanerForm
         var summary = new CollectionSummary(rootPath, perSystem.Count, rows.Count, all.Count(r => r.Status == RomStatus.Ambiguous), systemFileCounts.Values.Sum(), gamelistCount,
             rows.Sum(r => r.Size), mediaBytes, total, perSystem, categories);
         trace.Add("summary_opened", $"systems={summary.Systems}; roms={summary.Roms}");
-        using var dialog = new CollectionSummaryDialog(summary);
+        CollectionSummaryDialog? dialogRef = null;
+        using var dialog = new CollectionSummaryDialog(summary, name => RemoveSystemAsync(name, dialogRef));
+        dialogRef = dialog;
         dialog.ShowDialog(this);
     }
 }

@@ -13,6 +13,26 @@ public sealed partial class RomCleanerForm : LocalizedForm
 {
     private bool scanStarting;
 
+    // Bloqueo de toda la ventana principal: desactivar el formulario no basta (el menú y el buscador seguían respondiendo), así que se desactiva de forma explícita
+    // cada control, menús y buscador incluidos, y se recuerda su estado para devolverlo tal cual al terminar.
+    // Con «keep» (p. ej. el botón de cancelar) ese control y sus contenedores se dejan activos para poder usarlo.
+    private List<(Control Control, bool Was)> LockUi(Control? keep = null)
+    {
+        IEnumerable<Control> All(Control parent) => parent.Controls.Cast<Control>().SelectMany(c => new[] { c }.Concat(All(c)));
+        var exempt = new HashSet<Control>();
+        for (var c = keep; c is not null && c != this; c = c.Parent) exempt.Add(c);
+        var saved = All(this).Select(c => (c, c.Enabled)).ToList();
+        foreach (var (control, _) in saved) if (!exempt.Contains(control)) control.Enabled = false;
+        if (keep is null) Enabled = false;
+        return saved;
+    }
+
+    private void UnlockUi(List<(Control Control, bool Was)> saved)
+    {
+        Enabled = true;
+        foreach (var (control, was) in saved) control.Enabled = was;
+    }
+
     private async Task ScanAsync(bool offerUnclassified = true)
     {
         List<string>? unclassified = null;
@@ -46,6 +66,11 @@ public sealed partial class RomCleanerForm : LocalizedForm
         headline.SetValues("…", "…");
         liveCounters.Text = "Ambiguas: calculando | Ficheros: calculando\r\nROMS: calculando | Media: calculando";
         Task<long> mediaSizeTask = Task.Run(() => CollectionScanner.CalculateMediaBytes(root.Text, token), token);
+        // Al terminar de listar las ROMs la lista ya se ve, pero aún se calculan los tamaños y los huecos: desde ahí y hasta que acaben, la ventana se bloquea
+        // (menos «Cancelar») y se muestra un aviso, para que no parezca que ya se puede trabajar.
+        List<(Control Control, bool Was)>? scanLock = null;
+        BusyNotice? scanNotice = null;
+        void FinishScanUi() { scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = true; deleteSelected.Enabled = selected.Count > 0; cancel.Enabled = false; progress.Style = ProgressBarStyle.Blocks; progress.Value = 0; }
         try
         {
             var reporter = new Progress<ScanProgress>(p => { status.Text = p.Message; if (p.Total > 0) progress.Value = Math.Clamp(p.Current * 100 / p.Total, 0, 100); });
@@ -63,6 +88,8 @@ public sealed partial class RomCleanerForm : LocalizedForm
             RefreshSystemsList();
             // Solo se recuerda una ruta con la que el análisis ha funcionado.
             if (!lastRootPath.Equals(rootPath, StringComparison.OrdinalIgnoreCase)) { lastRootPath = rootPath; SaveOptions(); }
+            scanNotice = BusyNotice.Show(this, "Calculando tamaños y huecos…");
+            scanLock = LockUi(keep: cancel);
             status.Text = "Archivos consultados; calculando tamaños…";
             gapsTask = RefreshGapsAsync(); // se espera justo antes del aviso de sistemas sin categoría, que también cuenta las ROMs sin imagen y sin vídeo
             await mediaSizeTask;
@@ -79,7 +106,14 @@ public sealed partial class RomCleanerForm : LocalizedForm
         }
         catch (OperationCanceledException) { sizesCalculating = false; status.Text = "Cancelado. No se modificó ningún archivo."; trace.Add("scan_cancelled", root.Text); }
         catch (Exception ex) { sizesCalculating = false; status.Text = "Error de escaneo."; trace.Add("scan_error", ex.ToString()); MessageBox.Show(this, ex.Message, "No se pudo analizar", MessageBoxButtons.OK, MessageBoxIcon.Error); }
-        finally { try { await mediaSizeTask; } catch { } cts?.Dispose(); cts = null; scan.Enabled = browse.Enabled = root.Enabled = systems.Enabled = true; deleteSelected.Enabled = selected.Count > 0; cancel.Enabled = false; progress.Style = ProgressBarStyle.Blocks; progress.Value = 0; }
+        finally { try { await mediaSizeTask; } catch { } cts?.Dispose(); cts = null; if (scanLock is null) FinishScanUi(); }
+
+        // El cálculo de huecos (sin categoría, sin imagen y sin vídeo) puede seguir un buen rato en segundo plano: la ventana sigue bloqueada hasta que acabe.
+        if (scanLock is not null)
+        {
+            if (gapsTask is { IsCompleted: false }) { string previousStatus = status.Text; status.Text = "Calculando huecos…"; try { await gapsTask; } catch { } status.Text = previousStatus; }
+            UnlockUi(scanLock); scanNotice?.Dispose(); FinishScanUi();
+        }
 
         if (categorizeAfterScan is { Count: > 0 } toCategorize)
         {
@@ -95,10 +129,15 @@ public sealed partial class RomCleanerForm : LocalizedForm
         else if (skipUnclassifiedOffer) skipUnclassifiedOffer = false;
         else if (offerUnclassified && unclassified is { Count: > 0 })
         {
+            // Mientras se calculan los huecos y se monta el aviso, el análisis parece terminado pero aún no lo está: la ventana principal no admite acciones hasta que se muestre.
+            var notice = BusyNotice.Show(this, "Preparando la ventana…");
+            var lockedUi = LockUi();
+            UnclassifiedSystemsDialog? offer = null;
+            try
+            {
             if (gapsTask is not null && !gapsTask.IsCompleted) { string previousStatus = status.Text; status.Text = "Calculando huecos…"; try { await gapsTask; } catch { } status.Text = previousStatus; } // el aviso se quita al terminar
             var listed = unclassified.Select(s => (s, all.Count(r => r.Status == RomStatus.Ok && r.System.Equals(s, StringComparison.OrdinalIgnoreCase) && NoCategory(r)),
                 gaps is not null && gaps.TryGetValue(s, out var gap) ? gap.NoImage : 0, gaps is not null && gaps.TryGetValue(s, out var gap2) ? gap2.NoVideo : 0)).ToList();
-            UnclassifiedChoice choice;
             var gapRowsCache = new Dictionary<string, GapRows>(StringComparer.OrdinalIgnoreCase);
             IReadOnlyList<string> GapNames(string system, int kind)
             {
@@ -107,7 +146,13 @@ public sealed partial class RomCleanerForm : LocalizedForm
                 var paths = kind == 0 ? set.NoMetadata : kind == 1 ? set.NoImage : set.NoVideo;
                 return paths.Select(Path.GetFileName).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).Order(StringComparer.OrdinalIgnoreCase).ToList();
             }
-            using (var dialog = BusyNotice.Create(this, () => new UnclassifiedSystemsDialog(listed, GapNames))) { dialog.ShowDialog(this); choice = dialog.Choice; }
+            offer = new UnclassifiedSystemsDialog(listed, GapNames);
+            offer.Shown += (_, _) => notice.Dispose(); // el aviso se quita cuando el formulario aparece
+            }
+            catch { notice.Dispose(); throw; }
+            finally { UnlockUi(lockedUi); }
+            UnclassifiedChoice choice;
+            using (offer) { offer.ShowDialog(this); choice = offer.Choice; }
             // «Categorizar» solo descarga los metadatos (que traen la categoría), con una ventana de progreso y sin abrir el scrapeo; «Categorizar y scrapear» abre la descarga masiva con los medios elegidos la última vez.
             if (choice == UnclassifiedChoice.Categorize) await CategorizeAsync(unclassified, onlyMissingCategory: true);
             else if (choice == UnclassifiedChoice.CategorizeAndScrape)

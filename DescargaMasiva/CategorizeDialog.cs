@@ -22,8 +22,11 @@ internal sealed class CategorizeDialog : LocalizedForm
     public bool MetadataChanged { get; private set; }
     public string Result { get; private set; } = "";
 
-    public CategorizeDialog(IReadOnlyList<RomRow> roms, IReadOnlyList<string> systems, string root, TraceLog trace, bool gamelistBackups)
+    private readonly Func<RomRow, string?>? localGenre;
+
+    public CategorizeDialog(IReadOnlyList<RomRow> roms, IReadOnlyList<string> systems, string root, TraceLog trace, bool gamelistBackups, Func<RomRow, string?>? localGenre = null)
     {
+        this.localGenre = localGenre;
         this.roms = roms; this.systems = systems; this.root = root; this.trace = trace; this.gamelistBackups = gamelistBackups;
         Text = "Categorizar";
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false; ControlBox = false;
@@ -82,7 +85,7 @@ internal sealed class CategorizeDialog : LocalizedForm
             // Metadatos (con la categoría) e idiomas, sin carpetas de medios. Los hilos los marca la membresía.
             var settings = BulkMediaSettings.Load(true);
             var options = new BulkMediaOptions(root, roms, ssSystems, systems.ToList(), [], true, BulkOverwrite.No, false, settings.SearchByName,
-                Math.Max(1, ScreenScraperQuota.MaxThreads), true, gamelistBackups, true) { CategoryOnly = true };
+                Math.Max(1, ScreenScraperQuota.MaxThreads), true, gamelistBackups, true) { CategoryOnly = true, LocalGenre = localGenre };
 
             statusLabel.Text = "Calculando el trabajo pendiente…";
             var plan = await Task.Run(() => BulkMediaRunner.Plan(options), cts.Token);

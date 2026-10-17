@@ -26,6 +26,7 @@ internal sealed class BulkResultDialog : LocalizedForm
         foreach (var (header, colWidth, align) in new[]
         {
             ("Guardados", 95, DataGridViewContentAlignment.MiddleCenter), ("Sustituidos", 105, DataGridViewContentAlignment.MiddleCenter),
+            ("Ya estaban", 118, DataGridViewContentAlignment.MiddleCenter),
             ("Antes", 95, DataGridViewContentAlignment.MiddleRight), ("Ahora", 95, DataGridViewContentAlignment.MiddleRight), ("Diferencia", 100, DataGridViewContentAlignment.MiddleRight)
         })
         {
@@ -35,18 +36,18 @@ internal sealed class BulkResultDialog : LocalizedForm
         }
 
         long totalBefore = 0, totalAfter = 0;
-        int totalFiles = 0, totalReplaced = 0;
+        int totalFiles = 0, totalReplaced = 0, totalIdentical = 0;
         foreach (var folder in EsDeMediaInstaller.Folders)
         {
             if (!summary.ByFolder.TryGetValue(folder.Folder, out var s)) continue;
-            AddRow(grid, $"{folder.Description} ({folder.Folder})", s.Files, s.Replaced, s.BytesBefore, s.BytesAfter, bold: false);
-            totalBefore += s.BytesBefore; totalAfter += s.BytesAfter; totalFiles += s.Files; totalReplaced += s.Replaced;
+            AddRow(grid, $"{folder.Description.Replace(" (cartucho, disco)", "")} ({folder.Folder})", s.Files, s.Replaced, s.Identical, s.BytesBefore, s.BytesAfter, bold: false);
+            totalBefore += s.BytesBefore; totalAfter += s.BytesAfter; totalFiles += s.Files; totalReplaced += s.Replaced; totalIdentical += s.Identical;
         }
         bool nothingSaved = grid.Rows.Count == 0;
-        if (!nothingSaved) AddRow(grid, "TOTAL", totalFiles, totalReplaced, totalBefore, totalAfter, bold: true);
+        if (!nothingSaved) AddRow(grid, "TOTAL", totalFiles, totalReplaced, totalIdentical, totalBefore, totalAfter, bold: true);
         grid.ClearSelection();
 
-        int width = nothingSaved ? 640 : 820;
+        int width = nothingSaved ? 640 : 940;
         var banner = new RaHeader("Resumen de la descarga masiva", nothingSaved ? headline + " " + "No se guardó ningún medio." : headline, 68, 48, logo: false);
         banner.Icon.Image = RaUi.ChartIcon();
         var counts = new Label { Text = counters.Replace(" · ", "   ·   "), AutoSize = false, Location = new Point(20, 80), Size = new Size(width - 40, nothingSaved ? 60 : 24) };
@@ -96,13 +97,13 @@ internal sealed class BulkResultDialog : LocalizedForm
         }
     }
 
-    private void AddRow(DataGridView grid, string name, int files, int replaced, long before, long after, bool bold)
+    private void AddRow(DataGridView grid, string name, int files, int replaced, int identical, long before, long after, bool bold)
     {
         long delta = after - before;
-        int index = grid.Rows.Add(name, files.ToString("N0"), replaced.ToString("N0"),
+        int index = grid.Rows.Add(name, files.ToString("N0"), replaced.ToString("N0"), identical.ToString("N0"),
             before > 0 ? ScreenScraperDialog.FormatBytes(before) : "—", ScreenScraperDialog.FormatBytes(after), FormatDelta(delta));
         var row = grid.Rows[index];
-        row.Cells[5].Style.ForeColor = delta < 0 ? Color.DarkGreen : delta > 0 ? Color.DarkOrange : SystemColors.ControlText;
+        row.Cells[6].Style.ForeColor = delta < 0 ? Color.DarkGreen : delta > 0 ? Color.DarkOrange : SystemColors.ControlText;
         if (bold) row.DefaultCellStyle.Font = new Font(Font, FontStyle.Bold);
     }
 

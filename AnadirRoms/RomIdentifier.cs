@@ -16,6 +16,12 @@ internal sealed class RomIdentity
     public string? Error { get; set; }
     // Archivo contenedor del que se extrajo esta ROM (un pack de zips), si lo hay.
     public string? Origin { get; set; }
+    // Nombre (sin extensión) con el que se guardará el archivo en la colección cuando difiere del original (arcade: el del juego en el DAT).
+    public string? TargetStem { get; set; }
+    // Coincidencia parcial por CRC (arcade): el método lo muestra con su porcentaje, pero la ROM sigue sin identificar y no se renombra.
+    public bool PartialMatch { get; init; }
+    // Juego de los DAT con la mejor coincidencia parcial: es el nombre que se muestra en «Juego» y con el que se guarda el archivo si se asigna una carpeta de arcade.
+    public string? PartialGame { get; init; }
     // Extensión de los archivos de dentro cuando es un zip/7z/rar.
     public string? InnerExtension { get; init; }
     // Archivo de la colección que esta ROM sustituirá al añadirla (elegido a mano desde la pestaña de duplicadas); el anterior se borra, sin copia de seguridad.
@@ -205,6 +211,7 @@ internal static class RomIdentifier
     {
         var identity = new RomIdentity { Path = path };
         string[] files = [path];
+        string? partialText = null, partialName = null; DatSource? partialSource = null; // mejor coincidencia por CRC que no llega al 100 %
         try
         {
             var index = await RomDatabase.GetIndexAsync();
@@ -239,6 +246,40 @@ internal static class RomIdentifier
                         Path = path, Files = files, Game = first.Game, Method = $"Nombre · {first.Source.Label}",
                         Candidates = named.SelectMany(h => h.Source.Folders).Distinct().ToList(), InnerExtension = innerExt
                     };
+                }
+                // Arcade con otro nombre: análisis por CRC. Se cuenta, para cada juego de los DAT de MAME/FBNeo, cuántas de las ROMs de dentro lleva; gana el que más reúne
+                // (a igualdad, el que menos ROMs de más tiene y el padre antes que un clon) y el porcentaje queda en el método. Solo se acepta con el 100 %.
+                // Es una lectura del índice del zip o 7z y consultas en memoria: no descomprime nada.
+                if (!consoleRom && keys.Count > 0 && index.ArcadeGames.Count > 0)
+                {
+                    var distinct = keys.Distinct().Select(k => DatIndex.Pack(k.Crc, k.Size)).Distinct().ToList();
+                    var counts = new Dictionary<int, int>();
+                    foreach (ulong key in distinct)
+                        if (index.ArcadeRoms.TryGetValue(key, out var gameIds))
+                            foreach (int id in gameIds) counts[id] = counts.GetValueOrDefault(id) + 1;
+                    if (counts.Count > 0)
+                    {
+                        var clones = RomDatabase.CloneParents();
+                        var best = counts.OrderByDescending(p => p.Value)
+                            .ThenBy(p => index.ArcadeGameRoms[p.Key] - p.Value)
+                            .ThenBy(p => clones.ContainsKey(index.ArcadeGames[p.Key].Game) ? 1 : 0).First();
+                        int percent = (int)Math.Round(100.0 * best.Value / distinct.Count);
+                        if (percent < 100 && percent >= 20)
+                        {
+                            // No se acepta, pero se anota la mejor coincidencia para mostrarla en Desconocidas con su porcentaje.
+                            var (partialSrc, partialGame) = index.ArcadeGames[best.Key];
+                            partialText = $"CRC parcial: {partialGame} ({percent} %) · {partialSrc.Label}"; partialSource = partialSrc; partialName = partialGame;
+                        }
+                        if (percent == 100) // solo se acepta cuando todas las ROMs de dentro están en el juego; con menos queda en Desconocidas
+                        {
+                            var (source, game) = index.ArcadeGames[best.Key];
+                            return new RomIdentity
+                            {
+                                Path = path, Files = files, Game = game, Method = $"CRC · {source.Label}",
+                                Candidates = source.Folders.ToList(), InnerExtension = innerExt
+                            };
+                        }
+                    }
                 }
             }
             if (hits.Count == 0)
@@ -279,8 +320,8 @@ internal static class RomIdentifier
         return new RomIdentity
         {
             Path = path, Files = files, Game = System.IO.Path.GetFileNameWithoutExtension(path), InnerExtension = inner,
-            Method = byExtension.Count == 0 ? "Sin identificar" : byExtension.Count == 1 ? label : label + " · ambigua",
-            Candidates = byExtension, Error = identity.Error
+            Method = partialText ?? (byExtension.Count == 0 ? "Sin identificar" : byExtension.Count == 1 ? label : label + " · ambigua"),
+            Candidates = partialSource is not null ? partialSource.Folders.ToList() : byExtension, Error = identity.Error, PartialMatch = partialText is not null, PartialGame = partialName
         };
     }
 

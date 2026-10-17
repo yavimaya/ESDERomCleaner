@@ -455,6 +455,34 @@ internal sealed class DeletionService
     private static string DirectChildValue(XElement parent, string name) =>
         parent.Elements().FirstOrDefault(e => e.Name.LocalName == name)?.Value ?? "";
 
+    // Para la limpieza de huérfanos: número de entradas <game> de un gamelist y el texto de su <path> (las que tienen).
+    internal static (int Total, List<string> Paths) ReadGamePaths(string gamelistPath)
+    {
+        var (document, _) = LoadWrapped(gamelistPath);
+        var games = document.Root!.Elements().Where(e => e.Name.LocalName == "gameList").SelectMany(e => e.Elements().Where(g => g.Name.LocalName == "game")).ToArray();
+        return (games.Length, games.Select(g => DirectChildValue(g, "path")).Where(p => p.Length > 0).ToList());
+    }
+
+    // Quita de un gamelist las entradas <game> cuya ruta normalizada (PathRules.Relative) está en el conjunto. Escritura atómica, con el formato intacto.
+    // Devuelve cuántas entradas quitó y cuántas <game> quedan.
+    internal static (int Removed, int Remaining) RemoveGamesByPath(string gamelistPath, HashSet<string> relativeKeys)
+    {
+        string temp = gamelistPath + ".tmp_" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var (document, declaration) = LoadWrapped(gamelistPath);
+            var games = document.Root!.Elements().Where(e => e.Name.LocalName == "gameList").SelectMany(e => e.Elements().Where(g => g.Name.LocalName == "game")).ToArray();
+            var doomed = games.Where(g => relativeKeys.Contains(PathRules.Relative(DirectChildValue(g, "path")))).ToArray();
+            foreach (var node in doomed) node.Remove();
+            string updated = SerializeWrapped(document, declaration);
+            _ = ParseWrapped(updated);
+            File.WriteAllText(temp, updated, new UTF8Encoding(false));
+            File.Move(temp, gamelistPath, true);
+            return (doomed.Length, games.Length - doomed.Length);
+        }
+        finally { if (File.Exists(temp)) try { File.Delete(temp); } catch { } }
+    }
+
     private static (XDocument Document, string Declaration) LoadWrapped(string path) =>
         ParseWrapped(File.ReadAllText(path), out var declaration) is var document ? (document, declaration) : throw new InvalidOperationException("No se pudo cargar el gamelist.");
 

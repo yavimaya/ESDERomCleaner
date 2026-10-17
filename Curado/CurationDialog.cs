@@ -322,7 +322,7 @@ internal sealed class CurationDialog : LocalizedForm
     // Recalcula las reglas y qué ROMs cumple cada una (se repite al editar las supracategorías).
     private void BuildRules()
     {
-        supra = supraDefs.Select(CurationRule.FromSupra).Append(BuildLanguageRule()).Append(BuildAchievementsRule()).ToArray();
+        supra = supraDefs.Select(CurationRule.FromSupra).Append(BuildLanguageRule()).Append(BuildAchievementsRule()).Append(BuildRegionRule()).ToArray();
         languageKnown = roms.Count(r => LanguageResolver.Resolve(r, languageIndex, languageSettings.UseFilename).Languages.Count > 0);
         ruleById.Clear();
         hits.Clear();
@@ -428,6 +428,15 @@ internal sealed class CurationDialog : LocalizedForm
             if (languageSettings.OnlyTextGenres && !CurationLanguageSettings.IsTextGenre(CurationRule.EffectiveGenre(row))) return null;
             return $"idiomas: {string.Join(", ", languages.Select(LanguageCatalog.NameOf))} ({source})";
         });
+    }
+
+    // Regla integrada «Una por juego (regiones)»: de las versiones de un mismo juego de consola solo se conserva la mejor según el orden de regiones de Opciones.
+    private CurationRule BuildRegionRule()
+    {
+        var candidates = RegionPreferences.Candidates(roms);
+        string order = string.Join(" › ", RegionPreferences.Load().Select(k => Loc.T(RegionPreferences.Label(k))));
+        return new CurationRule("one-per-game", "Una por juego (regiones)", $"se conserva la versión de la región preferida ({order}); beta, prototipos y demos van detrás. Orden: Opciones › Orden de regiones del curado",
+            row => candidates.TryGetValue(RomKey.Of(row), out string? reason) ? reason : null);
     }
 
     // Regla integrada de RetroAchievements: ROMs de sistemas ya cotejados que no tienen ningún juego con logros.

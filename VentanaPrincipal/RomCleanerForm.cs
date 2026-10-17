@@ -257,6 +257,8 @@ public sealed partial class RomCleanerForm : LocalizedForm
         WireHelp();
         WireMediaClicks();
         WireExclude();
+        WireRemoveSystem();
+        WireRegionOrder();
         WireCollections();
         WireRetroAchievements();
         addRoms.Click += async (_, _) => await OpenAddRomsAsync();
@@ -362,6 +364,18 @@ public sealed partial class RomCleanerForm : LocalizedForm
             if (unrecognized.Count > 0) { item.ForeColor = Color.Firebrick; item.Font = new Font(systemList.Font, FontStyle.Bold); }
             systemList.Items.Add(item);
         }
+        // Clic derecho en una fila: eliminar el sistema completo (pide escribir su nombre) y quitarlo de esta lista.
+        var systemRowMenu = new ContextMenuStrip { ShowImageMargin = false };
+        var removeRow = new ToolStripMenuItem("Eliminar sistema completo…") { ForeColor = Color.Firebrick };
+        systemRowMenu.Items.Add(removeRow);
+        systemList.ContextMenuStrip = systemRowMenu;
+        systemRowMenu.Opening += (_, e) => { if (systemList.SelectedItems.Count != 1) e.Cancel = true; };
+        removeRow.Click += async (_, _) =>
+        {
+            if (systemList.SelectedItems.Count != 1) return;
+            var picked = systemList.SelectedItems[0];
+            if (await RemoveSystemAsync(picked.Text, dialog)) systemList.Items.Remove(picked);
+        };
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
         var pageExtensions = new TabPage("Extensiones") { Padding = new Padding(4) };

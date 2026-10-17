@@ -118,6 +118,8 @@ internal static class QuietMessage
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
         dialog.Shown += (_, _) => { box.Focus(); box.SelectAll(); };
+        if (AppIcon.Value is { } appIcon) dialog.Icon = appIcon;
+        dialog.HandleCreated += (_, _) => DarkTitleBar.Apply(dialog.Handle);
         CollectionTitle.Attach(dialog);
         if (dialog.ShowDialog(owner) != DialogResult.OK) return null;
         string text = box.Text.Trim();
@@ -132,6 +134,7 @@ internal sealed class QuietBox : Form
     public QuietBox(string title, string text, string okText, string? cancelText)
     {
         Text = title;
+        if (AppIcon.Value is { } appIcon) Icon = appIcon;
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
         Font = SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
@@ -163,5 +166,12 @@ internal sealed class QuietBox : Form
         Controls.Add(message); Controls.Add(footer); Controls.Add(banner);
         AcceptButton = ok; CancelButton = (IButtonControl?)cancel ?? ok;
         CollectionTitle.Attach(this);
+    }
+
+    // Barra de título oscura, del color de las cabeceras, como en el resto de formularios (los que heredan de LocalizedForm ya la llevan).
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        DarkTitleBar.Apply(Handle);
     }
 }

@@ -11,6 +11,7 @@ var xs=new XmlReaderSettings{DtdProcessing=DtdProcessing.Prohibit,XmlResolver=nu
 var gs=doc.Descendants().Where(g=>g.Name.LocalName=="game"&&PathRules.Relative(g.Elements().FirstOrDefault(e=>e.Name.LocalName=="path")?.Value)==PathRules.Relative(row.GamelistPath)).ToArray();if(gs.Length!=1)throw new InvalidOperationException($"Se esperaba una entrada única en gamelist, hay {gs.Length}.");var game=gs[0];
 var known=Fields.Select(f=>f.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);var fields=Fields.Concat(game.Elements().Where(e=>!known.Contains(e.Name.LocalName)&&e.Name.LocalName!="path").Select(e=>(Key:e.Name.LocalName,Label:e.Name.LocalName+" (adicional)",Type:"text"))).ToArray();
 using var f=new Form{Text="Metadatos — "+row.RomName,Width=920,Height=490,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false,ShowInTaskbar=false,StartPosition=FormStartPosition.CenterParent};
+f.HandleCreated+=(_,_)=>DarkTitleBar.Apply(f.Handle);if(AppIcon.Value is{}appIcon)f.Icon=appIcon;
 // Rejilla compacta de 4 columnas (etiqueta, campo, etiqueta, campo): los campos cortos van de dos en dos, la descripción y el nombre a todo el ancho
 // y los indicadores (favorito, oculto…) juntos en una sola fila.
 var grid=new TableLayoutPanel{Dock=DockStyle.Fill,AutoScroll=false,ColumnCount=4,Padding=new Padding(8,6,8,0)};

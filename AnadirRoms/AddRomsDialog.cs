@@ -168,9 +168,21 @@ internal sealed class AddRomsDialog : LocalizedForm
         return index;
     }
 
+    // Nombre (sin extensión) con el que se guardará una ROM de arcade si la opción de renombrar está activa: el del juego en el DAT con el que se identificó.
+    // Solo se usa si parece un nombre corto de set (sin espacios ni caracteres no válidos) y difiere del archivo original; si no, se conserva el original.
+    private string? DatStem(RomIdentity identity, string folder)
+    {
+        if (!RomIdentifier.ArcadeFolders.Contains(folder) || !StorageSettings.Load().RenameArcadeToDat || ArcadeSets.DatOf(identity.Method) is null) return null;
+        // Con una coincidencia parcial se usa el nombre del juego con más ROMs coincidentes (la carpeta ya la ha elegido el usuario a mano).
+        string game = (identity.PartialMatch ? identity.PartialGame ?? "" : identity.Game).Trim();
+        if (game.Length == 0 || game.Contains(' ') || game.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) return null;
+        return game.Equals(Path.GetFileNameWithoutExtension(identity.Path), StringComparison.Ordinal) ? null : game;
+    }
+
     private (string Path, string Kind)? FindExisting(RomIdentity identity, string folder)
     {
         var index = GetFolderIndex(folder);
+        if (DatStem(identity, folder) is { } renamed && index.Stems.TryGetValue(renamed, out var byRenamed)) return (byRenamed, "Nombre de fichero");
         if (index.Stems.TryGetValue(Path.GetFileNameWithoutExtension(identity.Path), out var byFile)) return (byFile, "Nombre de fichero");
         foreach (var name in new[] { PathRules.Name(identity.Game + ".x"), PathRules.Name(identity.Path) })
             if (name.Length > 0 && index.Names.TryGetValue(name, out var byName)) return (byName, "Nombre de ROM");
@@ -319,20 +331,20 @@ internal sealed class AddRomsDialog : LocalizedForm
         // Tercera lista: las ROMs que ya existen en la colección (no se añaden).
         dupGrid = MakeInfoGrid();
         const DataGridViewAutoSizeColumnMode fill = DataGridViewAutoSizeColumnMode.Fill;
-        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Archivo nuevo", AutoSizeMode = fill, FillWeight = 28, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
-        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ROM", AutoSizeMode = fill, FillWeight = 24, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
-        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Carpeta", AutoSizeMode = fill, FillWeight = 10, MinimumWidth = 70, SortMode = DataGridViewColumnSortMode.NotSortable });
-        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Ya existe como", AutoSizeMode = fill, FillWeight = 28, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
-        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Coincide por", AutoSizeMode = fill, FillWeight = 12, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
-        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Contenido", AutoSizeMode = fill, FillWeight = 14, MinimumWidth = 90, SortMode = DataGridViewColumnSortMode.NotSortable });
+        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Archivo nuevo", AutoSizeMode = fill, FillWeight = 28, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.Automatic });
+        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ROM", AutoSizeMode = fill, FillWeight = 24, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.Automatic });
+        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Carpeta", AutoSizeMode = fill, FillWeight = 10, MinimumWidth = 70, SortMode = DataGridViewColumnSortMode.Automatic });
+        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Ya existe como", AutoSizeMode = fill, FillWeight = 28, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.Automatic });
+        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Coincide por", AutoSizeMode = fill, FillWeight = 12, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.Automatic });
+        dupGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Contenido", AutoSizeMode = fill, FillWeight = 14, MinimumWidth = 90, SortMode = DataGridViewColumnSortMode.Automatic });
         dupGrid.Columns[2].DefaultCellStyle.Padding = new Padding(28, 0, 6, 0);
 
         // Cuarta lista: los clones de arcade detectados al filtrar (omitidos y conservados) con su padre y la situación del padre.
         cloneGrid = MakeInfoGrid();
-        cloneGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Clon", AutoSizeMode = fill, FillWeight = 22, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
-        cloneGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Padre", AutoSizeMode = fill, FillWeight = 20, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
-        cloneGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Situación del padre", AutoSizeMode = fill, FillWeight = 42, MinimumWidth = 120, SortMode = DataGridViewColumnSortMode.NotSortable });
-        cloneGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Resultado", AutoSizeMode = fill, FillWeight = 16, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.NotSortable });
+        cloneGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Clon", AutoSizeMode = fill, FillWeight = 22, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.Automatic });
+        cloneGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Padre", AutoSizeMode = fill, FillWeight = 20, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.Automatic });
+        cloneGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Situación del padre", AutoSizeMode = fill, FillWeight = 42, MinimumWidth = 120, SortMode = DataGridViewColumnSortMode.Automatic });
+        cloneGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Resultado", AutoSizeMode = fill, FillWeight = 16, MinimumWidth = 80, SortMode = DataGridViewColumnSortMode.Automatic });
         dupGrid.CellPainting += (_, e) => { if (e.RowIndex >= 0 && e.ColumnIndex == 2) { e.Paint(e.ClipBounds, DataGridViewPaintParts.All); if (e.Value is string { Length: > 0 } f) e.Graphics!.DrawImage(PixelSystemIcons.Get(f, 18), new Rectangle(e.CellBounds.X + 5, e.CellBounds.Y + (e.CellBounds.Height - 18) / 2, 18, 18)); e.Handled = true; } };
 
         middle = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = RaUi.Body, Padding = new Padding(10, 6, 10, 4) };
@@ -457,8 +469,17 @@ internal sealed class AddRomsDialog : LocalizedForm
             foreach (DataGridViewRow row in dupGrid.Rows) if (row.Tag is DupInfo && row.Cells[5].Value is string v && (v == "Distinto" || v.StartsWith("Parcial", StringComparison.Ordinal)) && !autoAdd.Contains(row)) autoAdd.Add(row);
             FlushAutoAdd();
         };
+        // Arcade: al guardar, el archivo toma el nombre del juego en el DAT con el que se identificó (el nombre corto que esperan los emuladores y ScreenScraper).
+        var renameItem = new ToolStripMenuItem("Renombrar las ROMs de arcade según el DAT") { CheckOnClick = true, Checked = StorageSettings.Load().RenameArcadeToDat,
+            ToolTipText = Loc.T("Al añadir ROMs a una carpeta de arcade, el archivo toma el nombre del juego en el DAT con el que se identificó. El resto de sistemas conservan su nombre.") };
+        renameItem.CheckedChanged += (_, _) => { var st = StorageSettings.Load(); st.RenameArcadeToDat = renameItem.Checked; st.Save(); };
+        var zipOnlyItem = new ToolStripMenuItem("MAME: comprimir solo en zip (nunca 7z)") { CheckOnClick = true, Checked = StorageSettings.Load().ArcadeZipOnly,
+            ToolTipText = Loc.T("En las carpetas de MAME, si se elige 7z como formato, las ROMs se guardan en zip.") };
+        zipOnlyItem.CheckedChanged += (_, _) => { var st = StorageSettings.Load(); st.ArcadeZipOnly = zipOnlyItem.Checked; st.Save(); };
         optionsMenu.DropDownItems.Add(skipClonesItem);
         optionsMenu.DropDownItems.Add(differentItem);
+        optionsMenu.DropDownItems.Add(renameItem);
+        optionsMenu.DropDownItems.Add(zipOnlyItem);
         optionsMenu.DropDownItems.Add(moveItem);
         menuBar.Items.Add(optionsMenu);
         MainMenuStrip = menuBar;
@@ -487,6 +508,17 @@ internal sealed class AddRomsDialog : LocalizedForm
         clearButton.Click += (_, _) => ClearLists();
         addButton.Click += async (_, _) => await AddAsync();
         curateButton.Click += async (_, _) => await CurateAndAddAsync();
+        // Ayuda emergente de los dos botones principales: qué hace cada uno.
+        HelpTip.Attach(addButton, string.Join("\r\n",
+            "Guarda las ROMs identificadas que están listas en la carpeta de su sistema de la colección.",
+            "Las copia o las mueve según la opción elegida, con el formato de almacenamiento de Opciones.",
+            "Las desconocidas, las duplicadas y los clones no se añaden."));
+        HelpTip.Attach(curateButton, string.Join("\r\n",
+            "Antes de añadir, consulta en ScreenScraper la categoría de las ROMs identificadas.",
+            "Abre el curado para descartar candidatas (por género, palabras clave o idioma).",
+            "Las descartadas dejan de añadirse, sin borrar ningún archivo.",
+            "«Añadir a la colección» del curado añade las que queden.",
+            "Necesita cuenta de ScreenScraper e internet."));
         FormClosing += (_, e) => { if (working && !AskCancelPaused("la operación sobre las ROMs")) { e.Cancel = true; return; } cts.Cancel(); };
         CleanLeftovers();
         FormClosed += (_, _) => CleanTemp();
@@ -495,8 +527,10 @@ internal sealed class AddRomsDialog : LocalizedForm
         doubtGrid.CellValueChanged += (_, e) =>
         {
             if (e.RowIndex < 0 || e.ColumnIndex != doubtGrid.Columns["folder"]!.Index) return;
-            if (doubtGrid.Rows[e.RowIndex].Cells["folder"].Value is not string { Length: > 0 }) return;
-            Ui(() => MoveToDecided(doubtGrid.Rows[e.RowIndex]));
+            var changed = doubtGrid.Rows[e.RowIndex];
+            if (changed.Cells["folder"].Value is not string { Length: > 0 }) return;
+            // Se guarda la fila, no su número: al asignar carpeta a muchas a la vez, cada una que pasa a Identificadas desplaza los números de las demás.
+            Ui(() => { if (changed.DataGridView == doubtGrid) MoveToDecided(changed); });
         };
         grid.CellValueChanged += (_, e) => { if (e.RowIndex >= 0 && e.ColumnIndex == grid.Columns["folder"]!.Index) UpdateRowState(grid.Rows[e.RowIndex]); };
         UpdateDoubtLabel();
@@ -662,11 +696,11 @@ internal sealed class AddRomsDialog : LocalizedForm
         // Las columnas se reparten el ancho de la ventana según su peso (se ven bien también maximizada) y se pueden ajustar a mano.
         g.AllowUserToResizeColumns = true;
         const DataGridViewAutoSizeColumnMode fill = DataGridViewAutoSizeColumnMode.Fill;
-        g.Columns.Add(new DataGridViewTextBoxColumn { Name = "file", HeaderText = "Archivo", AutoSizeMode = fill, FillWeight = 15, MinimumWidth = 80, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable });
-        g.Columns.Add(new DataGridViewTextBoxColumn { Name = "game", HeaderText = "Juego", AutoSizeMode = fill, FillWeight = 28, MinimumWidth = 90, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable });
-        g.Columns.Add(new DataGridViewTextBoxColumn { Name = "method", HeaderText = "Identificación", AutoSizeMode = fill, FillWeight = 22, MinimumWidth = 90, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable });
-        g.Columns.Add(new DataGridViewComboBoxColumn { Name = "folder", HeaderText = "Destino", AutoSizeMode = fill, FillWeight = 16, MinimumWidth = 90, FlatStyle = FlatStyle.Flat, DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox, SortMode = DataGridViewColumnSortMode.NotSortable });
-        g.Columns.Add(new DataGridViewTextBoxColumn { Name = "state", HeaderText = "Estado", AutoSizeMode = fill, FillWeight = 19, MinimumWidth = 90, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable });
+        g.Columns.Add(new DataGridViewTextBoxColumn { Name = "file", HeaderText = "Archivo", AutoSizeMode = fill, FillWeight = 15, MinimumWidth = 80, ReadOnly = true, SortMode = DataGridViewColumnSortMode.Automatic });
+        g.Columns.Add(new DataGridViewTextBoxColumn { Name = "game", HeaderText = "Juego", AutoSizeMode = fill, FillWeight = 28, MinimumWidth = 90, ReadOnly = true, SortMode = DataGridViewColumnSortMode.Automatic });
+        g.Columns.Add(new DataGridViewTextBoxColumn { Name = "method", HeaderText = "Identificación", AutoSizeMode = fill, FillWeight = 22, MinimumWidth = 90, ReadOnly = true, SortMode = DataGridViewColumnSortMode.Automatic });
+        g.Columns.Add(new DataGridViewComboBoxColumn { Name = "folder", HeaderText = "Destino", AutoSizeMode = fill, FillWeight = 16, MinimumWidth = 90, FlatStyle = FlatStyle.Flat, DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox, SortMode = DataGridViewColumnSortMode.Automatic });
+        g.Columns.Add(new DataGridViewTextBoxColumn { Name = "state", HeaderText = "Estado", AutoSizeMode = fill, FillWeight = 19, MinimumWidth = 90, ReadOnly = true, SortMode = DataGridViewColumnSortMode.Automatic });
         // Las dos tablas mantienen las mismas proporciones: al ajustar una columna en una, se copia el ancho a la otra.
         g.ColumnWidthChanged += (_, e) =>
         {
@@ -695,7 +729,9 @@ internal sealed class AddRomsDialog : LocalizedForm
         var removeItem = new ToolStripMenuItem("Quitar de la lista");
         var assignItem = new ToolStripMenuItem("Asignar a carpeta");
         var reidentifyItem = new ToolStripMenuItem("Re-identificar");
-        menu.Items.Add(assignItem); menu.Items.Add(reidentifyItem); menu.Items.Add(removeItem);
+        var viewFilesItem = new ToolStripMenuItem("Ver ficheros…");
+        menu.Items.Add(assignItem); menu.Items.Add(viewFilesItem); menu.Items.Add(reidentifyItem); menu.Items.Add(removeItem);
+        viewFilesItem.Click += async (_, _) => await ShowFilesAsync(g.SelectedRows.Cast<DataGridViewRow>().FirstOrDefault());
         g.ContextMenuStrip = menu;
         ((ToolStripDropDownMenu)assignItem.DropDown).ShowImageMargin = false;
         g.CellMouseDown += (_, e) =>
@@ -709,11 +745,26 @@ internal sealed class AddRomsDialog : LocalizedForm
         {
             var selected = g.SelectedRows.Cast<DataGridViewRow>().ToList();
             if (working || selected.Count == 0) { e.Cancel = true; return; }
+            viewFilesItem.Enabled = selected.Count == 1 && selected[0].Tag is RomIdentity; // el contenido se ve de una ROM cada vez
             removeItem.Text = selected.Count == 1 ? "Quitar de la lista" : $"Quitar {selected.Count} de la lista";
-            assignItem.Text = selected.Count == 1 ? "Asignar a carpeta" : $"Asignar {selected.Count} a carpeta";
+            // Con una sola ROM el texto lleva su nombre de archivo (abreviado si es largo), para ver cuál está seleccionada.
+            string selectedName = selected.Count == 1 ? selected[0].Cells["file"].Value as string ?? "" : "";
+            if (selectedName.Length > 40) selectedName = selectedName[..39] + "…";
+            assignItem.Text = selected.Count == 1 && selectedName.Length > 0 ? $"Asignar {selectedName} a carpeta" : selected.Count == 1 ? "Asignar a carpeta" : $"Asignar {selected.Count} a carpeta";
+            // El submenú (unos 200 sistemas) se monta al desplegarlo, no al abrir el menú: así el menú contextual aparece al instante.
             assignItem.DropDownItems.Clear();
-            // Todas las carpetas, por bloques: las candidatas de las ROMs seleccionadas, las que ya existen en la colección y el resto de sistemas de ES-DE.
-            var candidates = selected.Select(r => r.Tag).OfType<RomIdentity>().SelectMany(i => i.Candidates).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            assignItem.DropDownItems.Add(new ToolStripMenuItem("…") { Enabled = false });
+        };
+        // Submenú de carpetas de «host» para las filas que devuelva rowsOf (las seleccionadas, o todas las de la lista).
+        void FillFolderMenu(ToolStripMenuItem host, Func<List<DataGridViewRow>> rowsOf)
+        {
+            var targets = rowsOf();
+            if (targets.Count == 0) return;
+            host.DropDownItems.Clear();
+            var dropDown = host.DropDown;
+            dropDown.SuspendLayout(); // sin recolocar el submenú tras cada elemento añadido
+            // Todas las carpetas, por bloques: las candidatas de las ROMs elegidas, las que ya existen en la colección y el resto de sistemas de ES-DE.
+            var candidates = targets.Select(r => r.Tag).OfType<RomIdentity>().SelectMany(i => i.Candidates).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             var existing = existingFolders.Where(f => !candidates.Contains(f, StringComparer.OrdinalIgnoreCase)).ToList();
             var rest = EsDeStructure.Systems.Where(s => !candidates.Contains(s, StringComparer.OrdinalIgnoreCase) && !existing.Contains(s, StringComparer.OrdinalIgnoreCase))
                 .OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
@@ -721,23 +772,49 @@ internal sealed class AddRomsDialog : LocalizedForm
             {
                 var list = folders.ToList();
                 if (list.Count == 0) return;
-                if (assignItem.DropDownItems.Count > 0) assignItem.DropDownItems.Add(new ToolStripSeparator());
+                if (host.DropDownItems.Count > 0) host.DropDownItems.Add(new ToolStripSeparator());
+                var boldFont = bold ? new Font(menu.Font, FontStyle.Bold) : null; // una sola fuente para todo el bloque; los demás usan la del menú sin asignarla
+                var block = new List<ToolStripItem>(list.Count);
                 foreach (var folder in list)
                 {
-                    var item = new ToolStripMenuItem(folder) { Font = bold ? new Font(menu.Font, FontStyle.Bold) : menu.Font };
-                    item.Click += (_, _) => AssignFolder(g, selected, folder);
-                    assignItem.DropDownItems.Add(item);
+                    var item = new ToolStripMenuItem(folder);
+                    if (boldFont is not null) item.Font = boldFont;
+                    item.Click += (_, _) => AssignFolder(g, targets, folder);
+                    block.Add(item);
                 }
+                host.DropDownItems.AddRange(block.ToArray());
             }
             AddBlock(candidates, bold: true);
             AddBlock(existing, bold: false);
             AddBlock(rest, bold: false);
-            if (assignItem.DropDownItems.Count > 0) assignItem.DropDownItems.Add(new ToolStripSeparator());
-            assignItem.DropDownItems.Add("Buscar carpeta…", null, (_, _) =>
+            if (host.DropDownItems.Count > 0) host.DropDownItems.Add(new ToolStripSeparator());
+            host.DropDownItems.Add("Buscar carpeta…", null, (_, _) =>
             {
-                using var picker = new FolderPickDialog(existingFolders, EsDeStructure.Systems, selected.Count);
-                if (picker.ShowDialog(this) == DialogResult.OK && picker.Selected is { } chosen) AssignFolder(g, selected, chosen);
+                using var picker = new FolderPickDialog(existingFolders, EsDeStructure.Systems, targets.Count);
+                if (picker.ShowDialog(this) == DialogResult.OK && picker.Selected is { } chosen) AssignFolder(g, targets, chosen);
             });
+            dropDown.ResumeLayout(true);
+        }
+        assignItem.DropDownOpening += (_, _) => FillFolderMenu(assignItem, () => g.SelectedRows.Cast<DataGridViewRow>().ToList());
+        // «Destino para todas»: solo con el botón derecho sobre la columna «Destino»; asigna la carpeta elegida a todas las ROMs de la lista, no solo a las seleccionadas.
+        var allItem = new ToolStripMenuItem("Destino para todas");
+        ((ToolStripDropDownMenu)allItem.DropDown).ShowImageMargin = false;
+        menu.Items.Insert(0, allItem);
+        menu.Items.Insert(1, new ToolStripSeparator());
+        allItem.DropDownOpening += (_, _) => FillFolderMenu(allItem, () => g.Rows.Cast<DataGridViewRow>().Where(r => r.Tag is RomIdentity).ToList());
+        var separatorAfterAll = menu.Items[1];
+        int rightClickedColumn = -1;
+        g.CellMouseDown += (_, e) => { if (e.Button == MouseButtons.Right) rightClickedColumn = e.ColumnIndex; };
+        menu.Opening += (_, _) =>
+        {
+            bool onDestination = rightClickedColumn >= 0 && rightClickedColumn == g.Columns["folder"]!.Index && g.Rows.Count > 0;
+            allItem.Visible = separatorAfterAll.Visible = onDestination;
+            if (onDestination)
+            {
+                allItem.Text = $"Destino para todas ({g.Rows.Count:N0})";
+                allItem.DropDownItems.Clear();
+                allItem.DropDownItems.Add(new ToolStripMenuItem("…") { Enabled = false });
+            }
         };
         // Supr quita las filas seleccionadas (si no se está eligiendo carpeta en un desplegable).
         g.KeyDown += (_, e) =>
@@ -748,6 +825,21 @@ internal sealed class AddRomsDialog : LocalizedForm
         };
         return g;
     }
+
+    // «Ver ficheros»: contenido del comprimido de la ROM elegida frente a los DAT (se lee solo la cabecera del zip o 7z, sin descomprimir).
+    private async Task ShowFilesAsync(DataGridViewRow? row)
+    {
+        if (row?.Tag is not RomIdentity identity || !File.Exists(identity.Path)) return;
+        UseWaitCursor = true;
+        RomFilesReport report;
+        try { report = await RomFilesReport.InspectAsync(identity.Path); }
+        finally { UseWaitCursor = false; }
+        if (IsDisposed) return;
+        using var dialog = new RomFilesDialog(identity.Path, report, FormatBytes);
+        dialog.ShowDialog(this);
+    }
+
+    private static string FormatBytes(long n) { string[] u = ["B", "KB", "MB", "GB"]; double x = n; int i = 0; while (x >= 1024 && i < 3) { x /= 1024; i++; } return i == 0 ? $"{n} B" : $"{x:0.#} {u[i]}"; }
 
     // Ctrl+A selecciona todas las filas de la lista de la pestaña activa, aunque el foco esté en el desplegable de carpeta de una fila (que se llevaría la
     // tecla). Con todas seleccionadas, «Asignar a carpeta» del menú contextual las pasa de golpe a la carpeta elegida.
@@ -815,7 +907,7 @@ internal sealed class AddRomsDialog : LocalizedForm
             await Parallel.ForEachAsync(Enumerable.Range(0, olds.Count), new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = run.Token },
                 async (i, ct) => { pauseGate.Wait(ct); results[i] = await RomIdentifier.IdentifyAsync(olds[i].Path, ct); });
             if (IsDisposed) return;
-            int resolved = 0;
+            int resolved = 0, toDuplicates = 0, toClones = 0;
             for (int i = 0; i < olds.Count; i++)
             {
                 var old = olds[i]; var fresh = results[i]!;
@@ -828,10 +920,16 @@ internal sealed class AddRomsDialog : LocalizedForm
                 try { owner.CancelEdit(); } catch (InvalidOperationException) { }
                 owner.Rows.Remove(row);
                 AddRow(fresh);
+                // Una ROM re-identificada puede acabar en Identificadas, o en Duplicadas (ya existe en la colección) o en Clones (su padre ya está): se cuenta dónde queda.
                 if (grid.Rows.Cast<DataGridViewRow>().Any(r => ReferenceEquals(r.Tag, fresh))) resolved++;
+                else if (dupGrid.Rows.Cast<DataGridViewRow>().Any(r => r.Tag is DupInfo d && ReferenceEquals(d.Identity, fresh))) toDuplicates++;
+                else if (cloneGrid.Rows.Cast<DataGridViewRow>().Any(r => r.Tag is CloneInfo c && ReferenceEquals(c.Identity, fresh))) toClones++;
             }
-            UpdateDoubtLabel();
-            status.Text = $"Re-identificadas {olds.Count}: {resolved} identificadas, {olds.Count - resolved} sin decidir.";
+            UpdateDoubtLabel(); UpdateTabs();
+            int undecided = olds.Count - resolved - toDuplicates - toClones;
+            // Fragmentos separados por « · »: cada uno se traduce por su cuenta.
+            status.Text = $"Re-identificadas {olds.Count}: {resolved} identificadas" + (toDuplicates > 0 ? $" · {toDuplicates} duplicadas (ya están en la colección: pestaña Duplicadas)" : "")
+                + (toClones > 0 ? $" · {toClones} clones (pestaña Clones)" : "") + $" · {undecided} sin decidir";
         }
         catch (OperationCanceledException) { if (!IsDisposed) status.Text = "Re-identificación cancelada."; }
         finally { runCts = null; working = false; SetBeating(false); if (!IsDisposed) { browseButton.Text = "Examinar…"; progress.Visible = false; progress.Style = ProgressBarStyle.Blocks; UpdateAddButton(); UpdateRemoveButton(); } }
@@ -840,6 +938,8 @@ internal sealed class AddRomsDialog : LocalizedForm
     // Asigna la carpeta de destino a las filas indicadas (de una sola lista). En la lista de dudas, cada fila pasa a la de identificadas.
     private void AssignFolder(DataGridView g, List<DataGridViewRow> rows, string folder)
     {
+        // Si había una celda en edición (p. ej. el clic derecho cayó sobre un desplegable), se sale de ella antes de cambiar valores y mover filas.
+        try { g.EndEdit(); } catch (InvalidOperationException) { }
         foreach (var row in rows.ToList())
         {
             if (row.DataGridView != g) continue;
@@ -965,7 +1065,7 @@ internal sealed class AddRomsDialog : LocalizedForm
     {
         if (working) return;
         if (RomDatabase.InstalledCount() == 0 &&
-            QuietMessage.Confirm(this, "Bases de datos", "Todavía no hay bases de datos descargadas, y sin ellas solo se puede identificar por extensión (los .zip, .7z o .bin no se reconocerían).\r\n\r\n¿Quieres descargarlas ahora?", "Abrir descargas"))
+            QuietMessage.Confirm(this, "Bases de datos", "Todavía no hay bases de datos descargadas, y sin ellas solo se puede identificar por extensión (los .zip, .7z o .bin no se reconocerían).\r\n\r\n¿Quieres descargarlas ahora?", "Abrir descargas", "Continuar"))
             OpenDatManager();
 
         // Feedback inmediato: recorrer carpetas grandes puede tardar, y se hace fuera del hilo de la interfaz.
@@ -1107,7 +1207,7 @@ internal sealed class AddRomsDialog : LocalizedForm
     {
         note = "";
         var existing = identity.Candidates.Where(c => existingFolders.Contains(c, StringComparer.OrdinalIgnoreCase)).ToList();
-        bool hash = identity.Method.StartsWith("Hash", StringComparison.Ordinal) || identity.Method.StartsWith("Nombre", StringComparison.Ordinal);
+        bool hash = !identity.PartialMatch && (identity.Method.StartsWith("Hash", StringComparison.Ordinal) || identity.Method.StartsWith("Nombre", StringComparison.Ordinal) || identity.Method.StartsWith("CRC", StringComparison.Ordinal));
         // Extensiones genéricas (contenedores o imágenes de disco): sirven para decenas de sistemas, no se deduce nada de ellas.
         string[] generic = [".zip", ".7z", ".rar", ".bin", ".iso", ".img", ".chd", ".cue", ".gdi", ".m3u", ".cso", ".rom", ".dsk"];
         bool isGeneric = generic.Contains(identity.InnerExtension ?? Path.GetExtension(identity.Path).ToLowerInvariant());
@@ -1210,7 +1310,7 @@ internal sealed class AddRomsDialog : LocalizedForm
         combo.Items.AddRange(identity.Candidates.Concat(folder is null ? [] : [folder]).Distinct(StringComparer.OrdinalIgnoreCase).Cast<object>().ToArray());
         row.Cells["file"].Value = Path.GetFileName(identity.Path);
         row.Cells["file"].ToolTipText = identity.Origin is null ? identity.Path : $"{identity.Path}\r\n(de {identity.Origin})";
-        row.Cells["game"].Value = identity.Game;
+        row.Cells["game"].Value = identity.PartialGame ?? identity.Game;
         row.Cells["method"].Value = identity.Method + note;
         row.Tag = identity;
         if (folder is not null) combo.Value = folder;
@@ -1232,7 +1332,7 @@ internal sealed class AddRomsDialog : LocalizedForm
         combo.Items.AddRange(options);
         row.Cells["file"].Value = Path.GetFileName(identity.Path);
         row.Cells["file"].ToolTipText = identity.Path;
-        row.Cells["game"].Value = identity.Game;
+        row.Cells["game"].Value = identity.PartialGame ?? identity.Game;
         row.Cells["method"].Value = method;
         row.Tag = identity;
         combo.Value = folder;
@@ -1255,8 +1355,8 @@ internal sealed class AddRomsDialog : LocalizedForm
             if (!forced.Contains(identity) && TryDuplicate(row, folder)) return;
             bool created = !existingFolders.Contains(folder, StringComparer.OrdinalIgnoreCase);
             // Formato con el que se guardará (según lo que admita el sistema) y nombre que tendrá el archivo de destino.
-            var (format, note) = RomStorage.Plan(identity, CurrentStorage, SystemFormats.AllowedExtensions(root, folder));
-            string stem = Path.GetFileNameWithoutExtension(identity.Path);
+            var (format, note) = RomStorage.Plan(identity, CurrentStorage, SystemFormats.AllowedExtensions(root, folder), ArcadeZipOnly(folder));
+            string stem = DatStem(identity, folder) ?? Path.GetFileNameWithoutExtension(identity.Path);
             string targetName = format switch { StorageFormat.Zip => stem + ".zip", StorageFormat.SevenZip => stem + ".7z", _ => Path.GetFileName(identity.Path) };
             string destination = Path.Combine(root, "Roms", folder, targetName);
             string how = " · " + RomStorage.Describe(format, CurrentStorage.Level) + (note.Length > 0 ? $" ({note})" : "");
@@ -1265,6 +1365,9 @@ internal sealed class AddRomsDialog : LocalizedForm
         }
         UpdateAddButton();
     }
+
+    // Solo las carpetas de MAME (mame, mame-advmame…): las de FBNeo y demás arcade admiten 7z sin problema.
+    private static bool ArcadeZipOnly(string folder) => folder.StartsWith("mame", StringComparison.OrdinalIgnoreCase) && StorageSettings.Load().ArcadeZipOnly;
 
     private void UpdateAddButton()
     {
@@ -1356,6 +1459,7 @@ internal sealed class AddRomsDialog : LocalizedForm
         // Copiar depende del disco (pocas a la vez); zip usa un núcleo por ROM; 7z ya usa 2 hilos por proceso.
         int degree = options.Format switch { StorageFormat.Keep or StorageFormat.Raw => 3, StorageFormat.Zip => Math.Clamp(cores / 2, 2, 8), _ => Math.Clamp(cores / 3, 2, 4) };
         var addedLock = new object();
+        var arcadeSetsUsed = new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase); // carpeta de arcade → romset (DAT) con el que se identificó
         string progressText = ""; int progressValue = 0;
         using var tick = new System.Windows.Forms.Timer { Interval = 120 };
         tick.Tick += (_, _) => { if (IsDisposed) { tick.Stop(); return; } status.Text = progressText; progress.Value = Math.Clamp(progressValue, 0, 1000); };
@@ -1375,16 +1479,18 @@ internal sealed class AddRomsDialog : LocalizedForm
                     {
                         // Se deja el systeminfo.txt del sistema si falta y se decide el formato real según lo que admita (su lista de extensiones).
                         SystemFormats.EnsureSystemInfo(root, folder);
-                        var (format, _) = RomStorage.Plan(identity, options, SystemFormats.AllowedExtensions(root, folder));
+                        var (format, _) = RomStorage.Plan(identity, options, SystemFormats.AllowedExtensions(root, folder), ArcadeZipOnly(folder));
                         // ROM pasada a mano desde duplicadas: el archivo que existía se aparta, se guarda la nueva y entonces se borra el anterior (si falla, se devuelve).
                         string? held = identity.ReplaceExisting is { } toReplace ? RomStorage.HoldExisting(root, folder, toReplace) : null;
                         List<string> created;
+                        identity.TargetStem = DatStem(identity, folder); // arcade: se guarda con el nombre del juego en el DAT
                         try { created = RomStorage.Store(identity, Path.Combine(root, "Roms", folder), format, options.Level, move, ct); }
                         catch { if (held is not null) RomStorage.RestoreHeld(held, identity.ReplaceExisting!); throw; }
                         if (held is not null) RomStorage.ReleaseHeld(held);
                         lock (addedLock) AddedPaths.AddRange(created.Select(Path.GetFullPath));
                         Interlocked.Increment(ref added);
-                        trace.Add("rom_added", $"system={folder}; file={Path.GetFileName(identity.Path)}; method={identity.Method}; move={move}");
+                        if (RomIdentifier.ArcadeFolders.Contains(folder) && ArcadeSets.DatOf(identity.Method) is { } datUsed && ArcadeCategories.Applies(datUsed)) arcadeSetsUsed[folder] = datUsed;
+                        trace.Add("rom_added", $"system={folder}; file={Path.GetFileName(identity.Path)}; method={identity.Method}; move={move}" + (identity.TargetStem is { } renamedTo ? $"; renamed_to={renamedTo}" : ""));
                         Ui(() =>
                         {
                             folderIndexes.Remove(folder); // la carpeta ha cambiado: se vuelve a indexar la próxima vez
@@ -1410,6 +1516,7 @@ internal sealed class AddRomsDialog : LocalizedForm
         }
         catch (OperationCanceledException) { }
         finally { tick.Stop(); runCts = null; working = false; SetBeating(false); if (!IsDisposed) { browseButton.Text = "Examinar…"; progress.Visible = false; UpdateAddButton(); UpdateRemoveButton(); } }
+        if (!arcadeSetsUsed.IsEmpty) ArcadeSets.SetMany(arcadeSetsUsed); // el romset de cada carpeta de arcade queda guardado para categorizar con su catver.ini
         if (added > 0) CollectionChanged = true; // aunque se haya cerrado el formulario, las ROMs ya añadidas deben pasar a los gamelists
         if (IsDisposed) return;
         if (run.IsCancellationRequested)

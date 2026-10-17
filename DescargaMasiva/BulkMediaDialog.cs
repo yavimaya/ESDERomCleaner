@@ -44,7 +44,6 @@ internal sealed class BulkMediaDialog : LocalizedForm
     // Los hilos los fija la membresía de ScreenScraper (se leen del servidor), no el usuario.
     private readonly Label threadsInfo = new() { AutoSize = true, MaximumSize = new Size(520, 0), Margin = new Padding(6, 6, 3, 3) };
     private readonly Button startButton = new() { Text = "Scrapear", AutoSize = true, MinimumSize = new Size(130, 30) };
-    private readonly Button cancelButton = new() { Text = "Cancelar", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
     private readonly Button viewSummaryButton = new() { Text = "Ver resumen", AutoSize = true, MinimumSize = new Size(90, 30), Enabled = false };
     private readonly BulkDebugLog debugLog = new();
     private BulkDebugDialog? debugWindow;
@@ -64,10 +63,17 @@ internal sealed class BulkMediaDialog : LocalizedForm
         double seconds = (DateTime.Now - digStartedAt).TotalSeconds;
         bannerIcon.Image = shovel.Frames[(int)(seconds * 7) % shovel.Frames.Length]; // unos 7 fotogramas por segundo, en bucle
     }
-    private readonly Label summaryLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Tag = "noloc" };
+    private readonly Label summaryLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, AutoEllipsis = true, Tag = "noloc" };
     private readonly Label statusLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, AutoEllipsis = true, Tag = "noloc" };
     private readonly ProgressBar progressBar = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 100 };
     private readonly DataGridView issuesGrid = new();
+    private readonly DataGridView progressGrid = new(); // progreso por tipo de medio, en la columna derecha
+    // La tabla de incidencias está oculta por defecto: el botón «?» muestra cuántas hay y, al pulsarlo, la despliega (y la oculta de nuevo).
+    private readonly Button issuesButton = new() { Text = "?  0", AutoSize = true, MinimumSize = new Size(64, 30), Enabled = false, FlatStyle = FlatStyle.Flat, Tag = "noloc" };
+    private GroupBox? issuesGroupBox;
+    private TableLayoutPanel? mainLayout;
+    private bool issuesShown;
+    private const int IssuesRowHeight = 170;
 
     public bool CollectionChanged { get; private set; }
 
@@ -91,7 +97,9 @@ internal sealed class BulkMediaDialog : LocalizedForm
         Redraw.EnableDoubleBuffer(summaryLabel); Redraw.EnableDoubleBuffer(statusLabel); // sin parpadeo al repintar el texto
         uiTimer.Tick += (_, _) => RefreshProgress();
         FormClosed += (_, _) => uiTimer.Dispose();
-        Width = 1220; Height = 858; MinimumSize = new Size(1000, 788);
+        // Más alta que antes (858): la tabla de progreso lleva hasta 12 tipos de medio y el TOTAL, y este debe verse sin desplazarse. Con una pantalla más baja se ajusta a su área útil.
+        int usableHeight = Screen.FromPoint(Cursor.Position).WorkingArea.Height;
+        Width = 1220; Height = Math.Min(960, usableHeight - 10); MinimumSize = new Size(1000, Math.Min(860, usableHeight - 10));
         StartPosition = FormStartPosition.CenterParent;
         CancelButton = closeButton;
         BuildLayout();
@@ -145,8 +153,12 @@ internal sealed class BulkMediaDialog : LocalizedForm
         foreach (var check in folderChecks.Values) check.CheckedChanged += (_, _) => SyncAllMediaCheck();
         SyncAllMediaCheck();
         UpdateDependentControls(); // los ajustes guardados se aplicaron antes de enganchar los eventos: se sincroniza el estado inicial de las opciones
-        startButton.Click += async (_, _) => await StartAsync();
-        cancelButton.Click += (_, _) => { if (!CancelConfirm.Ask(this, "la descarga masiva de medios")) return; cts?.Cancel(); SetStatus("Cancelando…"); };
+        // Un solo botón: «Scrapear» empieza la descarga y, mientras está en marcha, pasa a ser «Detener» y la cancela (con su confirmación).
+        startButton.Click += async (_, _) =>
+        {
+            if (running) { if (!CancelConfirm.Ask(this, "la descarga masiva de medios")) return; cts?.Cancel(); SetStatus("Cancelando…"); return; }
+            await StartAsync();
+        };
         exportButton.Click += (_, _) => ExportIssues();
         debugButton.Click += (_, _) => OpenDebugWindow();
         viewSummaryButton.Click += (_, _) => ShowResult();
@@ -276,10 +288,12 @@ internal sealed class BulkMediaDialog : LocalizedForm
             videoCell.Controls.Add(videoOptions);
             AddElement(videoCell, ReplaceOptions(folder.Folder));
         }
-        mediaFlow.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); // fila elástica inferior: con la superior, centra los controles verticalmente
+        mediaFlow.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // fila elástica inferior: los controles quedan arriba, sin huecos, y lo que sobre queda abajo
+        mediaFlow.RowStyles[0] = new RowStyle(SizeType.Absolute, 0);  // sin fila elástica superior: antes empujaba los controles hacia el centro
         mediaFlow.RowCount = mediaRow + 1;
         var mediaGroup = new GroupBox { Text = "Medios a descargar", Dock = DockStyle.Fill };
         mediaGroup.Controls.Add(mediaFlow);
+        int mediaHeight = mediaFlow.GetPreferredSize(new Size(720, 0)).Height + 28; // el grupo mide lo que sus controles: el resto de la columna es para la tabla de progreso
 
         // ---- Opciones
         var optionsFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = false };
@@ -296,12 +310,62 @@ internal sealed class BulkMediaDialog : LocalizedForm
         optionsCenter.Controls.Add(optionsFlow, 0, 0);
         optionsGroup.Controls.Add(optionsCenter);
 
-        var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+        // ---- Progreso por tipo de medio: la misma tabla del resumen final, en vivo, al final de la columna
+        progressGrid.Dock = DockStyle.Fill; progressGrid.ReadOnly = true; progressGrid.AllowUserToAddRows = false; progressGrid.AllowUserToDeleteRows = false; progressGrid.AllowUserToResizeRows = false;
+        progressGrid.RowHeadersVisible = false; progressGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect; progressGrid.MultiSelect = false; progressGrid.TabStop = false;
+        progressGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+        RaUi.StyleGrid(progressGrid, 22, 24, selectionVisible: false);
+        progressGrid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False; // un título largo no se parte en dos líneas: eso desalineaba la cabecera
+        progressGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Tipo de medio", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, FillWeight = 34, MinimumWidth = 120 });
+        // «Tipo de medio» ocupa lo que sobra (puede cortarse); las demás se ajustan al contenido: el mayor entre su título ya traducido y el valor más largo que puede llevar.
+        // Guardados, Sustituidos y Ya estaban van centradas; Antes, Ahora y Diferencia, a la derecha.
+        foreach (var (header, align, sample) in new[]
+        {
+            ("Guardados", DataGridViewContentAlignment.MiddleCenter, "99.999"), ("Sustituidos", DataGridViewContentAlignment.MiddleCenter, "99.999"), ("Ya estaban", DataGridViewContentAlignment.MiddleCenter, "99.999"),
+            ("Antes", DataGridViewContentAlignment.MiddleRight, "999,99 MB"), ("Ahora", DataGridViewContentAlignment.MiddleRight, "999,99 MB"), ("Diferencia", DataGridViewContentAlignment.MiddleRight, "+999,99 MB")
+        })
+        {
+            int headerWidth = TextRenderer.MeasureText(Loc.T(header), progressGrid.Font).Width;
+            int contentWidth = TextRenderer.MeasureText(sample, progressGrid.Font).Width;
+            var column = new DataGridViewTextBoxColumn { HeaderText = header, AutoSizeMode = DataGridViewAutoSizeColumnMode.None, Width = Math.Max(headerWidth, contentWidth) + 20, DefaultCellStyle = new DataGridViewCellStyle { Alignment = align } };
+            column.HeaderCell.Style.Alignment = align;
+            progressGrid.Columns.Add(column);
+        }
+        var progressGroup = new GroupBox { Text = "Progreso por tipo de medio", Dock = DockStyle.Fill };
+        progressGroup.Controls.Add(progressGrid);
+
+        var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
         right.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, mediaHeight));
         right.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
+        right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         right.Controls.Add(mediaGroup, 0, 0);
         right.Controls.Add(optionsGroup, 0, 1);
+        right.Controls.Add(progressGroup, 0, 2);
+
+        // «Ampliar»: oculta el panel de opciones para que la tabla ocupe su sitio; «Restaurar» lo devuelve. Se recuerda la última elección.
+        // Icono pegado a la derecha del título del panel: flecha arriba = ampliar, flecha abajo = restaurar.
+        var expandButton = new ChevronButton();
+        var expandTip = new ToolTip();
+        progressGroup.Controls.Add(expandButton);
+        expandButton.BringToFront();
+        void PlaceExpandIcon() => expandButton.Location = new Point(8 + TextRenderer.MeasureText(progressGroup.Text, progressGroup.Font).Width + 10, 0);
+        progressGroup.Resize += (_, _) => PlaceExpandIcon();
+        progressGroup.TextChanged += (_, _) => PlaceExpandIcon();
+        void ApplyExpanded(bool expanded)
+        {
+            right.SuspendLayout();
+            right.RowStyles[1].Height = expanded ? 0 : 112;
+            optionsGroup.Visible = !expanded;
+            expandButton.Down = expanded;
+            expandTip.SetToolTip(expandButton, Loc.T(expanded ? "Restaurar" : "Ampliar"));
+            PlaceExpandIcon();
+            right.ResumeLayout(true);
+            AppSettings.Set("BulkProgressExpanded", expanded);
+        }
+        bool progressExpanded = AppSettings.Get("BulkProgressExpanded", false);
+        expandButton.Click += (_, _) => { progressExpanded = !progressExpanded; ApplyExpanded(progressExpanded); };
+        ApplyExpanded(progressExpanded);
 
         var content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
         content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46));
@@ -334,8 +398,8 @@ internal sealed class BulkMediaDialog : LocalizedForm
 
         // ---- Botones
         var centerButtons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, Margin = Padding.Empty };
+        centerButtons.Controls.Add(issuesButton);
         centerButtons.Controls.Add(startButton);
-        centerButtons.Controls.Add(cancelButton);
         centerButtons.Controls.Add(debugButton);
         centerButtons.Controls.Add(exportButton);
         centerButtons.Controls.Add(viewSummaryButton);
@@ -350,8 +414,11 @@ internal sealed class BulkMediaDialog : LocalizedForm
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 0)); // incidencias: oculta hasta que se pulsa «?»
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        issuesGroupBox = issuesGroup; mainLayout = layout; issuesGroup.Visible = false; exportButton.Visible = false;
+        issuesButton.Click += (_, _) => { issuesShown = !issuesShown; ApplyIssuesView(); };
+        issuesButton.Margin = new Padding(3, 3, 12, 3);
         layout.Controls.Add(content, 0, 0);
         layout.Controls.Add(summaryLabel, 0, 1);
         layout.Controls.Add(progressBar, 0, 2);
@@ -730,18 +797,58 @@ internal sealed class BulkMediaDialog : LocalizedForm
     private double etaComputedAtSeconds = -1000;
     private string etaText = "calculando…";
 
+    // Tabla de progreso por tipo de medio: una fila por cada carpeta marcada (o con actividad) y el total, con los mismos datos que el resumen final.
+    private void FillProgressGrid(BulkSummary s)
+    {
+        Dictionary<string, BulkFolderStats> copy;
+        lock (s.ByFolder) copy = s.ByFolder.ToDictionary(p => p.Key, p => new BulkFolderStats { Files = p.Value.Files, Replaced = p.Value.Replaced, Identical = p.Value.Identical, BytesBefore = p.Value.BytesBefore, BytesAfter = p.Value.BytesAfter }, StringComparer.OrdinalIgnoreCase);
+        int files = 0, replaced = 0, identical = 0; long before = 0, after = 0;
+        // Si la tabla estaba al final (o aún sin desplazar), se vuelve a dejar al final al actualizarla: así la última fila, el TOTAL, siempre se ve. Si el usuario
+        // la ha subido a mirar otra fila, se respeta su posición.
+        bool atBottom = progressGrid.Rows.Count == 0 || progressGrid.FirstDisplayedScrollingRowIndex < 0
+            || progressGrid.FirstDisplayedScrollingRowIndex + Math.Max(1, progressGrid.DisplayedRowCount(false)) >= progressGrid.Rows.Count;
+        int keepFirst = progressGrid.FirstDisplayedScrollingRowIndex;
+        progressGrid.SuspendLayout();
+        progressGrid.Rows.Clear();
+        void Add(string name, int f, int r, int i, long b, long a, bool bold)
+        {
+            long delta = a - b;
+            var row = progressGrid.Rows[progressGrid.Rows.Add(name, f.ToString("N0"), r.ToString("N0"), i.ToString("N0"), b > 0 ? ScreenScraperDialog.FormatBytes(b) : "—", a > 0 ? ScreenScraperDialog.FormatBytes(a) : "—", BulkResultDialog.FormatDelta(delta))];
+            row.Cells[6].Style.ForeColor = delta < 0 ? Color.DarkGreen : delta > 0 ? Color.DarkOrange : SystemColors.ControlText;
+            if (bold) row.DefaultCellStyle.Font = new Font(Font, FontStyle.Bold);
+        }
+        foreach (var folder in EsDeMediaInstaller.Folders)
+        {
+            bool marked = folderChecks.TryGetValue(folder.Folder, out var check) && check.Checked;
+            if (!copy.TryGetValue(folder.Folder, out var st)) { if (!marked) continue; st = new BulkFolderStats(); }
+            Add($"{folder.Description.Replace(" (cartucho, disco)", "")} ({folder.Folder})", st.Files, st.Replaced, st.Identical, st.BytesBefore, st.BytesAfter, false);
+            files += st.Files; replaced += st.Replaced; identical += st.Identical; before += st.BytesBefore; after += st.BytesAfter;
+        }
+        if (progressGrid.Rows.Count > 0) Add("TOTAL", files, replaced, identical, before, after, true);
+        progressGrid.ClearSelection();
+        progressGrid.ResumeLayout();
+        try
+        {
+            if (progressGrid.Rows.Count > 0)
+            {
+                int visible = Math.Max(1, progressGrid.DisplayedRowCount(true));
+                int first = atBottom ? Math.Max(0, progressGrid.Rows.Count - visible) : Math.Clamp(keepFirst, 0, progressGrid.Rows.Count - 1);
+                if (first > 0 || progressGrid.FirstDisplayedScrollingRowIndex > 0) progressGrid.FirstDisplayedScrollingRowIndex = first;
+            }
+        }
+        catch (InvalidOperationException) { /* la tabla aún no tiene alto o está oculta: no hay nada que desplazar */ }
+    }
+
     private string SummaryText(BulkSummary s)
     {
         var parts = new List<string>
         {
             plannedWork > 0 ? $"ROMs {FinishedWork(s):N0}/{plannedWork:N0}" : $"ROMs {s.RomsDone:N0}/{s.RomsTotal:N0}",
-            $"archivos guardados {s.FilesSaved:N0}" + (s.FilesReplaced > 0 ? $" ({s.FilesReplaced:N0} sustituidos)" : ""),
-            $"descargado {ScreenScraperDialog.FormatBytes(s.BytesDownloaded)}",
             $"ya completas {s.AlreadyComplete:N0}"
         };
         if (s.MetadataUpdated > 0 || s.MetadataFailed > 0) parts.Add($"metadatos {s.MetadataUpdated:N0}" + (s.MetadataFailed > 0 ? $" ({s.MetadataFailed:N0} fallidos)" : ""));
         if (s.LanguagesStored > 0) parts.Add($"idiomas {s.LanguagesStored:N0}");
-        if (s.FilesIdentical > 0) parts.Add($"idénticos {s.FilesIdentical:N0}");
+        FillProgressGrid(s); // guardados, sustituidos, ya estaban y espacio van por tipo de medio en la tabla de la derecha
         if (s.FoldersUnavailable > 0) parts.Add($"sin medio disponible {s.FoldersUnavailable:N0}");
         if (s.NotFound > 0) parts.Add($"no encontradas {s.NotFound:N0}");
         if (s.FoundByName > 0) parts.Add($"por nombre {s.FoundByName:N0}");
@@ -763,9 +870,9 @@ internal sealed class BulkMediaDialog : LocalizedForm
         foreach (var check in folderChecks.Values) check.Enabled = !locked;
         allMediaCheck.Enabled = !locked;
         searchNameCheck.Enabled = onlyNoMediaCheck.Enabled = replaceHeader.Enabled = !locked;
-        startButton.Enabled = closeButton.Enabled = !locked; UpdateExportButton();
+        startButton.Text = running ? "Detener" : "Scrapear";
+        startButton.Enabled = !locked || running; closeButton.Enabled = !locked; UpdateExportButton();
         viewSummaryButton.Enabled = !locked && lastResult is not null;
-        cancelButton.Enabled = running;
         if (!value) UpdateDependentControls();
         else
         {
@@ -825,7 +932,27 @@ internal sealed class BulkMediaDialog : LocalizedForm
         SetStatus(removed > 0 ? $"Incidencias resueltas de {rom}: {removed}." : $"Se actualizó {rom}, pero sigue habiendo incidencias.");
     }
 
-    private void UpdateExportButton() => exportButton.Enabled = issuesGrid.Rows.Count > 0;
+    private void UpdateExportButton()
+    {
+        int count = issuesGrid.Rows.Count;
+        exportButton.Enabled = count > 0;
+        issuesButton.Text = $"?  {count:N0}";
+        issuesButton.Enabled = count > 0;
+        if (count == 0 && issuesShown) { issuesShown = false; ApplyIssuesView(); } // sin incidencias no queda nada que mostrar
+    }
+
+    // Muestra u oculta la tabla de incidencias (con «Exportar incidencias…», que solo tiene sentido con la tabla a la vista).
+    private void ApplyIssuesView()
+    {
+        if (issuesGroupBox is null || mainLayout is null) return;
+        mainLayout.SuspendLayout();
+        mainLayout.RowStyles[4].Height = issuesShown ? IssuesRowHeight : 0;
+        issuesGroupBox.Visible = issuesShown;
+        exportButton.Visible = issuesShown;
+        issuesButton.BackColor = issuesShown ? Color.FromArgb(255, 236, 179) : SystemColors.Control;
+        issuesButton.UseVisualStyleBackColor = !issuesShown;
+        mainLayout.ResumeLayout(true);
+    }
 
     private void ExportIssues()
     {

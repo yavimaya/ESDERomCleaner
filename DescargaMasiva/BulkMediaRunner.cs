@@ -42,6 +42,9 @@ internal sealed record BulkMediaOptions(
     // (sin tocar la descripción ni el resto de campos que ya hubiera).
     public bool CategoryOnly { get; init; }
 
+    // Categoría local de una ROM (arcade: catver.ini del romset con el que se creó su carpeta). Si devuelve una, con CategoryOnly no se consulta a ScreenScraper.
+    public Func<RomRow, string?>? LocalGenre { get; init; }
+
     // Sustitución por elemento (descarga masiva): si no es null, manda sobre «Overwrite» para los medios y los metadatos (los idiomas solo se piden si faltan).
     public IReadOnlyDictionary<string, BulkReplace>? Replace { get; init; }
     // ¿Hay que pedir este elemento para una ROM? Con política por elemento, «No» solo lo pide si falta en destino; las demás, siempre. Sin política (modo antiguo),
@@ -58,6 +61,8 @@ internal sealed record BulkIssue(string System, string Rom, string Result, strin
 internal sealed class BulkFolderStats
 {
     public int Files, Replaced;
+    // Ficheros que ya estaban en la colección, iguales a los de ScreenScraper: no se descargaron ni se tocaron.
+    public int Identical;
     public long BytesBefore, BytesAfter;
 }
 
@@ -340,6 +345,16 @@ internal sealed class BulkMediaRunner
         if (pending.Count == 0 && !needMetadata && !needLanguages) { Interlocked.Increment(ref Summary.AlreadyComplete); Dbg($"{id}: completa en destino, no se consulta a ScreenScraper"); return; }
         if (pending.Count == 0) Dbg($"{id}: sus medios ya están, pero se consulta igualmente porque se piden " + (needMetadata ? "metadatos" : "idiomas"));
 
+        // Categorizar un juego de arcade: la categoría sale de la lista local de su romset (catver.ini), sin ninguna petición a ScreenScraper.
+        if (o.CategoryOnly && needMetadata && o.LocalGenre?.Invoke(row) is { Length: > 0 } localGenre)
+        {
+            if (row.Gamelist.Length == 0 || row.GamelistPath.Length == 0) { Issue(row, "Metadatos", "La ROM no tiene entrada en ningún gamelist.xml"); return; }
+            pendingMetadata.GetOrAdd(row.Gamelist, _ => new(StringComparer.OrdinalIgnoreCase))[PathRules.Relative(row.GamelistPath)] = new GamelistMetadata("", "", "", "", "", "", localGenre, "");
+            Dbg($"{id}: categoría «{localGenre}» de la lista local del romset (sin consultar a ScreenScraper)");
+            Interlocked.Increment(ref Summary.MetadataFetched);
+            return;
+        }
+
         var (game, via, note) = await FindGameAsync(row, ss, token);
         Dbg($"{id}: consulta a ScreenScraper → " + (game is null ? $"NO encontrada ({note})" : $"juego {game.Id} «{game.Name}» (vía {via})"));
         if (game is null)
@@ -404,7 +419,17 @@ internal sealed class BulkMediaRunner
                 var media = candidates.FirstOrDefault();
                 if (media is null) { Interlocked.Increment(ref Summary.FoldersUnavailable); missing.Add(folder.Folder); Dbg($"{id} · {folder.Folder}: ScreenScraper no tiene este medio"); continue; }
 
-                if (SkipExisting(RomFolderTarget(o, row, folder), media, folder.Folder, out string skipReason)) { Interlocked.Increment(ref Summary.FilesIdentical); Dbg($"{id} · {folder.Folder}: {skipReason}, se omite"); continue; }
+                if (SkipExisting(RomFolderTarget(o, row, folder), media, folder.Folder, out string skipReason))
+                {
+                    Interlocked.Increment(ref Summary.FilesIdentical);
+                    lock (Summary.ByFolder)
+                    {
+                        if (!Summary.ByFolder.TryGetValue(folder.Folder, out var identicalStats)) Summary.ByFolder[folder.Folder] = identicalStats = new BulkFolderStats();
+                        identicalStats.Identical++;
+                    }
+                    Dbg($"{id} · {folder.Folder}: {skipReason}, se omite");
+                    continue;
+                }
 
                 string source = SsMediaCache.PathFor(game.Id, media);
                 if (!SsMediaCache.IsCached(game.Id, media))
@@ -538,12 +563,44 @@ internal sealed class BulkMediaRunner
         return false;
     }
 
-    // 1) por hash (lo normal); 2) si se pidió y el hash no la reconoce, por el nombre del juego dentro del sistema.
+    // Sistemas en los que el hash casi nunca reconoce la ROM: se empieza por el nombre del archivo. Los de arcade lo son de partida (el hash de un set de MAME casi
+    // nunca lo identifica y descomprimirlo para nada cuesta tiempo y peticiones); los demás pasan a serlo si, tras 20 consultas por hash, falla el 90 % o más.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> nameFirstSystems = new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int[]> hashStats = new(StringComparer.OrdinalIgnoreCase);
+
+    private void RecordHashResult(string system, bool recognized)
+    {
+        var stats = hashStats.GetOrAdd(system, _ => new int[2]);
+        int tried = Interlocked.Increment(ref stats[0]);
+        int missed = recognized ? Volatile.Read(ref stats[1]) : Interlocked.Increment(ref stats[1]);
+        if (tried >= 20 && missed * 10 >= tried * 9 && nameFirstSystems.TryAdd(system, true))
+            Dbg($"{system}: el hash no reconoce {missed} de {tried} ROMs; a partir de ahora se consulta primero por el nombre del archivo");
+    }
+
+    // ScreenScraper conoce los sets de arcade por el nombre del zip: un 7z o rar se consulta como «nombre.zip».
+    private static string FileNameForLookup(RomRow row) =>
+        Path.GetExtension(row.Path).ToLowerInvariant() is ".7z" or ".rar" ? Path.GetFileNameWithoutExtension(row.Path) + ".zip" : Path.GetFileName(row.Path);
+
+    // 1) arcade (o un sistema donde el hash falla casi siempre): por el nombre del archivo, sin leerlo; 2) por hash (lo normal); 3) si se pidió y no se reconoce,
+    // por el nombre del juego dentro del sistema. En arcade, si el nombre de archivo no se reconoce no se insiste con el hash.
     private async Task<(SsGame? Game, string Via, string Note)> FindGameAsync(RomRow row, SsSystem ss, CancellationToken token)
     {
         if (o.ForcedGame?.Invoke(row) is { } forced) return (forced, "elegido", "Juego elegido a mano");
         SsLookupResult? result = null;
         string hashNote = "";
+        bool arcade = RomIdentifier.ArcadeFolders.Contains(row.System);
+        if (arcade || nameFirstSystems.ContainsKey(row.System))
+        {
+            string fileName = FileNameForLookup(row);
+            try
+            {
+                var byFile = await WithRetry($"{row.System}: {row.RomName} · consulta por nombre de archivo «{fileName}»", () => client.LookupByRomNameAsync(ss.Id, fileName, token), token);
+                if (byFile.Games.Count > 0) return (byFile.Games[0], "archivo", "");
+            }
+            catch (ScreenScraperException ex) when (ex.StatusCode == 404) { }
+            if (arcade) hashNote = "No reconocida por nombre de archivo";
+        }
+        if (!arcade)
         try
         {
             bool isZip = Path.GetExtension(row.Path).Equals(".zip", StringComparison.OrdinalIgnoreCase);
@@ -564,6 +621,7 @@ internal sealed class BulkMediaRunner
             }
         }
         catch (ScreenScraperException ex) when (ex.StatusCode == 404) { hashNote = "No reconocida por hash"; }
+        if (!arcade) RecordHashResult(row.System, result is { Games.Count: > 0 });
         if (result is { Games.Count: > 0 }) return (result.Games[0], "hash", "");
         if (hashNote.Length == 0) hashNote = "Sin juego en ScreenScraper";
         if (!o.SearchByName) return (null, "", hashNote);

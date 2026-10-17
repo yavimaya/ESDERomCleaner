@@ -27,7 +27,8 @@ internal sealed class DeleteResultDialog : LocalizedForm
         {
             Color color = showPlanned && done < planned ? Warn : Ok;
             var tile = RaUi.Card(new Rectangle(index * ((innerWidth - 3 * 10) / 4 + 10), 0, (innerWidth - 3 * 10) / 4, 96));
-            tile.Controls.Add(new Label { Text = showPlanned ? $"{done:N0} / {planned:N0}" : $"{done:N0}", Tag = "noloc", Location = new Point(0, 8), Size = new Size(tile.Width, 38), TextAlign = ContentAlignment.MiddleCenter, Font = new Font(Font.FontFamily, 18F, FontStyle.Bold), ForeColor = color });
+            // Solo se muestra «hechos / previstos» cuando no coinciden; si todo salió como estaba previsto basta el número.
+            tile.Controls.Add(new Label { Text = showPlanned && done != planned ? $"{done:N0} / {planned:N0}" : $"{done:N0}", Tag = "noloc", Location = new Point(0, 8), Size = new Size(tile.Width, 38), TextAlign = ContentAlignment.MiddleCenter, Font = new Font(Font.FontFamily, 18F, FontStyle.Bold), ForeColor = color });
             tile.Controls.Add(new Label { Text = name, Location = new Point(0, 50), Size = new Size(tile.Width, 20), TextAlign = ContentAlignment.MiddleCenter, Font = new Font(Font, FontStyle.Bold) });
             tile.Controls.Add(new Label { Text = size, Tag = "noloc", Location = new Point(0, 70), Size = new Size(tile.Width, 20), TextAlign = ContentAlignment.MiddleCenter, ForeColor = RaUi.Muted });
             tiles.Controls.Add(tile);

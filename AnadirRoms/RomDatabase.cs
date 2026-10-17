@@ -24,6 +24,12 @@ internal sealed class DatIndex
     public Dictionary<string, List<DatHit>> Names { get; } = new(StringComparer.OrdinalIgnoreCase);
     // Nombre de cada juego de los DAT por hash: sirve para reconocer un archivo que se llama igual que el juego aunque su hash no coincida.
     public Dictionary<string, List<DatHit>> GameNames { get; } = new(StringComparer.OrdinalIgnoreCase);
+    // Arcade (MAME/FBNeo): cada juego de los DAT por nombre, con el número de ROMs distintas que tiene, y para cada (CRC, tamaño) los juegos que la llevan.
+    // Sirve para reconocer un set por lo que lleva dentro aunque el archivo se haya renombrado: gana el juego que reúne más ROMs del archivo.
+    public List<(DatSource Source, string Game)> ArcadeGames { get; } = new();
+    public List<int> ArcadeGameRoms { get; } = new();
+    public Dictionary<ulong, List<int>> ArcadeRoms { get; } = new();
+    public static ulong Pack(uint crc, long size) => ((ulong)crc << 32) | (uint)Math.Min(size, uint.MaxValue);
 }
 
 // DAT que el usuario ha importado (los que genera clrmamepro, MAME, FBNeo u otros programas).
@@ -337,7 +343,7 @@ internal static class RomDatabase
     // ---- Caché del índice en disco (junto a los DAT, no en la carpeta temporal): solo se rehace si cambian los DAT o los orígenes activos.
 
     private static string CachePath => Path.Combine(DatsFolder, "index.cache");
-    private const string CacheMagic = "ESDEIDX2";
+    private const string CacheMagic = "ESDEIDX4"; // 4: añade el índice por contenido de arcade (juegos y sus ROMs)
 
     private static string Signature(List<DatSource> sources)
     {
@@ -402,6 +408,17 @@ internal static class RomDatabase
                 string key = strings[reader.ReadInt32()]; index.GameNames[key] = ReadHits();
                 if ((i & 0x7FFF) == 0) IndexProgress = 0.7 + 0.3 * i / Math.Max(1, gameCount);
             }
+            int arcadeCount = reader.ReadInt32();
+            for (int i = 0; i < arcadeCount; i++) { index.ArcadeGames.Add((sources[reader.ReadUInt16()], strings[reader.ReadInt32()])); index.ArcadeGameRoms.Add(reader.ReadInt32()); }
+            int romKeyCount = reader.ReadInt32();
+            index.ArcadeRoms.EnsureCapacity(romKeyCount);
+            for (int i = 0; i < romKeyCount; i++)
+            {
+                ulong key = reader.ReadUInt64(); int n = reader.ReadInt32();
+                var ids = new List<int>(n);
+                for (int j = 0; j < n; j++) ids.Add(reader.ReadInt32());
+                index.ArcadeRoms[key] = ids;
+            }
             return index;
         }
         catch { return null; } // caché ilegible o de otra versión: se rehace
@@ -424,6 +441,7 @@ internal static class RomDatabase
             foreach (var hits in index.Hash.Values) foreach (var h in hits) Id(h.Game);
             foreach (var pair in index.Names) { Id(pair.Key); foreach (var h in pair.Value) Id(h.Game); }
             foreach (var pair in index.GameNames) { Id(pair.Key); foreach (var h in pair.Value) Id(h.Game); }
+            foreach (var (_, game) in index.ArcadeGames) Id(game);
 
             string temp = CachePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             using (var writer = new BinaryWriter(File.Create(temp), System.Text.Encoding.UTF8))
@@ -442,6 +460,10 @@ internal static class RomDatabase
                 foreach (var pair in index.Names) { writer.Write(Id(pair.Key)); WriteHits(pair.Value); }
                 writer.Write(index.GameNames.Count);
                 foreach (var pair in index.GameNames) { writer.Write(Id(pair.Key)); WriteHits(pair.Value); }
+                writer.Write(index.ArcadeGames.Count);
+                for (int i = 0; i < index.ArcadeGames.Count; i++) { writer.Write(sourceIndex[index.ArcadeGames[i].Source]); writer.Write(Id(index.ArcadeGames[i].Game)); writer.Write(index.ArcadeGameRoms[i]); }
+                writer.Write(index.ArcadeRoms.Count);
+                foreach (var pair in index.ArcadeRoms) { writer.Write(pair.Key); writer.Write(pair.Value.Count); foreach (int id in pair.Value) writer.Write(id); }
             }
             File.Move(temp, CachePath, overwrite: true);
         }
@@ -459,6 +481,21 @@ internal static class RomDatabase
         {
             if (!index.GameNames.TryGetValue(game, out var byName)) index.GameNames[game] = byName = new List<DatHit>(1);
             if (!byName.Any(h => h.Source == source)) byName.Add(new DatHit(source, game));
+        }
+    }
+
+    // Al terminar de leer un juego de arcade se anotan sus ROMs (CRC y tamaño, sin repetir) en el índice por contenido.
+    private static void AddSignatures(DatIndex index, DatSource source, string game, List<(uint Crc, long Size)> all, List<(uint Crc, long Size)> own)
+    {
+        if (game.Length == 0 || all.Count == 0) return;
+        var keys = all.Select(r => DatIndex.Pack(r.Crc, r.Size)).Distinct().ToList();
+        int id = index.ArcadeGames.Count;
+        index.ArcadeGames.Add((source, game));
+        index.ArcadeGameRoms.Add(keys.Count);
+        foreach (ulong key in keys)
+        {
+            if (!index.ArcadeRoms.TryGetValue(key, out var list)) index.ArcadeRoms[key] = list = new List<int>(2);
+            list.Add(id);
         }
     }
 
@@ -500,11 +537,15 @@ internal static class RomDatabase
     {
         string game = "";
         bool inGame = false;
+        var all = new List<(uint Crc, long Size)>(); var own = new List<(uint Crc, long Size)>();
         foreach (var raw in File.ReadLines(path))
         {
             string line = raw.Trim();
             if (line.StartsWith("game (", StringComparison.Ordinal) || line.StartsWith("machine (", StringComparison.Ordinal) || line.StartsWith("resource (", StringComparison.Ordinal))
-            { inGame = true; game = ""; continue; }
+            {
+                if (source.NameMatch) { AddSignatures(index, source, game, all, own); all.Clear(); own.Clear(); }
+                inGame = true; game = ""; continue;
+            }
             if (!inGame) continue;
             if (game.Length == 0 && line.StartsWith("name \"", StringComparison.Ordinal))
             {
@@ -513,11 +554,19 @@ internal static class RomDatabase
                 if (source.NameMatch && game.Length > 0) AddName(index, source, game);
                 continue;
             }
-            if (source.NameMatch || !line.StartsWith("rom (", StringComparison.Ordinal)) continue;
+            if (!line.StartsWith("rom (", StringComparison.Ordinal)) continue;
             var size = SizeRx.Match(line);
             var crc = CrcRx.Match(line);
-            if (size.Success && crc.Success) AddHash(index, source, game, Convert.ToUInt32(crc.Groups[1].Value, 16), long.Parse(size.Groups[1].Value));
+            if (!size.Success || !crc.Success) continue;
+            uint value = Convert.ToUInt32(crc.Groups[1].Value, 16); long bytes = long.Parse(size.Groups[1].Value);
+            if (!source.NameMatch) AddHash(index, source, game, value, bytes);
+            else if (!line.Contains(" flags nodump", StringComparison.Ordinal))
+            {
+                all.Add((value, bytes));
+                if (!line.Contains(" merge ", StringComparison.Ordinal)) own.Add((value, bytes));
+            }
         }
+        if (source.NameMatch) AddSignatures(index, source, game, all, own);
     }
 
     // Formato XML: Logiqx (clrmamepro, FBNeo, TOSEC…) y la salida «-listxml» de MAME (<machine>).
@@ -526,22 +575,32 @@ internal static class RomDatabase
         var settings = new System.Xml.XmlReaderSettings { DtdProcessing = System.Xml.DtdProcessing.Ignore, XmlResolver = null, IgnoreComments = true };
         using var reader = System.Xml.XmlReader.Create(path, settings);
         string game = "";
+        var all = new List<(uint Crc, long Size)>(); var own = new List<(uint Crc, long Size)>();
         while (reader.Read())
         {
             if (reader.NodeType != System.Xml.XmlNodeType.Element) continue;
             string element = reader.LocalName;
             if (element is "game" or "machine" or "software")
             {
+                if (source.NameMatch) { AddSignatures(index, source, game, all, own); all.Clear(); own.Clear(); }
                 game = reader.GetAttribute("name") ?? "";
                 if (source.NameMatch && game.Length > 0) AddName(index, source, game);
             }
-            else if (element == "rom" && !source.NameMatch)
+            else if (element == "rom")
             {
                 string? crc = reader.GetAttribute("crc"), size = reader.GetAttribute("size");
-                if (crc is { Length: 8 } && long.TryParse(size, out long bytes) && uint.TryParse(crc, System.Globalization.NumberStyles.HexNumber, null, out uint value))
-                    AddHash(index, source, game, value, bytes);
+                bool valid = crc is { Length: 8 } && long.TryParse(size, out _) && uint.TryParse(crc, System.Globalization.NumberStyles.HexNumber, null, out _);
+                if (!valid) continue;
+                uint value = uint.Parse(crc!, System.Globalization.NumberStyles.HexNumber); long bytes = long.Parse(size!);
+                if (!source.NameMatch) AddHash(index, source, game, value, bytes);
+                else if (reader.GetAttribute("status") != "nodump")
+                {
+                    all.Add((value, bytes));
+                    if (string.IsNullOrEmpty(reader.GetAttribute("merge"))) own.Add((value, bytes)); // las heredadas del padre no van en un set «split»
+                }
             }
         }
+        if (source.NameMatch) AddSignatures(index, source, game, all, own);
     }
 }
 
